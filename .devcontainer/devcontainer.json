@@ -1,0 +1,17 @@
+{
+  "name": "Apache AGE Dev Container",
+  "dockerFile": "Dockerfile",
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": {},
+    "ghcr.io/devcontainers/features/git:1": {}
+  },
+  "forwardPorts": [5432],
+  "portsAttributes": {
+    "5432": {
+      "label": "PostgreSQL",
+      "onAutoForward": "notify"
+    }
+  },
+  "postCreateCommand": "psql -U postgres -c 'CREATE EXTENSION IF NOT EXISTS age;'",
+  "remoteUser": "root"
+}
