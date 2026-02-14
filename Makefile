@@ -12,7 +12,7 @@ help:
 	@echo "  lint-frontend       - Lint frontend code"
 
 install-backend:
-	cd backend && python -m venv venv && . venv/bin/activate && pip install -r requirements-dev.txt
+	cd backend && python3 -m venv venv && . venv/bin/activate && pip install -r requirements-dev.txt
 
 install-frontend:
 	cd frontend && npm install

@@ -22,6 +22,22 @@ export interface QueryExecuteResponse {
   command?: string
   stats?: Record<string, unknown>
   request_id: string
+  graph_elements?: {
+    nodes: Array<{
+      id: string
+      label: string
+      properties: Record<string, unknown>
+      type: string
+    }>
+    edges: Array<{
+      id: string
+      label: string
+      source: string
+      target: string
+      properties: Record<string, unknown>
+      type: string
+    }>
+  }
 }
 
 export interface QueryCancelResponse {

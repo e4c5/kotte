@@ -37,6 +37,10 @@ class QueryExecuteResponse(BaseModel):
         default=None, description="Query execution statistics"
     )
     request_id: str = Field(..., description="Request ID for cancellation")
+    graph_elements: Optional[Dict[str, List[Dict[str, Any]]]] = Field(
+        default=None,
+        description="Extracted graph elements (nodes, edges) for visualization",
+    )
 
 
 class QueryCancelRequest(BaseModel):

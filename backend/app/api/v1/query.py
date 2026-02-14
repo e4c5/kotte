@@ -16,6 +16,7 @@ from app.models.query import (
     QueryCancelRequest,
     QueryCancelResponse,
 )
+from app.services.agtype import AgTypeParser
 
 logger = logging.getLogger(__name__)
 
@@ -102,19 +103,46 @@ async def execute_query(
 
     try:
         # Execute query with parameters
-        rows = await db_conn.execute_query(sql_query, sql_params)
+        raw_rows = await db_conn.execute_query(sql_query, sql_params)
         
-        # Parse results
-        # TODO: Implement proper agtype parsing
-        # For now, return raw results
-        columns = ["result"] if rows else []
-        result_rows = [QueryResultRow(data={"result": row["result"]}) for row in rows]
+        # Parse agtype results
+        parsed_rows = []
+        all_columns = set()
+        
+        for raw_row in raw_rows:
+            parsed_row = {}
+            for col_name, agtype_value in raw_row.items():
+                all_columns.add(col_name)
+                parsed_value = AgTypeParser.parse(agtype_value)
+                parsed_row[col_name] = parsed_value
+            parsed_rows.append(parsed_row)
+        
+        # Extract graph elements (nodes and edges) for visualization
+        graph_elements = AgTypeParser.extract_graph_elements(parsed_rows)
+        
+        # Build result rows
+        columns = sorted(all_columns) if all_columns else ["result"]
+        result_rows = [
+            QueryResultRow(data=row) for row in parsed_rows
+        ]
+
+        # Add graph elements to response stats
+        stats = {
+            "nodes_extracted": len(graph_elements["nodes"]),
+            "edges_extracted": len(graph_elements["edges"]),
+            "other_results": len(graph_elements["other"]),
+        }
 
         return QueryExecuteResponse(
             columns=columns,
             rows=result_rows,
             row_count=len(result_rows),
             request_id=request_id,
+            stats=stats,
+            graph_elements={
+                "nodes": graph_elements["nodes"],
+                "edges": graph_elements["edges"],
+            } if (graph_elements["nodes"] or graph_elements["edges"]) else None,
         )
 
     except Exception as e:

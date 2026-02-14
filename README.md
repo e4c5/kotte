@@ -61,27 +61,30 @@ kotte/
 
 ### ✅ Completed
 
-- Backend core infrastructure (FastAPI, error handling, middleware)
-- Authentication and session management
-- Database connection management
-- Basic API endpoints (connect, disconnect, status, list graphs, metadata)
-- Query execution endpoint (basic implementation)
-- Frontend project structure (React + TypeScript + Vite)
-- Frontend API client and state management
-- Connection UI
-- Basic workspace page
+- **Backend Core**: FastAPI app, error handling, middleware, configuration
+- **Authentication**: Session management with secure cookies
+- **Database**: Connection management, AGE integration, parameterized queries
+- **API Endpoints**: Session, graph metadata, query execution, CSV import
+- **Services**: AgType parsing, graph element extraction, metadata discovery
+- **Frontend Core**: React + TypeScript + Vite setup, routing, state management
+- **UI Components**: Connection page, query editor, graph view (D3.js), table view, metadata sidebar
+- **Features**: Query execution, graph/table toggle, query history, export, metadata templates
 
-### 🚧 In Progress / TODO
+### 🚧 Partially Implemented
 
-- **Query Execution**: agtype parsing, result transformation
-- **Graph Visualization**: D3.js implementation with force layout
-- **Query Editor**: Cypher editor with history and shortcuts
-- **Table View**: Pagination and virtualization
-- **Graph Interactions**: Filtering, layout switching, styling
-- **Metadata Sidebar**: Graph explorer, query templates
-- **CSV Import**: Async job system with progress tracking
-- **Testing**: Comprehensive unit and integration tests
-- **Security Hardening**: Complete security checklist validation
+- Query cancellation (endpoint exists, needs PostgreSQL integration)
+- CSV import (basic sync implementation, needs async jobs)
+- Meta-graph discovery (basic implementation)
+
+### 📋 Remaining
+
+- Graph interactions (filtering, styling, layout switching, expansion)
+- CSV import UI with progress tracking
+- Settings & persistence (theme, preferences)
+- Comprehensive testing (unit, integration, E2E)
+- Security hardening (audit logging, rate limiting)
+
+See [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md) for detailed status.
 
 ## Security
 
