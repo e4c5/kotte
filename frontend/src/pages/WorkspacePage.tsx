@@ -1,11 +1,13 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useSessionStore } from '../stores/sessionStore'
 import { useQueryStore } from '../stores/queryStore'
+import { useGraphStore } from '../stores/graphStore'
 import QueryEditor, { getQueryParams } from '../components/QueryEditor'
 import GraphView, { type GraphNode, type GraphEdge } from '../components/GraphView'
 import TableView from '../components/TableView'
 import MetadataSidebar from '../components/MetadataSidebar'
+import GraphControls from '../components/GraphControls'
 
 type ViewMode = 'graph' | 'table'
 
@@ -29,6 +31,8 @@ export default function WorkspacePage() {
   } = useQueryStore()
 
   const [viewMode, setViewMode] = useState<ViewMode>('graph')
+  const [showControls, setShowControls] = useState(false)
+  const { setSelectedNode } = useGraphStore()
 
   useEffect(() => {
     refreshStatus()
@@ -81,15 +85,32 @@ export default function WorkspacePage() {
     setQuery(templateQuery)
   }
 
+  // Extract available labels from graph elements
+  const availableLabels = useMemo(() => {
+    if (!result?.graph_elements) {
+      return { nodeLabels: [], edgeLabels: [] }
+    }
+
+    const nodeLabels = Array.from(
+      new Set(result.graph_elements.nodes?.map((n) => n.label) || [])
+    )
+    const edgeLabels = Array.from(
+      new Set(result.graph_elements.edges?.map((e) => e.label) || [])
+    )
+
+    return { nodeLabels, edgeLabels }
+  }, [result])
+
   const handleNodeClick = (node: GraphNode) => {
+    setSelectedNode(node.id)
     console.log('Node clicked:', node)
-    // TODO: Show node details or expand neighborhood
   }
 
   const handleNodeRightClick = (node: GraphNode, event: MouseEvent) => {
     event.preventDefault()
+    setSelectedNode(node.id)
+    // Context menu could be added here
     console.log('Node right-clicked:', node)
-    // TODO: Show context menu
   }
 
   if (!status || !status.connected) {
@@ -217,6 +238,7 @@ export default function WorkspacePage() {
                   display: 'flex',
                   gap: '0.5rem',
                   backgroundColor: '#f9f9f9',
+                  alignItems: 'center',
                 }}
               >
                 <button
@@ -252,19 +274,44 @@ export default function WorkspacePage() {
                 >
                   Table View ({result.row_count} rows)
                 </button>
+                {viewMode === 'graph' && hasGraphData && (
+                  <button
+                    onClick={() => setShowControls(!showControls)}
+                    style={{
+                      marginLeft: 'auto',
+                      padding: '0.5rem 1rem',
+                      cursor: 'pointer',
+                      border: '1px solid #ccc',
+                      borderRadius: '4px',
+                      backgroundColor: showControls ? '#007bff' : 'white',
+                      color: showControls ? 'white' : 'black',
+                    }}
+                  >
+                    {showControls ? 'Hide' : 'Show'} Controls
+                  </button>
+                )}
               </div>
 
               {/* Result content */}
-              <div style={{ flex: 1, minHeight: 0 }}>
+              <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
                 {viewMode === 'graph' && hasGraphData ? (
-                  <GraphView
-                    nodes={graphNodes}
-                    edges={graphEdges}
-                    width={window.innerWidth - 300}
-                    height={window.innerHeight - 400}
-                    onNodeClick={handleNodeClick}
-                    onNodeRightClick={handleNodeRightClick}
-                  />
+                  <>
+                    <GraphView
+                      nodes={graphNodes}
+                      edges={graphEdges}
+                      width={window.innerWidth - 300}
+                      height={window.innerHeight - 400}
+                      onNodeClick={handleNodeClick}
+                      onNodeRightClick={handleNodeRightClick}
+                    />
+                    {showControls && (
+                      <GraphControls
+                        availableNodeLabels={availableLabels.nodeLabels}
+                        availableEdgeLabels={availableLabels.edgeLabels}
+                        onClose={() => setShowControls(false)}
+                      />
+                    )}
+                  </>
                 ) : (
                   <TableView
                     columns={result.columns}
