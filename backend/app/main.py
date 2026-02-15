@@ -10,7 +10,11 @@ from starlette.middleware.sessions import SessionMiddleware
 from app.api.v1 import router as v1_router
 from app.core.config import settings
 from app.core.errors import setup_error_handlers
-from app.core.middleware import RequestIDMiddleware
+from app.core.middleware import (
+    CSRFMiddleware,
+    RateLimitMiddleware,
+    RequestIDMiddleware,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +49,14 @@ def create_app() -> FastAPI:
 
     # Request ID middleware
     app.add_middleware(RequestIDMiddleware)
+
+    # Rate limiting middleware (before CSRF to prevent abuse)
+    if settings.rate_limit_enabled:
+        app.add_middleware(RateLimitMiddleware)
+
+    # CSRF protection middleware
+    if settings.csrf_enabled:
+        app.add_middleware(CSRFMiddleware)
 
     # CORS middleware
     app.add_middleware(

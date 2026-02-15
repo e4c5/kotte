@@ -31,6 +31,7 @@ class SessionManager:
             connection_config: Optional connection config (for DB connections)
         """
         session_id = secrets.token_urlsafe(32)
+        csrf_token = secrets.token_urlsafe(32)
         now = datetime.now(timezone.utc)
 
         self._sessions[session_id] = {
@@ -39,6 +40,7 @@ class SessionManager:
             "last_activity": now,
             "connection_config": connection_config or {},
             "graph_context": None,
+            "csrf_token": csrf_token,
         }
 
         logger.info(f"Created session {session_id[:8]}... for user {user_id}")

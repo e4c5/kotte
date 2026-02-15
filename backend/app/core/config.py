@@ -53,6 +53,12 @@ class Settings(BaseSettings):
     credential_storage_path: str = "/var/lib/kotte/connections.json"
     master_encryption_key: str = ""  # Must be set from environment
 
+    # Security
+    csrf_enabled: bool = True
+    rate_limit_enabled: bool = True
+    rate_limit_per_minute: int = 60  # Requests per minute per IP
+    rate_limit_per_user: int = 100  # Requests per minute per user
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         # Generate secret key if not provided (for development only)

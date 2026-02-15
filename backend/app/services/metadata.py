@@ -33,19 +33,25 @@ class MetadataService:
             List of property keys found
         """
         try:
+            # Validate names (defense in depth - should already be validated)
+            from app.core.validation import validate_graph_name, validate_label_name
+            validated_graph_name = validate_graph_name(graph_name)
+            validated_label_name = validate_label_name(label_name)
+            
             # Build query to sample properties
+            # Use validated names (already validated for SQL injection)
             if label_kind == "v":
                 # For vertices, query the vertex table
                 query = f"""
                     SELECT properties
-                    FROM {graph_name}.{label_name}
+                    FROM {validated_graph_name}.{validated_label_name}
                     LIMIT %(limit)s
                 """
             else:
                 # For edges, query the edge table
                 query = f"""
                     SELECT properties
-                    FROM {graph_name}.{label_name}
+                    FROM {validated_graph_name}.{validated_label_name}
                     LIMIT %(limit)s
                 """
 
@@ -88,9 +94,15 @@ class MetadataService:
             Exact count of records
         """
         try:
+            # Validate names (defense in depth)
+            from app.core.validation import validate_graph_name, validate_label_name
+            validated_graph_name = validate_graph_name(graph_name)
+            validated_label_name = validate_label_name(label_name)
+            
+            # Use validated names (already validated for SQL injection)
             query = f"""
                 SELECT COUNT(*) as count
-                FROM {graph_name}.{label_name}
+                FROM {validated_graph_name}.{validated_label_name}
             """
             result = await db_conn.execute_scalar(query)
             return int(result) if result else 0

@@ -9,6 +9,7 @@ from app.core.auth import get_session
 from app.core.config import settings
 from app.core.database import DatabaseConnection
 from app.core.errors import APIException, ErrorCode, ErrorCategory
+from app.core.validation import validate_graph_name, validate_query_length
 from app.models.query import (
     QueryExecuteRequest,
     QueryExecuteResponse,
@@ -53,17 +54,23 @@ async def execute_query(
     """
     request_id = str(uuid.uuid4())
 
-    # Validate graph exists
+    # Validate graph name format (prevents SQL injection)
+    validated_graph_name = validate_graph_name(request.graph)
+    
+    # Validate query length
+    validate_query_length(request.cypher)
+
+    # Validate graph exists (using parameterized query)
     graph_check = """
         SELECT graphid FROM ag_catalog.ag_graph WHERE name = %(graph_name)s
     """
     graph_id = await db_conn.execute_scalar(
-        graph_check, {"graph_name": request.graph}
+        graph_check, {"graph_name": validated_graph_name}
     )
     if not graph_id:
         raise APIException(
             code=ErrorCode.GRAPH_NOT_FOUND,
-            message=f"Graph '{request.graph}' not found",
+            message=f"Graph '{validated_graph_name}' not found",
             category=ErrorCategory.NOT_FOUND,
             status_code=404,
         )
@@ -91,11 +98,12 @@ async def execute_query(
             )
 
     # AGE cypher function requires graph name and query as text literals
-    # We've validated graph_name exists, so it's safe to use
+    # We've validated graph_name format and existence, so it's safe to use
     # The cypher query itself is parsed by AGE, which provides some protection
     # Parameters are passed as JSONB (parameterized)
+    # Use validated_graph_name (already validated for SQL injection)
     sql_query = f"""
-        SELECT * FROM cypher('{request.graph}', $${request.cypher}$$, %(params)s::jsonb) AS (result agtype)
+        SELECT * FROM cypher('{validated_graph_name}', $${request.cypher}$$, %(params)s::jsonb) AS (result agtype)
     """
     sql_params = {
         "params": params_json,

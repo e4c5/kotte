@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 from app.core.auth import get_session
 from app.core.database import DatabaseConnection
 from app.core.errors import APIException, ErrorCode, ErrorCategory
+from app.core.validation import validate_graph_name, validate_label_name
 from app.models.import_models import (
     CSVImportResponse,
     ImportJobStatus,
@@ -53,22 +54,27 @@ async def import_csv(
     """
     job_id = str(uuid.uuid4())
 
-    # Validate graph exists or create it
+    # Validate graph name format (prevents SQL injection)
+    validated_graph_name = validate_graph_name(graph_name)
+
+    # Validate graph exists or create it (using parameterized query)
     graph_check = """
         SELECT graphid FROM ag_catalog.ag_graph WHERE name = %(graph_name)s
     """
     graph_id = await db_conn.execute_scalar(
-        graph_check, {"graph_name": graph_name}
+        graph_check, {"graph_name": validated_graph_name}
     )
 
     if not graph_id:
         # Create graph if it doesn't exist
+        # Note: AGE create_graph function doesn't support parameterization,
+        # but we've validated the graph name format, so it's safe
         create_graph_query = f"""
-            SELECT * FROM ag_catalog.create_graph('{graph_name}')
+            SELECT * FROM ag_catalog.create_graph('{validated_graph_name}')
         """
         try:
             await db_conn.execute_query(create_graph_query)
-            logger.info(f"Created graph: {graph_name}")
+            logger.info(f"Created graph: {validated_graph_name}")
         except Exception as e:
             raise APIException(
                 code=ErrorCode.GRAPH_CONTEXT_INVALID,
@@ -88,6 +94,9 @@ async def import_csv(
             category=ErrorCategory.VALIDATION,
             status_code=422,
         )
+
+    # Validate label name format (prevents SQL injection)
+    validated_label = validate_label_name(label)
 
     # Create job status
     job_status = ImportJobStatus(
@@ -121,9 +130,10 @@ async def import_csv(
             )
 
         # Create label if needed
+        # Note: AGE functions don't support parameterization, but we've validated names
         if drop_if_exists:
             drop_query = f"""
-                SELECT * FROM ag_catalog.drop_label('{graph_name}', '{label}', {label_kind == 'v'})
+                SELECT * FROM ag_catalog.drop_label('{validated_graph_name}', '{validated_label}', {label_kind == 'v'})
             """
             try:
                 await db_conn.execute_query(drop_query)
@@ -131,11 +141,11 @@ async def import_csv(
                 pass  # Label might not exist
 
         create_label_query = f"""
-            SELECT * FROM ag_catalog.create_label('{graph_name}', '{label}', {label_kind == 'v'})
+            SELECT * FROM ag_catalog.create_label('{validated_graph_name}', '{validated_label}', {label_kind == 'v'})
         """
         try:
             await db_conn.execute_query(create_label_query)
-            job_status.created_labels.append(label)
+            job_status.created_labels.append(validated_label)
         except Exception as e:
             if "already exists" not in str(e).lower():
                 raise
@@ -162,10 +172,11 @@ async def import_csv(
                 }
 
                 # Insert node or edge
+                # Use validated names (already validated for SQL injection)
                 if label_kind == "v":
                     insert_query = f"""
-                        SELECT * FROM cypher('{graph_name}', $$
-                            CREATE (n:{label} $props)
+                        SELECT * FROM cypher('{validated_graph_name}', $$
+                            CREATE (n:{validated_label} $props)
                             RETURN n
                         $$, json_build_object('props', %(props)s::jsonb)::jsonb) AS (result agtype)
                     """
@@ -177,10 +188,10 @@ async def import_csv(
                         continue
 
                     insert_query = f"""
-                        SELECT * FROM cypher('{graph_name}', $$
+                        SELECT * FROM cypher('{validated_graph_name}', $$
                             MATCH (a), (b)
                             WHERE id(a) = $source_id AND id(b) = $target_id
-                            CREATE (a)-[r:{label} $props]->(b)
+                            CREATE (a)-[r:{validated_label} $props]->(b)
                             RETURN r
                         $$, json_build_object(
                             'source_id', %(source_id)s,

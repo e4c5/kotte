@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends
 from app.core.auth import get_session
 from app.core.database import DatabaseConnection
 from app.core.errors import APIException, ErrorCode, ErrorCategory
+from app.core.validation import validate_graph_name, validate_label_name
 from app.models.graph import (
     GraphInfo,
     GraphMetadata,
@@ -71,17 +72,20 @@ async def get_graph_metadata(
 ) -> GraphMetadata:
     """Get metadata for a specific graph."""
     try:
-        # Verify graph exists
+        # Validate graph name format (prevents SQL injection)
+        validated_graph_name = validate_graph_name(graph_name)
+        
+        # Verify graph exists (using parameterized query)
         graph_check = """
             SELECT graphid FROM ag_catalog.ag_graph WHERE name = %(graph_name)s
         """
         graph_id = await db_conn.execute_scalar(
-            graph_check, {"graph_name": graph_name}
+            graph_check, {"graph_name": validated_graph_name}
         )
         if not graph_id:
             raise APIException(
                 code=ErrorCode.GRAPH_NOT_FOUND,
-                message=f"Graph '{graph_name}' not found",
+                message=f"Graph '{validated_graph_name}' not found",
                 category=ErrorCategory.NOT_FOUND,
                 status_code=404,
             )
@@ -95,24 +99,28 @@ async def get_graph_metadata(
             ORDER BY label_name
         """
         node_label_rows = await db_conn.execute_query(
-            node_query, {"graph_name": graph_name}
+            node_query, {"graph_name": validated_graph_name}
         )
 
         node_labels = []
         for row in node_label_rows:
             label_name = row["label_name"]
+            # Validate label name
+            validated_label_name = validate_label_name(label_name)
+            
             # Get count (using ANALYZE estimates for performance)
-            # For small graphs, we could use exact counts
-            count_query = f"""
+            # Use parameterized query with validated names
+            table_name = f"{validated_graph_name}_{validated_label_name}"
+            count_query = """
                 SELECT reltuples::bigint as estimate
                 FROM pg_class
-                WHERE relname = '{graph_name}_{label_name}'
+                WHERE relname = %(table_name)s
             """
-            count = await db_conn.execute_scalar(count_query) or 0
+            count = await db_conn.execute_scalar(count_query, {"table_name": table_name}) or 0
 
             # Discover properties by sampling
             properties = await MetadataService.discover_properties(
-                db_conn, graph_name, label_name, "v"
+                db_conn, validated_graph_name, validated_label_name, "v"
             )
 
             node_labels.append(
@@ -128,23 +136,27 @@ async def get_graph_metadata(
             ORDER BY label_name
         """
         edge_label_rows = await db_conn.execute_query(
-            edge_query, {"graph_name": graph_name}
+            edge_query, {"graph_name": validated_graph_name}
         )
 
         edge_labels = []
         for row in edge_label_rows:
             label_name = row["label_name"]
-            # Get count estimate
-            count_query = f"""
+            # Validate label name
+            validated_label_name = validate_label_name(label_name)
+            
+            # Get count estimate (using parameterized query)
+            table_name = f"{validated_graph_name}_{validated_label_name}"
+            count_query = """
                 SELECT reltuples::bigint as estimate
                 FROM pg_class
-                WHERE relname = '{graph_name}_{label_name}'
+                WHERE relname = %(table_name)s
             """
-            count = await db_conn.execute_scalar(count_query) or 0
+            count = await db_conn.execute_scalar(count_query, {"table_name": table_name}) or 0
 
             # Discover properties by sampling
             properties = await MetadataService.discover_properties(
-                db_conn, graph_name, label_name, "e"
+                db_conn, validated_graph_name, validated_label_name, "e"
             )
 
             edge_labels.append(
@@ -152,7 +164,7 @@ async def get_graph_metadata(
             )
 
         return GraphMetadata(
-            graph_name=graph_name,
+            graph_name=validated_graph_name,
             node_labels=node_labels,
             edge_labels=edge_labels,
         )
@@ -222,18 +234,22 @@ async def get_meta_graph(
             WHERE graph.name = %(graph_name)s AND label.kind = 'e'
             ORDER BY edge_label
         """
-        edge_rows = await db_conn.execute_query(edge_query, {"graph_name": graph_name})
+        edge_rows = await db_conn.execute_query(edge_query, {"graph_name": validated_graph_name})
 
         relationships = []
         for edge_row in edge_rows:
             edge_label = edge_row["edge_label"]
             try:
+                # Validate edge label name
+                validated_edge_label = validate_label_name(edge_label)
+                
                 # Sample edges to discover source/target label patterns
+                # Use validated names (already validated for SQL injection)
                 sample_query = f"""
                     SELECT 
                         start_id,
                         end_id
-                    FROM {graph_name}.{edge_label}
+                    FROM {validated_graph_name}.{validated_edge_label}
                     LIMIT 100
                 """
                 samples = await db_conn.execute_query(sample_query)
@@ -245,14 +261,16 @@ async def get_meta_graph(
                     start_id = sample.get("start_id")
                     end_id = sample.get("end_id")
 
-                    # Find source label
-                    source_query = f"""
+                    # Find source label (using validated graph name)
+                    source_query = """
                         SELECT label.name as label_name
                         FROM ag_catalog.ag_label label
                         JOIN ag_catalog.ag_graph graph ON label.graph = graph.graphid
                         WHERE graph.name = %(graph_name)s AND label.kind = 'v'
                         LIMIT 1
                     """
+                    # Note: This query uses parameterization, but the actual implementation
+                    # is simplified and doesn't use this query result
                     # Simplified: we'd need to check which vertex table contains the ID
                     # For now, use a pattern-based approach
 
@@ -271,7 +289,7 @@ async def get_meta_graph(
                 continue
 
         return MetaGraphResponse(
-            graph_name=graph_name,
+            graph_name=validated_graph_name,
             relationships=relationships,
         )
 

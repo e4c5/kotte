@@ -50,8 +50,12 @@ async def login(request: LoginRequest, http_request: Request) -> LoginResponse:
         user["user_id"], {"username": user["username"]}
     )
 
-    # Set session cookie
+    # Set session cookie and CSRF token
     http_request.session["session_id"] = session_id
+    # CSRF token is stored in session manager, also store in cookie session for middleware
+    session_data = session_manager.get_session(session_id)
+    if session_data:
+        http_request.session["csrf_token"] = session_data.get("csrf_token")
 
     # Log successful authentication
     logger.info(
@@ -124,4 +128,22 @@ async def get_current_user(
         )
 
     return UserInfo(user_id=user["user_id"], username=user["username"])
+
+
+@router.get("/csrf-token")
+async def get_csrf_token(
+    http_request: Request, session: dict = Depends(get_session)
+) -> dict:
+    """Get CSRF token for current session."""
+    csrf_token = session.get("csrf_token") or http_request.session.get("csrf_token")
+    if not csrf_token:
+        # Generate and store CSRF token
+        import secrets
+        csrf_token = secrets.token_urlsafe(32)
+        session_id = http_request.session.get("session_id")
+        if session_id:
+            session_manager.update_session(session_id, {"csrf_token": csrf_token})
+            http_request.session["csrf_token"] = csrf_token
+
+    return {"csrf_token": csrf_token}
 
