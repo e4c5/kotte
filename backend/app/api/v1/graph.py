@@ -15,8 +15,11 @@ from app.models.graph import (
     NodeLabel,
     EdgeLabel,
     MetaGraphEdge,
+    NodeExpandRequest,
+    NodeExpandResponse,
 )
 from app.services.metadata import MetadataService
+from app.services.agtype import AgTypeParser
 
 logger = logging.getLogger(__name__)
 
@@ -288,6 +291,7 @@ async def get_meta_graph(
                 logger.warning(f"Failed to analyze edge label {edge_label}: {e}")
                 continue
 
+        validated_graph_name = validate_graph_name(graph_name)
         return MetaGraphResponse(
             graph_name=validated_graph_name,
             relationships=relationships,
@@ -300,6 +304,134 @@ async def get_meta_graph(
         raise APIException(
             code=ErrorCode.DB_UNAVAILABLE,
             message=f"Failed to get meta-graph: {str(e)}",
+            category=ErrorCategory.UPSTREAM,
+            status_code=500,
+            retryable=True,
+        ) from e
+
+
+@router.post("/{graph_name}/nodes/{node_id}/expand", response_model=NodeExpandResponse)
+async def expand_node_neighborhood(
+    graph_name: str,
+    node_id: str,
+    request: NodeExpandRequest,
+    db_conn: DatabaseConnection = Depends(get_db_connection),
+) -> NodeExpandResponse:
+    """Expand the neighborhood of a node up to a specified depth."""
+    try:
+        # Validate graph name
+        validated_graph_name = validate_graph_name(graph_name)
+        
+        # Verify graph exists
+        graph_check = """
+            SELECT graphid FROM ag_catalog.ag_graph WHERE name = %(graph_name)s
+        """
+        graph_id = await db_conn.execute_scalar(
+            graph_check, {"graph_name": validated_graph_name}
+        )
+        if not graph_id:
+            raise APIException(
+                code=ErrorCode.GRAPH_NOT_FOUND,
+                message=f"Graph '{validated_graph_name}' not found",
+                category=ErrorCategory.NOT_FOUND,
+                status_code=404,
+            )
+
+        # Parse node ID (can be integer or string)
+        try:
+            node_id_int = int(node_id)
+        except ValueError:
+            raise APIException(
+                code=ErrorCode.QUERY_VALIDATION_ERROR,
+                message=f"Invalid node ID format: '{node_id}'. Must be a number.",
+                category=ErrorCategory.VALIDATION,
+                status_code=422,
+            )
+
+        # Build Cypher query for neighborhood expansion
+        # MATCH path = (n)-[*1..depth]-(m) WHERE id(n) = $node_id
+        # Return all nodes and edges in the path
+        depth = request.depth
+        limit = request.limit
+        
+        # Use variable-length path matching
+        # Note: AGE uses id() function to get node ID
+        # We'll return the path and extract nodes/edges from it
+        cypher_query = f"""
+            MATCH path = (n)-[*1..{depth}]-(m)
+            WHERE id(n) = $node_id
+            WITH DISTINCT path, m
+            LIMIT $limit
+            UNWIND relationships(path) as rel
+            RETURN DISTINCT m, rel
+        """
+        
+        # Execute query using AGE cypher function
+        import json
+        params = {
+            "node_id": node_id_int,
+            "limit": limit,
+        }
+        params_json = json.dumps(params)
+        
+        sql_query = f"""
+            SELECT * FROM cypher('{validated_graph_name}', $${cypher_query}$$, %(params)s::jsonb) AS (result agtype)
+        """
+        sql_params = {"params": params_json}
+        
+        raw_rows = await db_conn.execute_query(sql_query, sql_params)
+        
+        # Parse results and extract nodes/edges
+        all_nodes = {}
+        all_edges = []
+        edge_ids = set()
+        
+        for raw_row in raw_rows:
+            for col_name, agtype_value in raw_row.items():
+                parsed_value = AgTypeParser.parse(agtype_value)
+                
+                if isinstance(parsed_value, dict):
+                    # Could be a node or a list of relationships
+                    if parsed_value.get("type") == "node":
+                        node_id = parsed_value.get("id")
+                        if node_id:
+                            all_nodes[str(node_id)] = parsed_value
+                    elif parsed_value.get("type") == "edge":
+                        edge_id = parsed_value.get("id")
+                        if edge_id and edge_id not in edge_ids:
+                            all_edges.append(parsed_value)
+                            edge_ids.add(edge_id)
+                elif isinstance(parsed_value, list):
+                    # Could be a list of relationships
+                    for item in parsed_value:
+                        if isinstance(item, dict):
+                            if item.get("type") == "edge":
+                                edge_id = item.get("id")
+                                if edge_id and edge_id not in edge_ids:
+                                    all_edges.append(item)
+                                    edge_ids.add(edge_id)
+                            elif item.get("type") == "node":
+                                node_id = item.get("id")
+                                if node_id:
+                                    all_nodes[str(node_id)] = item
+        
+        # Convert nodes dict to list
+        nodes_list = list(all_nodes.values())
+        
+        return NodeExpandResponse(
+            nodes=nodes_list,
+            edges=all_edges,
+            node_count=len(nodes_list),
+            edge_count=len(all_edges),
+        )
+
+    except APIException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error expanding neighborhood for node {node_id} in graph {graph_name}")
+        raise APIException(
+            code=ErrorCode.DB_UNAVAILABLE,
+            message=f"Failed to expand node neighborhood: {str(e)}",
             category=ErrorCategory.UPSTREAM,
             status_code=500,
             retryable=True,

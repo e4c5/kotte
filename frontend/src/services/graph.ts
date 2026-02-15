@@ -40,6 +40,34 @@ export interface MetaGraphResponse {
   relationships: MetaGraphEdge[]
 }
 
+export interface NodeExpandRequest {
+  depth?: number
+  limit?: number
+}
+
+export interface GraphNode {
+  id: string
+  label: string
+  properties: Record<string, unknown>
+  type: string
+}
+
+export interface GraphEdge {
+  id: string
+  label: string
+  source: string
+  target: string
+  properties: Record<string, unknown>
+  type: string
+}
+
+export interface NodeExpandResponse {
+  nodes: GraphNode[]
+  edges: GraphEdge[]
+  node_count: number
+  edge_count: number
+}
+
 export const graphAPI = {
   listGraphs: async (): Promise<GraphInfo[]> => {
     const response = await apiClient.get<GraphInfo[]>('/graphs')
@@ -56,6 +84,18 @@ export const graphAPI = {
   getMetaGraph: async (graphName: string): Promise<MetaGraphResponse> => {
     const response = await apiClient.get<MetaGraphResponse>(
       `/graphs/${encodeURIComponent(graphName)}/meta-graph`
+    )
+    return response.data
+  },
+
+  expandNode: async (
+    graphName: string,
+    nodeId: string,
+    request: NodeExpandRequest = {}
+  ): Promise<NodeExpandResponse> => {
+    const response = await apiClient.post<NodeExpandResponse>(
+      `/graphs/${encodeURIComponent(graphName)}/nodes/${encodeURIComponent(nodeId)}/expand`,
+      request
     )
     return response.data
   },

@@ -9,6 +9,8 @@ import GraphView, { type GraphNode, type GraphEdge } from '../components/GraphVi
 import TableView from '../components/TableView'
 import MetadataSidebar from '../components/MetadataSidebar'
 import GraphControls from '../components/GraphControls'
+import NodeContextMenu from '../components/NodeContextMenu'
+import { graphAPI } from '../services/graph'
 
 type ViewMode = 'graph' | 'table'
 
@@ -31,10 +33,13 @@ export default function WorkspacePage() {
     clearResult,
     clearError,
     history,
+    mergeGraphElements,
   } = useQueryStore()
 
   const [viewMode, setViewMode] = useState<ViewMode>('graph')
   const [showControls, setShowControls] = useState(false)
+  const [contextMenu, setContextMenu] = useState<{x: number, y: number, nodeId: string} | null>(null)
+  const [expanding, setExpanding] = useState(false)
   const { setSelectedNode } = useGraphStore()
 
   useEffect(() => {
@@ -120,8 +125,33 @@ export default function WorkspacePage() {
   const handleNodeRightClick = (node: GraphNode, event: MouseEvent) => {
     event.preventDefault()
     setSelectedNode(node.id)
-    // Context menu could be added here
-    console.log('Node right-clicked:', node)
+    setContextMenu({
+      x: event.clientX,
+      y: event.clientY,
+      nodeId: node.id,
+    })
+  }
+
+  const handleExpandNode = async (nodeId: string) => {
+    if (!currentGraph || expanding) {
+      return
+    }
+
+    setExpanding(true)
+    try {
+      const expandResult = await graphAPI.expandNode(currentGraph, nodeId, {
+        depth: 1,
+        limit: 100,
+      })
+      
+      // Merge expanded nodes and edges into existing result
+      mergeGraphElements(expandResult.nodes, expandResult.edges)
+    } catch (err) {
+      console.error('Failed to expand node:', err)
+      // Could show error message to user
+    } finally {
+      setExpanding(false)
+    }
   }
 
   if (!status || !status.connected) {
@@ -328,6 +358,32 @@ export default function WorkspacePage() {
                         availableEdgeLabels={availableLabels.edgeLabels}
                         onClose={() => setShowControls(false)}
                       />
+                    )}
+                    {contextMenu && (
+                      <NodeContextMenu
+                        x={contextMenu.x}
+                        y={contextMenu.y}
+                        nodeId={contextMenu.nodeId}
+                        onExpand={handleExpandNode}
+                        onClose={() => setContextMenu(null)}
+                      />
+                    )}
+                    {expanding && (
+                      <div
+                        style={{
+                          position: 'absolute',
+                          top: '10px',
+                          right: '10px',
+                          padding: '0.5rem 1rem',
+                          backgroundColor: '#fff3cd',
+                          border: '1px solid #ffc107',
+                          borderRadius: '4px',
+                          color: '#856404',
+                          zIndex: 1001,
+                        }}
+                      >
+                        Expanding neighborhood...
+                      </div>
                     )}
                   </>
                 ) : (

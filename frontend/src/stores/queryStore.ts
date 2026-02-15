@@ -30,6 +30,7 @@ interface QueryState {
   addToHistory: (query: string) => void
   clearResult: () => void
   clearError: () => void
+  mergeGraphElements: (nodes: Array<{id: string, label: string, properties: Record<string, unknown>, type: string}>, edges: Array<{id: string, label: string, source: string, target: string, properties: Record<string, unknown>, type: string}>) => void
 }
 
 export const useQueryStore = create<QueryState>((set, get) => ({
@@ -97,5 +98,48 @@ export const useQueryStore = create<QueryState>((set, get) => ({
   clearResult: () => set({ result: null, error: null }),
   
   clearError: () => set({ error: null }),
+  
+  mergeGraphElements: (newNodes, newEdges) => {
+    const { result } = get()
+    if (!result?.graph_elements) {
+      return
+    }
+    
+    // Merge nodes (avoid duplicates)
+    const existingNodeIds = new Set(result.graph_elements.nodes?.map(n => n.id) || [])
+    const mergedNodes = [...(result.graph_elements.nodes || [])]
+    for (const node of newNodes) {
+      if (!existingNodeIds.has(node.id)) {
+        mergedNodes.push(node)
+        existingNodeIds.add(node.id)
+      }
+    }
+    
+    // Merge edges (avoid duplicates)
+    const existingEdgeIds = new Set(result.graph_elements.edges?.map(e => e.id) || [])
+    const mergedEdges = [...(result.graph_elements.edges || [])]
+    for (const edge of newEdges) {
+      if (!existingEdgeIds.has(edge.id)) {
+        mergedEdges.push(edge)
+        existingEdgeIds.add(edge.id)
+      }
+    }
+    
+    // Update result with merged elements
+    set({
+      result: {
+        ...result,
+        graph_elements: {
+          nodes: mergedNodes,
+          edges: mergedEdges,
+        },
+        stats: {
+          ...result.stats,
+          nodes_extracted: mergedNodes.length,
+          edges_extracted: mergedEdges.length,
+        },
+      },
+    })
+  },
 }))
 

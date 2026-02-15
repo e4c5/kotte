@@ -52,3 +52,19 @@ class MetaGraphResponse(BaseModel):
     graph_name: str
     relationships: List[MetaGraphEdge]
 
+
+class NodeExpandRequest(BaseModel):
+    """Request to expand neighborhood of a node."""
+
+    depth: int = Field(default=1, ge=1, le=5, description="Expansion depth (1-5)")
+    limit: int = Field(default=100, ge=1, le=1000, description="Maximum nodes to return (1-1000)")
+
+
+class NodeExpandResponse(BaseModel):
+    """Response from node expansion."""
+
+    nodes: List[Dict[str, Any]] = Field(..., description="Expanded nodes")
+    edges: List[Dict[str, Any]] = Field(..., description="Expanded edges")
+    node_count: int = Field(..., description="Number of nodes returned")
+    edge_count: int = Field(..., description="Number of edges returned")
+
