@@ -4,6 +4,8 @@ interface QueryEditorProps {
   value: string
   onChange: (value: string) => void
   onExecute: () => void
+  onCancel?: () => void
+  loading?: boolean
   history?: string[]
 }
 
@@ -11,6 +13,8 @@ export default function QueryEditor({
   value,
   onChange,
   onExecute,
+  onCancel,
+  loading = false,
   history = [],
 }: QueryEditorProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -119,30 +123,51 @@ export default function QueryEditor({
         </div>
       </div>
       <div style={{ marginTop: '1rem', display: 'flex', gap: '0.5rem' }}>
-        <button
-          onClick={onExecute}
-          style={{
-            padding: '0.5rem 1.5rem',
-            fontSize: '1rem',
-            cursor: 'pointer',
-            backgroundColor: '#007bff',
-            color: 'white',
-            border: 'none',
-            borderRadius: '4px',
-          }}
-        >
-          Execute Query
-        </button>
+        {loading && onCancel ? (
+          <button
+            onClick={onCancel}
+            style={{
+              padding: '0.5rem 1.5rem',
+              fontSize: '1rem',
+              cursor: 'pointer',
+              backgroundColor: '#dc3545',
+              color: 'white',
+              border: 'none',
+              borderRadius: '4px',
+            }}
+          >
+            Cancel Query
+          </button>
+        ) : (
+          <button
+            onClick={onExecute}
+            disabled={loading}
+            style={{
+              padding: '0.5rem 1.5rem',
+              fontSize: '1rem',
+              cursor: loading ? 'not-allowed' : 'pointer',
+              backgroundColor: loading ? '#6c757d' : '#007bff',
+              color: 'white',
+              border: 'none',
+              borderRadius: '4px',
+              opacity: loading ? 0.6 : 1,
+            }}
+          >
+            {loading ? 'Executing...' : 'Execute Query'}
+          </button>
+        )}
         <button
           onClick={() => onChange('')}
+          disabled={loading}
           style={{
             padding: '0.5rem 1.5rem',
             fontSize: '1rem',
-            cursor: 'pointer',
+            cursor: loading ? 'not-allowed' : 'pointer',
             backgroundColor: '#6c757d',
             color: 'white',
             border: 'none',
             borderRadius: '4px',
+            opacity: loading ? 0.6 : 1,
           }}
         >
           Clear

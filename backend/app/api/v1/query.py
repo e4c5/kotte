@@ -1,5 +1,6 @@
 """Query execution endpoints."""
 
+import asyncio
 import logging
 import uuid
 
@@ -18,14 +19,11 @@ from app.models.query import (
     QueryCancelResponse,
 )
 from app.services.agtype import AgTypeParser
+from app.services.query_tracker import query_tracker
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-
-# In-memory store for active queries (for cancellation)
-# In production, use Redis or similar for distributed systems
-_active_queries: dict[str, any] = {}
 
 
 def get_db_connection(session: dict = Depends(get_session)) -> DatabaseConnection:
@@ -45,6 +43,7 @@ def get_db_connection(session: dict = Depends(get_session)) -> DatabaseConnectio
 async def execute_query(
     request: QueryExecuteRequest,
     db_conn: DatabaseConnection = Depends(get_db_connection),
+    session: dict = Depends(get_session),
 ) -> QueryExecuteResponse:
     """
     Execute a Cypher query against the specified graph.
@@ -53,12 +52,31 @@ async def execute_query(
     Results are parsed from AGE agtype format.
     """
     request_id = str(uuid.uuid4())
+    user_id = session.get("user_id", "unknown")
 
     # Validate graph name format (prevents SQL injection)
     validated_graph_name = validate_graph_name(request.graph)
     
     # Validate query length
     validate_query_length(request.cypher)
+    
+    # Register query for cancellation tracking
+    query_tracker.register_query(
+        request_id=request_id,
+        db_conn=db_conn,
+        query_text=request.cypher[:200],  # Store truncated query for logging
+        user_id=user_id,
+    )
+    
+    # Get backend PID for cancellation (before query execution)
+    # This PID will be used to cancel the query if needed
+    try:
+        backend_pid = await db_conn.get_backend_pid()
+        if backend_pid:
+            await query_tracker.set_backend_pid(request_id, backend_pid)
+            logger.debug(f"Tracking query {request_id[:8]}... with backend PID {backend_pid}")
+    except Exception as e:
+        logger.warning(f"Failed to get backend PID for query tracking: {e}")
 
     # Validate graph exists (using parameterized query)
     graph_check = """
@@ -110,8 +128,10 @@ async def execute_query(
     }
 
     try:
-        # Execute query with parameters
-        raw_rows = await db_conn.execute_query(sql_query, sql_params)
+        # Execute query with parameters and timeout
+        raw_rows = await db_conn.execute_query(
+            sql_query, sql_params, timeout=settings.query_timeout
+        )
         
         # Parse agtype results
         parsed_rows = []
@@ -141,6 +161,9 @@ async def execute_query(
             "other_results": len(graph_elements["other"]),
         }
 
+        # Unregister query on successful completion
+        query_tracker.unregister_query(request_id)
+
         return QueryExecuteResponse(
             columns=columns,
             rows=result_rows,
@@ -153,7 +176,19 @@ async def execute_query(
             } if (graph_elements["nodes"] or graph_elements["edges"]) else None,
         )
 
+    except asyncio.TimeoutError:
+        # Query timeout
+        query_tracker.unregister_query(request_id)
+        raise APIException(
+            code=ErrorCode.QUERY_TIMEOUT,
+            message=f"Query execution timed out after {settings.query_timeout} seconds",
+            category=ErrorCategory.UPSTREAM,
+            status_code=504,
+            retryable=True,
+        )
     except Exception as e:
+        # Unregister query on error
+        query_tracker.unregister_query(request_id)
         logger.exception(f"Query execution failed: {request.cypher[:100]}")
         # Try to determine error type
         error_msg = str(e)
@@ -179,12 +214,16 @@ async def cancel_query(
     request: QueryCancelRequest,
     session: dict = Depends(get_session),
 ) -> QueryCancelResponse:
-    """Cancel a running query."""
-    # TODO: Implement query cancellation
-    # This requires tracking active queries and their database connections
-    # PostgreSQL supports query cancellation via pg_cancel_backend()
-
-    if request_id not in _active_queries:
+    """
+    Cancel a running query.
+    
+    Uses PostgreSQL pg_cancel_backend() to cancel the query at the database level.
+    """
+    user_id = session.get("user_id", "unknown")
+    
+    # Check if query exists
+    query_info = query_tracker.get_query_info(request_id)
+    if not query_info:
         raise APIException(
             code=ErrorCode.QUERY_CANCELLED,
             message=f"Query {request_id} not found or already completed",
@@ -192,8 +231,26 @@ async def cancel_query(
             status_code=404,
         )
 
-    # Cancel logic would go here
-    _active_queries.pop(request_id, None)
+    # Cancel the query
+    success = await query_tracker.cancel_query(request_id, user_id)
+    
+    if not success:
+        raise APIException(
+            code=ErrorCode.QUERY_CANCELLED,
+            message=f"Failed to cancel query {request_id}",
+            category=ErrorCategory.UPSTREAM,
+            status_code=500,
+        )
+
+    logger.info(
+        f"Query {request_id[:8]}... cancelled by user {user_id}",
+        extra={
+            "event": "query_cancelled",
+            "request_id": request_id,
+            "user_id": user_id,
+            "reason": request.reason,
+        },
+    )
 
     return QueryCancelResponse(cancelled=True, request_id=request_id)
 

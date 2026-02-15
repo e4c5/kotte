@@ -27,6 +27,7 @@ export default function WorkspacePage() {
     setParams,
     setCurrentGraph,
     executeQuery,
+    cancelQuery,
     clearResult,
     clearError,
     history,
@@ -202,6 +203,8 @@ export default function WorkspacePage() {
               value={query}
               onChange={setQuery}
               onExecute={handleExecute}
+              onCancel={cancelQuery}
+              loading={loading}
               history={history}
             />
             {error && (
