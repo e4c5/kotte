@@ -21,9 +21,15 @@ class SessionManager:
         self._sessions: dict[str, dict] = {}
 
     def create_session(
-        self, user_id: str, connection_config: dict
+        self, user_id: str, connection_config: Optional[dict] = None
     ) -> str:
-        """Create a new session and return session ID."""
+        """
+        Create a new session and return session ID.
+        
+        Args:
+            user_id: User ID
+            connection_config: Optional connection config (for DB connections)
+        """
         session_id = secrets.token_urlsafe(32)
         now = datetime.now(timezone.utc)
 
@@ -31,7 +37,7 @@ class SessionManager:
             "user_id": user_id,
             "created_at": now,
             "last_activity": now,
-            "connection_config": connection_config,
+            "connection_config": connection_config or {},
             "graph_context": None,
         }
 

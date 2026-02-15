@@ -22,7 +22,7 @@ router = APIRouter()
 
 @router.post("/connect", response_model=ConnectResponse, status_code=status.HTTP_201_CREATED)
 async def connect(
-    request: ConnectRequest, http_request: Request
+    request: ConnectRequest, http_request: Request, session: dict = Depends(get_session)
 ) -> ConnectResponse:
     """
     Establish database connection and create session.
@@ -54,17 +54,19 @@ async def connect(
             retryable=True,
         ) from e
 
-    # Create session
-    # For now, use a simple user_id; in production, this would come from auth
-    user_id = "user"  # TODO: Get from authentication
-    session_id = session_manager.create_session(
-        user_id, request.connection.model_dump()
-    )
+    # Get user from authenticated session (required before connection)
+    user_id = session.get("user_id")
+    session_id = http_request.session.get("session_id")
 
-    # Store connection in session
-    session_manager.update_session(
-        session_id, {"db_connection": db_conn}
-    )
+    # Update session with connection config and store DB connection
+    if session_id:
+        session_manager.update_session(
+            session_id,
+            {
+                "connection_config": request.connection.model_dump(),
+                "db_connection": db_conn,
+            },
+        )
 
     # Set session cookie
     http_request.session["session_id"] = session_id

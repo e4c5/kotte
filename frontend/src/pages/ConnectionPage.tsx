@@ -1,11 +1,27 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useSessionStore } from '../stores/sessionStore'
+import { useAuthStore } from '../stores/authStore'
 import type { ConnectionConfig } from '../services/session'
 
 export default function ConnectionPage() {
   const navigate = useNavigate()
   const { connect, loading, error } = useSessionStore()
+  const { authenticated, checkAuth } = useAuthStore()
+
+  // Check authentication on mount
+  useEffect(() => {
+    checkAuth().then(() => {
+      if (!authenticated) {
+        navigate('/login')
+      }
+    })
+  }, [authenticated, navigate, checkAuth])
+
+  // Redirect if not authenticated
+  if (!authenticated) {
+    return null
+  }
   const [config, setConfig] = useState<ConnectionConfig>({
     host: 'localhost',
     port: 5432,

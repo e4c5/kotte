@@ -48,6 +48,11 @@ class Settings(BaseSettings):
     # Logging
     log_level: str = "INFO"
 
+    # Credential Storage
+    credential_storage_type: str = "json_file"  # json_file, sqlite, postgresql, redis
+    credential_storage_path: str = "/var/lib/kotte/connections.json"
+    master_encryption_key: str = ""  # Must be set from environment
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         # Generate secret key if not provided (for development only)

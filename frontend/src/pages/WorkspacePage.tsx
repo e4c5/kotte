@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useSessionStore } from '../stores/sessionStore'
 import { useQueryStore } from '../stores/queryStore'
 import { useGraphStore } from '../stores/graphStore'
+import { useAuthStore } from '../stores/authStore'
 import QueryEditor, { getQueryParams } from '../components/QueryEditor'
 import GraphView, { type GraphNode, type GraphEdge } from '../components/GraphView'
 import TableView from '../components/TableView'
@@ -14,6 +15,7 @@ type ViewMode = 'graph' | 'table'
 export default function WorkspacePage() {
   const navigate = useNavigate()
   const { status, refreshStatus, disconnect } = useSessionStore()
+  const { authenticated, logout: authLogout, checkAuth } = useAuthStore()
   const {
     query,
     params,
@@ -35,8 +37,14 @@ export default function WorkspacePage() {
   const { setSelectedNode } = useGraphStore()
 
   useEffect(() => {
-    refreshStatus()
-  }, [refreshStatus])
+    checkAuth().then(() => {
+      if (!authenticated) {
+        navigate('/login')
+      } else {
+        refreshStatus()
+      }
+    })
+  }, [authenticated, navigate, checkAuth, refreshStatus])
 
   useEffect(() => {
     if (status && !status.connected) {
@@ -46,7 +54,8 @@ export default function WorkspacePage() {
 
   const handleDisconnect = async () => {
     await disconnect()
-    navigate('/')
+    await authLogout()
+    navigate('/login')
   }
 
   const handleExecute = async () => {

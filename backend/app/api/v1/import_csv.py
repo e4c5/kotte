@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 from app.core.auth import get_session
 from app.core.database import DatabaseConnection
 from app.core.errors import APIException, ErrorCode, ErrorCategory
-from app.models.import import (
+from app.models.import_models import (
     CSVImportResponse,
     ImportJobStatus,
 )
