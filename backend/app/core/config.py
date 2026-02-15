@@ -40,6 +40,10 @@ class Settings(BaseSettings):
     query_timeout: int = 300  # 5 minutes
     query_max_result_rows: int = 100000
     query_safe_mode: bool = False  # Reject mutating queries when True
+    
+    # Visualization Limits
+    max_nodes_for_graph: int = 5000  # Maximum nodes for graph visualization
+    max_edges_for_graph: int = 10000  # Maximum edges for graph visualization
 
     # Import Limits
     import_max_file_size: int = 104857600  # 100MB

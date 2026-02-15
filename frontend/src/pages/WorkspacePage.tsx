@@ -68,8 +68,8 @@ export default function WorkspacePage() {
       const queryParams = getQueryParams(params)
       await executeQuery(currentGraph, query, queryParams)
       
-      // Auto-switch to graph view if graph elements are present
-      if (result?.graph_elements) {
+      // Auto-switch view based on result and visualization limits
+      if (result?.graph_elements && !result.visualization_warning) {
         const hasElements =
           (result.graph_elements.nodes?.length || 0) > 0 ||
           (result.graph_elements.edges?.length || 0) > 0
@@ -79,6 +79,7 @@ export default function WorkspacePage() {
           setViewMode('table')
         }
       } else {
+        // If there's a visualization warning, force table view
         setViewMode('table')
       }
     } catch (err) {
@@ -255,21 +256,26 @@ export default function WorkspacePage() {
               >
                 <button
                   onClick={() => setViewMode('graph')}
-                  disabled={!hasGraphData}
+                  disabled={!hasGraphData || !!result.visualization_warning}
                   style={{
                     padding: '0.5rem 1rem',
-                    cursor: hasGraphData ? 'pointer' : 'not-allowed',
+                    cursor: hasGraphData && !result.visualization_warning ? 'pointer' : 'not-allowed',
                     border: '1px solid #ccc',
                     borderRadius: '4px',
                     backgroundColor: viewMode === 'graph' ? '#007bff' : 'white',
                     color: viewMode === 'graph' ? 'white' : 'black',
-                    opacity: hasGraphData ? 1 : 0.5,
+                    opacity: hasGraphData && !result.visualization_warning ? 1 : 0.5,
                   }}
                 >
                   Graph View
                   {result.stats?.nodes_extracted && (
                     <span style={{ marginLeft: '0.5rem', fontSize: '0.85rem' }}>
                       ({result.stats.nodes_extracted} nodes, {result.stats.edges_extracted} edges)
+                    </span>
+                  )}
+                  {result.visualization_warning && (
+                    <span style={{ marginLeft: '0.5rem', fontSize: '0.85rem', color: '#dc3545' }}>
+                      (Too large)
                     </span>
                   )}
                 </button>

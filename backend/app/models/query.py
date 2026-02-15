@@ -41,6 +41,10 @@ class QueryExecuteResponse(BaseModel):
         default=None,
         description="Extracted graph elements (nodes, edges) for visualization",
     )
+    visualization_warning: Optional[str] = Field(
+        default=None,
+        description="Warning message if result exceeds visualization limits",
+    )
 
 
 class QueryCancelRequest(BaseModel):

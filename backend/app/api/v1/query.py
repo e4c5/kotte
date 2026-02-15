@@ -155,11 +155,36 @@ async def execute_query(
         ]
 
         # Add graph elements to response stats
+        nodes_count = len(graph_elements["nodes"])
+        edges_count = len(graph_elements["edges"])
+        
         stats = {
-            "nodes_extracted": len(graph_elements["nodes"]),
-            "edges_extracted": len(graph_elements["edges"]),
+            "nodes_extracted": nodes_count,
+            "edges_extracted": edges_count,
             "other_results": len(graph_elements["other"]),
         }
+
+        # Check visualization limits
+        visualization_warning = None
+        if nodes_count > settings.max_nodes_for_graph or edges_count > settings.max_edges_for_graph:
+            if nodes_count > settings.max_nodes_for_graph and edges_count > settings.max_edges_for_graph:
+                visualization_warning = (
+                    f"Result too large for graph visualization ({nodes_count} nodes, {edges_count} edges). "
+                    f"Maximum: {settings.max_nodes_for_graph} nodes, {settings.max_edges_for_graph} edges. "
+                    "Use table view or refine your query with LIMIT or WHERE filters."
+                )
+            elif nodes_count > settings.max_nodes_for_graph:
+                visualization_warning = (
+                    f"Result too large for graph visualization ({nodes_count} nodes). "
+                    f"Maximum: {settings.max_nodes_for_graph} nodes. "
+                    "Use table view or refine your query with LIMIT or WHERE filters."
+                )
+            else:
+                visualization_warning = (
+                    f"Result too large for graph visualization ({edges_count} edges). "
+                    f"Maximum: {settings.max_edges_for_graph} edges. "
+                    "Use table view or refine your query with LIMIT or WHERE filters."
+                )
 
         # Unregister query on successful completion
         query_tracker.unregister_query(request_id)
@@ -174,6 +199,7 @@ async def execute_query(
                 "nodes": graph_elements["nodes"],
                 "edges": graph_elements["edges"],
             } if (graph_elements["nodes"] or graph_elements["edges"]) else None,
+            visualization_warning=visualization_warning,
         )
 
     except asyncio.TimeoutError:

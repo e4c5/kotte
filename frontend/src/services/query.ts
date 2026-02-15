@@ -38,6 +38,7 @@ export interface QueryExecuteResponse {
       type: string
     }>
   }
+  visualization_warning?: string
 }
 
 export interface QueryCancelResponse {
