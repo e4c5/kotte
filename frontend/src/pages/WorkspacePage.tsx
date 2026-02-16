@@ -40,6 +40,7 @@ export default function WorkspacePage() {
   const [showControls, setShowControls] = useState(false)
   const [contextMenu, setContextMenu] = useState<{x: number, y: number, nodeId: string} | null>(null)
   const [expanding, setExpanding] = useState(false)
+  const [exportGraph, setExportGraph] = useState<(() => Promise<void>) | null>(null)
   const { setSelectedNode } = useGraphStore()
 
   useEffect(() => {
@@ -378,20 +379,46 @@ export default function WorkspacePage() {
                   Table View ({result.row_count} rows)
                 </button>
                 {viewMode === 'graph' && hasGraphData && (
-                  <button
-                    onClick={() => setShowControls(!showControls)}
-                    style={{
-                      marginLeft: 'auto',
-                      padding: '0.5rem 1rem',
-                      cursor: 'pointer',
-                      border: '1px solid #ccc',
-                      borderRadius: '4px',
-                      backgroundColor: showControls ? '#007bff' : 'white',
-                      color: showControls ? 'white' : 'black',
-                    }}
-                  >
-                    {showControls ? 'Hide' : 'Show'} Controls
-                  </button>
+                  <>
+                    {exportGraph && (
+                      <button
+                        onClick={async () => {
+                          try {
+                            await exportGraph()
+                          } catch (error) {
+                            console.error('Failed to export graph:', error)
+                            alert('Failed to export graph. Please try again.')
+                          }
+                        }}
+                        style={{
+                          marginLeft: 'auto',
+                          padding: '0.5rem 1rem',
+                          cursor: 'pointer',
+                          border: '1px solid #ccc',
+                          borderRadius: '4px',
+                          backgroundColor: 'white',
+                          color: 'black',
+                        }}
+                        title="Export graph as PNG"
+                      >
+                        Export PNG
+                      </button>
+                    )}
+                    <button
+                      onClick={() => setShowControls(!showControls)}
+                      style={{
+                        marginLeft: exportGraph ? '0.5rem' : 'auto',
+                        padding: '0.5rem 1rem',
+                        cursor: 'pointer',
+                        border: '1px solid #ccc',
+                        borderRadius: '4px',
+                        backgroundColor: showControls ? '#007bff' : 'white',
+                        color: showControls ? 'white' : 'black',
+                      }}
+                    >
+                      {showControls ? 'Hide' : 'Show'} Controls
+                    </button>
+                  </>
                 )}
               </div>
 
@@ -406,6 +433,7 @@ export default function WorkspacePage() {
                       height={window.innerHeight - 400}
                       onNodeClick={handleNodeClick}
                       onNodeRightClick={handleNodeRightClick}
+                      onExportReady={setExportGraph}
                     />
                     {showControls && (
                       <GraphControls

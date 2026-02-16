@@ -46,6 +46,23 @@ export interface QueryCancelResponse {
   request_id: string
 }
 
+export interface QueryStreamRequest {
+  graph: string
+  cypher: string
+  params?: Record<string, unknown>
+  chunk_size?: number
+  offset?: number
+}
+
+export interface QueryStreamChunk {
+  columns: string[]
+  rows: QueryResultRow[]
+  chunk_size: number
+  offset: number
+  has_more: boolean
+  total_rows?: number | null
+}
+
 export const queryAPI = {
   execute: async (request: QueryExecuteRequest): Promise<QueryExecuteResponse> => {
     const response = await apiClient.post<QueryExecuteResponse>(
@@ -61,6 +78,67 @@ export const queryAPI = {
       { reason }
     )
     return response.data
+  },
+
+  stream: async function* (
+    request: QueryStreamRequest
+  ): AsyncGenerator<QueryStreamChunk, void, unknown> {
+    const response = await fetch('/api/v1/queries/stream', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': sessionStorage.getItem('csrf_token') || '',
+      },
+      credentials: 'include',
+      body: JSON.stringify(request),
+    })
+
+    if (!response.ok) {
+      const error = await response.json()
+      throw new Error(error.error?.message || 'Streaming failed')
+    }
+
+    const reader = response.body?.getReader()
+    if (!reader) {
+      throw new Error('Response body is not readable')
+    }
+
+    const decoder = new TextDecoder()
+    let buffer = ''
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || '' // Keep incomplete line in buffer
+
+        for (const line of lines) {
+          if (line.trim()) {
+            try {
+              const chunk = JSON.parse(line) as QueryStreamChunk
+              yield chunk
+            } catch (e) {
+              console.error('Failed to parse chunk:', e, line)
+            }
+          }
+        }
+      }
+
+      // Process remaining buffer
+      if (buffer.trim()) {
+        try {
+          const chunk = JSON.parse(buffer) as QueryStreamChunk
+          yield chunk
+        } catch (e) {
+          console.error('Failed to parse final chunk:', e)
+        }
+      }
+    } finally {
+      reader.releaseLock()
+    }
   },
 }
 

@@ -8,12 +8,20 @@ interface TableViewProps {
   columns: string[]
   rows: TableRow[]
   pageSize?: number
+  streaming?: boolean
+  onLoadMore?: () => Promise<void>
+  hasMore?: boolean
+  loadingMore?: boolean
 }
 
 export default function TableView({
   columns,
   rows,
   pageSize = 50,
+  streaming = false,
+  onLoadMore,
+  hasMore = false,
+  loadingMore = false,
 }: TableViewProps) {
   const [currentPage, setCurrentPage] = useState(1)
 
@@ -147,7 +155,24 @@ export default function TableView({
           </tbody>
         </table>
       </div>
-      {totalPages > 1 && (
+      {streaming && hasMore && onLoadMore ? (
+        <div style={{ padding: '1rem', borderTop: '1px solid #ccc', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+          <button
+            onClick={onLoadMore}
+            disabled={loadingMore}
+            style={{
+              padding: '0.5rem 1rem',
+              cursor: loadingMore ? 'not-allowed' : 'pointer',
+              border: '1px solid #ccc',
+              borderRadius: '4px',
+              backgroundColor: 'white',
+              opacity: loadingMore ? 0.5 : 1,
+            }}
+          >
+            {loadingMore ? 'Loading...' : 'Load More'}
+          </button>
+        </div>
+      ) : totalPages > 1 ? (
         <div style={{ padding: '1rem', borderTop: '1px solid #ccc', display: 'flex', justifyContent: 'center', gap: '0.5rem', alignItems: 'center' }}>
           <button
             onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
@@ -181,7 +206,7 @@ export default function TableView({
             Next
           </button>
         </div>
-      )}
+      ) : null}
     </div>
   )
 }

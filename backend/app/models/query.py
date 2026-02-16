@@ -59,3 +59,32 @@ class QueryCancelResponse(BaseModel):
     cancelled: bool
     request_id: str
 
+
+class QueryStreamRequest(BaseModel):
+    """Request to stream query results."""
+
+    graph: str = Field(..., description="Graph name")
+    cypher: str = Field(..., description="Cypher query string")
+    params: Optional[Dict[str, Any]] = Field(
+        default=None, description="Query parameters"
+    )
+    chunk_size: int = Field(
+        default=1000, ge=1, le=10000, description="Number of rows per chunk"
+    )
+    offset: int = Field(
+        default=0, ge=0, description="Offset for pagination"
+    )
+
+
+class QueryStreamChunk(BaseModel):
+    """A chunk of query results."""
+
+    columns: List[str] = Field(..., description="Column names")
+    rows: List[QueryResultRow] = Field(..., description="Result rows in this chunk")
+    chunk_size: int = Field(..., description="Number of rows in this chunk")
+    offset: int = Field(..., description="Offset of this chunk")
+    has_more: bool = Field(..., description="Whether more rows are available")
+    total_rows: Optional[int] = Field(
+        default=None, description="Total number of rows (if known)"
+    )
+
