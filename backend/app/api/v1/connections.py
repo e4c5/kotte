@@ -99,10 +99,10 @@ async def save_connection(
         ) from e
 
 
-@router.get("", response_model=SavedConnectionListResponse)
+@router.get("", response_model=list[SavedConnectionResponse])
 async def list_connections(
     session: dict = Depends(get_session),
-) -> SavedConnectionListResponse:
+) -> list[SavedConnectionResponse]:
     """List all saved connections for the current user."""
     user_id = session.get("user_id")
     if not user_id:
@@ -115,20 +115,18 @@ async def list_connections(
     
     try:
         connections = connection_storage.list_connections(user_id)
-        return SavedConnectionListResponse(
-            connections=[
-                SavedConnectionResponse(
-                    id=conn["id"],
-                    name=conn["name"],
-                    host=conn["host"],
-                    port=conn["port"],
-                    database=conn["database"],
-                    created_at=conn["created_at"],
-                    updated_at=conn["updated_at"],
-                )
-                for conn in connections
-            ]
-        )
+        return [
+            SavedConnectionResponse(
+                id=conn["id"],
+                name=conn["name"],
+                host=conn["host"],
+                port=conn["port"],
+                database=conn["database"],
+                created_at=conn["created_at"],
+                updated_at=conn["updated_at"],
+            )
+            for conn in connections
+        ]
     except Exception as e:
         logger.exception(f"Error listing connections: {e}")
         raise APIException(

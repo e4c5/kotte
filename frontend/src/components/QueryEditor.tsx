@@ -68,13 +68,13 @@ export default function QueryEditor({
     }
   }
 
-  const getParams = (): Record<string, unknown> => {
-    try {
-      return JSON.parse(params)
-    } catch {
-      return {}
-    }
-  }
+  // const getParams = (): Record<string, unknown> => {
+  //   try {
+  //     return JSON.parse(params)
+  //   } catch {
+  //     return {}
+  //   }
+  // } // Reserved for future use
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>

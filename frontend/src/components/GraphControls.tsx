@@ -2,7 +2,6 @@ import { useState } from 'react'
 import {
   useGraphStore,
   type LayoutType,
-  type LabelStyle,
 } from '../stores/graphStore'
 
 interface GraphControlsProps {
@@ -33,10 +32,10 @@ export default function GraphControls({
   } = useGraphStore()
 
   const [activeTab, setActiveTab] = useState<'layout' | 'filter' | 'style'>('layout')
-  const [editingLabel, setEditingLabel] = useState<{
-    type: 'node' | 'edge'
-    label: string
-  } | null>(null)
+  // const [editingLabel, setEditingLabel] = useState<{
+  //   type: 'node' | 'edge'
+  //   label: string
+  // } | null>(null) // Reserved for future use
 
   const [newFilter, setNewFilter] = useState({
     label: '',

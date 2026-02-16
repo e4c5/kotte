@@ -28,10 +28,12 @@ class TestSavedConnections:
     @pytest.mark.asyncio
     async def test_save_connection_success(self, authenticated_client: httpx.AsyncClient):
         """Test successfully saving a connection."""
+        import uuid
+        unique_name = f"Test Connection {uuid.uuid4().hex[:8]}"
         response = await authenticated_client.post(
             "/api/v1/connections",
             json={
-                "name": "Test Connection",
+                "name": unique_name,
                 "host": "localhost",
                 "port": 5432,
                 "database": "test_db",
@@ -43,7 +45,7 @@ class TestSavedConnections:
         assert response.status_code == 201
         data = response.json()
         assert "id" in data
-        assert data["name"] == "Test Connection"
+        assert data["name"] == unique_name
         assert data["host"] == "localhost"
         assert data["port"] == 5432
         assert data["database"] == "test_db"
@@ -54,11 +56,13 @@ class TestSavedConnections:
     @pytest.mark.asyncio
     async def test_save_connection_duplicate_name(self, authenticated_client: httpx.AsyncClient):
         """Test saving connection with duplicate name."""
+        import uuid
+        unique_name = f"Duplicate Test {uuid.uuid4().hex[:8]}"
         # Save first connection
         response1 = await authenticated_client.post(
             "/api/v1/connections",
             json={
-                "name": "Duplicate Test",
+                "name": unique_name,
                 "host": "localhost",
                 "port": 5432,
                 "database": "test_db",
@@ -72,7 +76,7 @@ class TestSavedConnections:
         response2 = await authenticated_client.post(
             "/api/v1/connections",
             json={
-                "name": "Duplicate Test",
+                "name": unique_name,
                 "host": "localhost",
                 "port": 5433,
                 "database": "test_db2",
@@ -89,11 +93,13 @@ class TestSavedConnections:
     @pytest.mark.asyncio
     async def test_list_connections(self, authenticated_client: httpx.AsyncClient):
         """Test listing saved connections."""
+        import uuid
+        unique_name = f"List Test Connection {uuid.uuid4().hex[:8]}"
         # Save a connection first
         save_response = await authenticated_client.post(
             "/api/v1/connections",
             json={
-                "name": "List Test Connection",
+                "name": unique_name,
                 "host": "localhost",
                 "port": 5432,
                 "database": "test_db",
@@ -108,12 +114,11 @@ class TestSavedConnections:
         
         assert list_response.status_code == 200
         data = list_response.json()
-        assert "connections" in data
-        assert isinstance(data["connections"], list)
-        assert len(data["connections"]) > 0
+        assert isinstance(data, list)
+        assert len(data) > 0
         
         # Verify no credentials in list
-        for conn in data["connections"]:
+        for conn in data:
             assert "username" not in conn
             assert "password" not in conn
             assert "id" in conn
@@ -122,11 +127,13 @@ class TestSavedConnections:
     @pytest.mark.asyncio
     async def test_get_connection(self, authenticated_client: httpx.AsyncClient):
         """Test getting a saved connection with credentials."""
+        import uuid
+        unique_name = f"Get Test Connection {uuid.uuid4().hex[:8]}"
         # Save a connection first
         save_response = await authenticated_client.post(
             "/api/v1/connections",
             json={
-                "name": "Get Test Connection",
+                "name": unique_name,
                 "host": "localhost",
                 "port": 5432,
                 "database": "test_db",
@@ -143,7 +150,7 @@ class TestSavedConnections:
         assert get_response.status_code == 200
         data = get_response.json()
         assert data["id"] == connection_id
-        assert data["name"] == "Get Test Connection"
+        assert data["name"] == unique_name
         # Credentials should be present (decrypted) for connection use
         assert "username" in data
         assert "password" in data

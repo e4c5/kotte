@@ -66,7 +66,7 @@ const defaultEdgeStyle: LabelStyle = {
 
 export const useGraphStore = create<GraphState>()(
   persist(
-    (set, get) => ({
+    (set) => ({
       layout: 'force',
       nodeStyles: {},
       edgeStyles: {},

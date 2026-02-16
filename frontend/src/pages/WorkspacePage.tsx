@@ -26,7 +26,6 @@ export default function WorkspacePage() {
     loading,
     error,
     setQuery,
-    setParams,
     setCurrentGraph,
     executeQuery,
     cancelQuery,
@@ -298,9 +297,9 @@ export default function WorkspacePage() {
                   }}
                 >
                   Graph View
-                  {result.stats?.nodes_extracted && (
+                  {result.graph_elements && (
                     <span style={{ marginLeft: '0.5rem', fontSize: '0.85rem' }}>
-                      ({result.stats.nodes_extracted} nodes, {result.stats.edges_extracted} edges)
+                      ({result.graph_elements.nodes?.length || 0} nodes, {result.graph_elements.edges?.length || 0} edges)
                     </span>
                   )}
                   {result.visualization_warning && (
