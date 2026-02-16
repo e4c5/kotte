@@ -2,11 +2,12 @@
 
 import os
 import pytest
-from typing import Generator
+import pytest_asyncio
+from typing import Generator, AsyncGenerator
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 from fastapi.testclient import TestClient
-from starlette.testclient import TestClient as StarletteTestClient
 from app.main import create_app
 from app.core.auth import session_manager
 from app.services.user import user_service
@@ -15,35 +16,47 @@ from app.services.user import user_service
 @pytest.fixture(scope="function")
 def test_app(monkeypatch):
     """Create a test FastAPI app with all middleware."""
-    # Override settings for integration tests
+    # Override settings for integration tests BEFORE importing
     monkeypatch.setenv("CSRF_ENABLED", "false")
     monkeypatch.setenv("RATE_LIMIT_ENABLED", "false")
     monkeypatch.setenv("SESSION_SECRET_KEY", "test-secret-key-for-integration-tests-only")
+    monkeypatch.setenv("ENVIRONMENT", "test")
     
-    # Reload config module to pick up new settings
+    # Force reload of config and main modules to pick up new settings
     import importlib
-    import app.core.config
-    importlib.reload(app.core.config)
+    import sys
     
-    # Create fresh app instance
+    # Remove from cache if present
+    modules_to_reload = ['app.core.config', 'app.main']
+    for module_name in modules_to_reload:
+        if module_name in sys.modules:
+            del sys.modules[module_name]
+    
+    # Now import and create app
+    from app.main import create_app
     app = create_app()
     return app
 
 
 @pytest.fixture(scope="function")
 def client(test_app):
-    """
-    Test client with session middleware support.
-    
-    Uses Starlette's TestClient which properly handles ASGI middleware.
-    """
+    """Synchronous test client for simple tests."""
     return TestClient(test_app, base_url="http://testserver")
 
 
-@pytest.fixture(scope="function")
-def authenticated_client(client):
+@pytest_asyncio.fixture(scope="function")
+async def async_client(test_app):
+    """Async test client that properly supports session middleware."""
+    from httpx import ASGITransport
+    transport = ASGITransport(app=test_app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as ac:
+        yield ac
+
+
+@pytest_asyncio.fixture(scope="function")
+async def authenticated_client(async_client):
     """
-    Test client with authenticated session.
+    Async test client with authenticated session.
     
     Creates a user, logs in, and returns client with session cookie.
     """
@@ -59,7 +72,7 @@ def authenticated_client(client):
     user_service.create_user(test_username, test_password)
     
     # Login to create session
-    login_response = client.post(
+    login_response = await async_client.post(
         "/api/v1/auth/login",
         json={"username": test_username, "password": test_password},
     )
@@ -68,16 +81,16 @@ def authenticated_client(client):
         pytest.skip(f"Failed to create authenticated session: {login_response.status_code}")
     
     # Return client with session cookie
-    return client
+    return async_client
 
 
-@pytest.fixture(scope="function")
-def admin_client(client):
+@pytest_asyncio.fixture(scope="function")
+async def admin_client(async_client):
     """
-    Test client authenticated as admin user.
+    Async test client authenticated as admin user.
     """
     # Login as admin
-    login_response = client.post(
+    login_response = await async_client.post(
         "/api/v1/auth/login",
         json={"username": "admin", "password": "admin"},
     )
@@ -85,62 +98,90 @@ def admin_client(client):
     if login_response.status_code != 200:
         pytest.skip(f"Failed to login as admin: {login_response.status_code}")
     
-    return client
+    return async_client
 
 
-@pytest.fixture(scope="function")
-def mock_db_connection():
+@pytest_asyncio.fixture(scope="function")
+async def connected_client(authenticated_client):
     """
-    Mock database connection for testing.
+    Test client with authenticated session and database connection.
     
-    Returns a mock that can be used to replace DatabaseConnection.
+    Uses a real database connection (or can be configured to use test DB).
+    For now, we'll use a mock only if no test database is available.
     """
-    mock_conn = MagicMock()
-    mock_conn.is_connected = MagicMock(return_value=True)
-    mock_conn.connect = AsyncMock()
-    mock_conn.disconnect = AsyncMock()
-    mock_conn.execute_query = AsyncMock(return_value=[])
-    mock_conn.execute_scalar = AsyncMock(return_value=None)
-    mock_conn.get_backend_pid = AsyncMock(return_value=12345)
-    mock_conn.cancel_backend = AsyncMock()
-    mock_conn.begin_transaction = AsyncMock()
-    mock_conn.commit_transaction = AsyncMock()
-    mock_conn.rollback_transaction = AsyncMock()
+    # Try to connect to database
+    # In a real setup, this would connect to a test database
+    # For now, we'll mock it but the infrastructure supports real connections
     
-    return mock_conn
-
-
-@pytest.fixture(scope="function")
-def connected_client(authenticated_client, mock_db_connection):
-    """
-    Test client with authenticated session and mocked database connection.
-    """
-    # Patch DatabaseConnection to return our mock
-    with patch('app.api.v1.session.DatabaseConnection') as mock_db_class:
-        mock_db_class.return_value = mock_db_connection
+    from app.core.database import DatabaseConnection
+    
+    # Check if we should use real DB or mock
+    use_real_db = os.getenv("USE_REAL_TEST_DB", "false").lower() == "true"
+    
+    if use_real_db:
+        # Use real database connection
+        db_config = {
+            "host": os.getenv("TEST_DB_HOST", "localhost"),
+            "port": int(os.getenv("TEST_DB_PORT", "5432")),
+            "database": os.getenv("TEST_DB_NAME", "test_db"),
+            "user": os.getenv("TEST_DB_USER", "test_user"),
+            "password": os.getenv("TEST_DB_PASSWORD", "test_password"),
+        }
         
-        # Connect to database
-        connect_response = authenticated_client.post(
+        db_conn = DatabaseConnection(**db_config)
+        try:
+            await db_conn.connect()
+        except Exception as e:
+            pytest.skip(f"Could not connect to test database: {e}")
+    else:
+        # Use mock for now
+        mock_conn = MagicMock()
+        mock_conn.is_connected = MagicMock(return_value=True)
+        mock_conn.connect = AsyncMock()
+        mock_conn.disconnect = AsyncMock()
+        mock_conn.execute_query = AsyncMock(return_value=[])
+        mock_conn.execute_scalar = AsyncMock(return_value=None)
+        mock_conn.get_backend_pid = AsyncMock(return_value=12345)
+        mock_conn.cancel_backend = AsyncMock()
+        
+        # Patch DatabaseConnection
+        with patch('app.api.v1.session.DatabaseConnection') as mock_db_class:
+            mock_db_class.return_value = mock_conn
+            
+            # Connect
+            connect_response = await authenticated_client.post(
+                "/api/v1/session/connect",
+                json={
+                    "connection": {
+                        "host": "localhost",
+                        "port": 5432,
+                        "database": "test_db",
+                        "user": "test_user",
+                        "password": "test_password",
+                    }
+                },
+            )
+            
+            if connect_response.status_code != 201:
+                pytest.skip(f"Failed to connect to database: {connect_response.status_code}")
+            
+            yield authenticated_client
+            return
+    
+    # Real DB path
+    try:
+        connect_response = await authenticated_client.post(
             "/api/v1/session/connect",
-            json={
-                "connection": {
-                    "host": "localhost",
-                    "port": 5432,
-                    "database": "test_db",
-                    "user": "test_user",
-                    "password": "test_password",
-                }
-            },
+            json={"connection": db_config},
         )
         
         if connect_response.status_code != 201:
             pytest.skip(f"Failed to connect to database: {connect_response.status_code}")
         
-        # Store mock for later use
-        authenticated_client._mock_db = mock_db_connection
-        authenticated_client._mock_db_class = mock_db_class
-        
         yield authenticated_client
+    finally:
+        if db_conn:
+            await db_conn.disconnect()
 
 
 @pytest.fixture(scope="function", autouse=True)

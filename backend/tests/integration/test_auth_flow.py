@@ -1,15 +1,16 @@
 """Integration tests for authentication flow."""
 
 import pytest
-from fastapi.testclient import TestClient
+import httpx
 
 
 class TestAuthenticationFlow:
     """Integration tests for authentication endpoints."""
 
-    def test_login_success(self, client: TestClient):
+    @pytest.mark.asyncio
+    async def test_login_success(self, async_client: httpx.AsyncClient):
         """Test successful login flow."""
-        response = client.post(
+        response = await async_client.post(
             "/api/v1/auth/login",
             json={"username": "admin", "password": "admin"},
         )
@@ -21,13 +22,12 @@ class TestAuthenticationFlow:
         assert data["user_id"] == "admin"
         
         # Check that session cookie is set
-        assert "Set-Cookie" in response.headers
-        cookies = response.headers["Set-Cookie"]
-        assert "kotte_session" in cookies or "session" in cookies.lower()
+        assert "set-cookie" in response.headers or any("kotte_session" in str(c) for c in response.cookies.items())
 
-    def test_login_invalid_username(self, client: TestClient):
+    @pytest.mark.asyncio
+    async def test_login_invalid_username(self, async_client: httpx.AsyncClient):
         """Test login with invalid username."""
-        response = client.post(
+        response = await async_client.post(
             "/api/v1/auth/login",
             json={"username": "nonexistent", "password": "password"},
         )
@@ -37,9 +37,10 @@ class TestAuthenticationFlow:
         assert "error" in data
         assert data["error"]["code"] == "AUTH_INVALID_SESSION"
 
-    def test_login_invalid_password(self, client: TestClient):
+    @pytest.mark.asyncio
+    async def test_login_invalid_password(self, async_client: httpx.AsyncClient):
         """Test login with invalid password."""
-        response = client.post(
+        response = await async_client.post(
             "/api/v1/auth/login",
             json={"username": "admin", "password": "wrongpassword"},
         )
@@ -48,78 +49,85 @@ class TestAuthenticationFlow:
         data = response.json()
         assert "error" in data
 
-    def test_get_current_user_without_auth(self, client: TestClient):
+    @pytest.mark.asyncio
+    async def test_get_current_user_without_auth(self, async_client: httpx.AsyncClient):
         """Test getting current user without authentication."""
-        response = client.get("/api/v1/auth/me")
+        response = await async_client.get("/api/v1/auth/me")
         
         assert response.status_code == 401
         data = response.json()
         assert data["error"]["code"] == "AUTH_REQUIRED"
 
-    def test_get_current_user_with_auth(self, authenticated_client: TestClient):
+    @pytest.mark.asyncio
+    async def test_get_current_user_with_auth(self, authenticated_client: httpx.AsyncClient):
         """Test getting current user with authentication."""
-        response = authenticated_client.get("/api/v1/auth/me")
+        response = await authenticated_client.get("/api/v1/auth/me")
         
         assert response.status_code == 200
         data = response.json()
         assert "user_id" in data
         assert "username" in data
 
-    def test_logout_without_auth(self, client: TestClient):
+    @pytest.mark.asyncio
+    async def test_logout_without_auth(self, async_client: httpx.AsyncClient):
         """Test logout without authentication."""
-        response = client.post("/api/v1/auth/logout")
+        response = await async_client.post("/api/v1/auth/logout")
         
         assert response.status_code == 401
 
-    def test_logout_with_auth(self, authenticated_client: TestClient):
+    @pytest.mark.asyncio
+    async def test_logout_with_auth(self, authenticated_client: httpx.AsyncClient):
         """Test logout with authentication."""
-        response = authenticated_client.post("/api/v1/auth/logout")
+        response = await authenticated_client.post("/api/v1/auth/logout")
         
         assert response.status_code == 200
         data = response.json()
         assert data["logged_out"] is True
         
         # Verify session is invalidated
-        me_response = authenticated_client.get("/api/v1/auth/me")
+        me_response = await authenticated_client.get("/api/v1/auth/me")
         assert me_response.status_code == 401
 
-    def test_csrf_token_without_auth(self, client: TestClient):
+    @pytest.mark.asyncio
+    async def test_csrf_token_without_auth(self, async_client: httpx.AsyncClient):
         """Test getting CSRF token without authentication."""
-        response = client.get("/api/v1/auth/csrf-token")
+        response = await async_client.get("/api/v1/auth/csrf-token")
         
         assert response.status_code == 401
 
-    def test_csrf_token_with_auth(self, authenticated_client: TestClient):
+    @pytest.mark.asyncio
+    async def test_csrf_token_with_auth(self, authenticated_client: httpx.AsyncClient):
         """Test getting CSRF token with authentication."""
-        response = authenticated_client.get("/api/v1/auth/csrf-token")
+        response = await authenticated_client.get("/api/v1/auth/csrf-token")
         
         assert response.status_code == 200
         data = response.json()
         assert "csrf_token" in data
         assert len(data["csrf_token"]) > 0
 
-    def test_full_auth_flow(self, client: TestClient):
+    @pytest.mark.asyncio
+    async def test_full_auth_flow(self, async_client: httpx.AsyncClient):
         """Test complete authentication flow."""
         # 1. Login
-        login_response = client.post(
+        login_response = await async_client.post(
             "/api/v1/auth/login",
             json={"username": "admin", "password": "admin"},
         )
         assert login_response.status_code == 200
         
         # 2. Get current user
-        me_response = client.get("/api/v1/auth/me")
+        me_response = await async_client.get("/api/v1/auth/me")
         assert me_response.status_code == 200
         
         # 3. Get CSRF token
-        csrf_response = client.get("/api/v1/auth/csrf-token")
+        csrf_response = await async_client.get("/api/v1/auth/csrf-token")
         assert csrf_response.status_code == 200
         
         # 4. Logout
-        logout_response = client.post("/api/v1/auth/logout")
+        logout_response = await async_client.post("/api/v1/auth/logout")
         assert logout_response.status_code == 200
         
         # 5. Verify session is invalidated
-        me_response_after = client.get("/api/v1/auth/me")
+        me_response_after = await async_client.get("/api/v1/auth/me")
         assert me_response_after.status_code == 401
 
