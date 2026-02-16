@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useSessionStore } from '../stores/sessionStore'
 import { useQueryStore } from '../stores/queryStore'
@@ -6,32 +6,34 @@ import { useGraphStore } from '../stores/graphStore'
 import { useAuthStore } from '../stores/authStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import QueryEditor, { getQueryParams } from '../components/QueryEditor'
-import GraphView, { type GraphNode, type GraphEdge } from '../components/GraphView'
-import TableView from '../components/TableView'
 import MetadataSidebar from '../components/MetadataSidebar'
-import GraphControls from '../components/GraphControls'
-import NodeContextMenu from '../components/NodeContextMenu'
 import SettingsModal from '../components/SettingsModal'
+import TabBar from '../components/TabBar'
+import ResultTab from '../components/ResultTab'
 import { graphAPI } from '../services/graph'
-
-type ViewMode = 'graph' | 'table'
 
 export default function WorkspacePage() {
   const navigate = useNavigate()
   const { status, refreshStatus, disconnect } = useSessionStore()
   const { authenticated, logout: authLogout, checkAuth } = useAuthStore()
   const {
+    tabs,
+    activeTabId,
     query,
     params,
     currentGraph,
-    result,
     loading,
     error,
     setQuery,
     setCurrentGraph,
+    createTab,
+    closeTab,
+    setActiveTab,
+    updateTab,
+    pinTab,
+    unpinTab,
     executeQuery,
     cancelQuery,
-    clearResult,
     clearError,
     history,
     mergeGraphElements,
@@ -39,24 +41,22 @@ export default function WorkspacePage() {
   } = useQueryStore()
 
   const {
-    defaultViewMode,
     tablePageSize,
     defaultLayout,
   } = useSettingsStore()
   
-  const [viewMode, setViewMode] = useState<ViewMode>(() => {
-    // Initialize view mode from settings
-    if (defaultViewMode === 'auto') {
-      return 'graph' // Default to graph, will auto-switch if needed
-    }
-    return defaultViewMode
-  })
-  const [showControls, setShowControls] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
-  const [contextMenu, setContextMenu] = useState<{x: number, y: number, nodeId: string} | null>(null)
   const [expanding, setExpanding] = useState(false)
-  const [exportGraph, setExportGraph] = useState<(() => Promise<void>) | null>(null)
   const { setSelectedNode, layout, setLayout } = useGraphStore()
+  
+  // Initialize with a default tab if none exists
+  useEffect(() => {
+    if (tabs.length === 0) {
+      createTab('Query 1')
+    } else if (!activeTabId) {
+      setActiveTab(tabs[0].id)
+    }
+  }, []) // Only run on mount
   
   // Apply default layout from settings on mount
   useEffect(() => {
@@ -88,27 +88,27 @@ export default function WorkspacePage() {
   }
 
   const handleExecute = async () => {
-    if (!currentGraph || !query.trim()) {
+    if (!activeTabId || !currentGraph || !query.trim()) {
       return
     }
 
     try {
       const queryParams = getQueryParams(params)
-      await executeQuery(currentGraph, query, queryParams)
+      await executeQuery(activeTabId, currentGraph, query, queryParams)
       
       // Auto-switch view based on result and visualization limits
-      if (result?.graph_elements && !result.visualization_warning) {
-        const hasElements =
-          (result.graph_elements.nodes?.length || 0) > 0 ||
-          (result.graph_elements.edges?.length || 0) > 0
-        if (hasElements) {
-          setViewMode('graph')
-        } else {
-          setViewMode('table')
+      const tab = tabs.find(t => t.id === activeTabId)
+      if (tab?.result) {
+        const result = tab.result
+        if (result.graph_elements && !result.visualization_warning) {
+          const hasElements =
+            (result.graph_elements.nodes?.length || 0) > 0 ||
+            (result.graph_elements.edges?.length || 0) > 0
+          const newViewMode = hasElements ? 'graph' : 'table'
+          updateTab(activeTabId, { viewMode: newViewMode })
+        } else if (result.visualization_warning) {
+          updateTab(activeTabId, { viewMode: 'table' })
         }
-      } else {
-        // If there's a visualization warning, force table view
-        setViewMode('table')
       }
     } catch (err) {
       // Error handled by store
@@ -117,46 +117,36 @@ export default function WorkspacePage() {
 
   const handleGraphSelect = (graphName: string) => {
     setCurrentGraph(graphName)
-    clearResult()
+    if (activeTabId) {
+      updateTab(activeTabId, { graph: graphName, result: null })
+    }
   }
 
   const handleQueryTemplate = (templateQuery: string) => {
     setQuery(templateQuery)
   }
 
-  // Extract available labels from graph elements
-  const availableLabels = useMemo(() => {
-    if (!result?.graph_elements) {
-      return { nodeLabels: [], edgeLabels: [] }
-    }
-
-    const nodeLabels = Array.from(
-      new Set(result.graph_elements.nodes?.map((n) => n.label) || [])
-    )
-    const edgeLabels = Array.from(
-      new Set(result.graph_elements.edges?.map((e) => e.label) || [])
-    )
-
-    return { nodeLabels, edgeLabels }
-  }, [result])
-
-  const handleNodeClick = (node: GraphNode) => {
-    setSelectedNode(node.id)
-    console.log('Node clicked:', node)
+  const handleTabClick = (tabId: string) => {
+    setActiveTab(tabId)
   }
 
-  const handleNodeRightClick = (node: GraphNode, event: MouseEvent) => {
-    event.preventDefault()
-    setSelectedNode(node.id)
-    setContextMenu({
-      x: event.clientX,
-      y: event.clientY,
-      nodeId: node.id,
-    })
+  const handleTabClose = (tabId: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (tabs.length <= 1) {
+      // Don't close the last tab, just clear it
+      updateTab(tabId, { query: '', result: null, error: null })
+      return
+    }
+    closeTab(tabId)
+  }
+
+  const handleNewTab = () => {
+    const newTabId = createTab()
+    setActiveTab(newTabId)
   }
 
   const handleExpandNode = async (nodeId: string) => {
-    if (!currentGraph || expanding) {
+    if (!activeTabId || !currentGraph || expanding) {
       return
     }
 
@@ -168,17 +158,16 @@ export default function WorkspacePage() {
       })
       
       // Merge expanded nodes and edges into existing result
-      mergeGraphElements(expandResult.nodes, expandResult.edges)
+      mergeGraphElements(activeTabId, expandResult.nodes, expandResult.edges)
     } catch (err) {
       console.error('Failed to expand node:', err)
-      // Could show error message to user
     } finally {
       setExpanding(false)
     }
   }
 
   const handleDeleteNode = async (nodeId: string) => {
-    if (!currentGraph) {
+    if (!activeTabId || !currentGraph) {
       return
     }
 
@@ -197,17 +186,18 @@ export default function WorkspacePage() {
       await graphAPI.deleteNode(currentGraph, nodeId, { detach: true })
       
       // Remove the node from the current result
-      if (result?.graph_elements) {
+      const tab = tabs.find(t => t.id === activeTabId)
+      if (tab?.result?.graph_elements) {
         // Remove node from nodes array
-        const updatedNodes = result.graph_elements.nodes?.filter((n) => n.id !== nodeId) || []
+        const updatedNodes = tab.result.graph_elements.nodes?.filter((n) => n.id !== nodeId) || []
         
         // Remove edges connected to this node
-        const updatedEdges = result.graph_elements.edges?.filter(
+        const updatedEdges = tab.result.graph_elements.edges?.filter(
           (e) => e.source !== nodeId && e.target !== nodeId
         ) || []
         
         // Update result in the store
-        updateResult((currentResult) => {
+        updateResult(activeTabId, (currentResult) => {
           if (!currentResult) return null
           return {
             ...currentResult,
@@ -218,18 +208,23 @@ export default function WorkspacePage() {
           }
         })
         
-        // Show success message
-        // Optionally, you could show a toast notification instead
         console.log(`Node ${nodeId} deleted successfully`)
       }
       
       // Clear selection
       setSelectedNode(null)
-      setContextMenu(null)
     } catch (err) {
       console.error('Failed to delete node:', err)
       alert('Failed to delete node. Please try again.')
     }
+  }
+  
+  const handleTabViewModeChange = (tabId: string, mode: 'graph' | 'table') => {
+    updateTab(tabId, { viewMode: mode })
+  }
+  
+  const handleTabExportReady = (_tabId: string, _exportFn: () => Promise<void>) => {
+    // Store export function for the tab if needed
   }
 
   if (!status || !status.connected) {
@@ -238,24 +233,7 @@ export default function WorkspacePage() {
     )
   }
 
-  // Convert graph elements to GraphView format
-  const graphNodes: GraphNode[] =
-    result?.graph_elements?.nodes?.map((n) => ({
-      id: n.id,
-      label: n.label,
-      properties: n.properties,
-    })) || []
-
-  const graphEdges: GraphEdge[] =
-    result?.graph_elements?.edges?.map((e) => ({
-      id: e.id,
-      label: e.label,
-      source: e.source,
-      target: e.target,
-      properties: e.properties,
-    })) || []
-
-  const hasGraphData = graphNodes.length > 0 || graphEdges.length > 0
+  const activeTab = tabs.find(t => t.id === activeTabId)
 
   return (
     <div style={{ display: 'flex', height: '100vh', flexDirection: 'column' }}>
@@ -299,6 +277,19 @@ export default function WorkspacePage() {
 
         {/* Editor and Results */}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+          {/* Tab Bar */}
+          {tabs.length > 0 && (
+            <TabBar
+              tabs={tabs}
+              activeTabId={activeTabId}
+              onTabClick={handleTabClick}
+              onTabClose={handleTabClose}
+              onNewTab={handleNewTab}
+              onTabPin={pinTab}
+              onTabUnpin={unpinTab}
+            />
+          )}
+
           {/* Query Editor */}
           <div
             style={{
@@ -312,7 +303,7 @@ export default function WorkspacePage() {
               value={query}
               onChange={setQuery}
               onExecute={handleExecute}
-              onCancel={cancelQuery}
+              onCancel={() => activeTabId && cancelQuery(activeTabId)}
               loading={loading}
               history={history}
             />
@@ -329,7 +320,7 @@ export default function WorkspacePage() {
               >
                 <strong>Error:</strong> {error}
                 <button
-                  onClick={clearError}
+                  onClick={() => activeTabId && clearError(activeTabId)}
                   style={{
                     float: 'right',
                     padding: '0.25rem 0.5rem',
@@ -348,162 +339,19 @@ export default function WorkspacePage() {
             )}
           </div>
 
-          {/* Results */}
-          {result && (
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-              {/* View mode toggle */}
-              <div
-                style={{
-                  padding: '0.5rem 1rem',
-                  borderBottom: '1px solid #ccc',
-                  display: 'flex',
-                  gap: '0.5rem',
-                  backgroundColor: '#f9f9f9',
-                  alignItems: 'center',
-                }}
-              >
-                <button
-                  onClick={() => setViewMode('graph')}
-                  disabled={!hasGraphData || !!result.visualization_warning}
-                  style={{
-                    padding: '0.5rem 1rem',
-                    cursor: hasGraphData && !result.visualization_warning ? 'pointer' : 'not-allowed',
-                    border: '1px solid #ccc',
-                    borderRadius: '4px',
-                    backgroundColor: viewMode === 'graph' ? '#007bff' : 'white',
-                    color: viewMode === 'graph' ? 'white' : 'black',
-                    opacity: hasGraphData && !result.visualization_warning ? 1 : 0.5,
-                  }}
-                >
-                  Graph View
-                  {result.graph_elements && (
-                    <span style={{ marginLeft: '0.5rem', fontSize: '0.85rem' }}>
-                      ({result.graph_elements.nodes?.length || 0} nodes, {result.graph_elements.edges?.length || 0} edges)
-                    </span>
-                  )}
-                  {result.visualization_warning && (
-                    <span style={{ marginLeft: '0.5rem', fontSize: '0.85rem', color: '#dc3545' }}>
-                      (Too large)
-                    </span>
-                  )}
-                </button>
-                <button
-                  onClick={() => setViewMode('table')}
-                  style={{
-                    padding: '0.5rem 1rem',
-                    cursor: 'pointer',
-                    border: '1px solid #ccc',
-                    borderRadius: '4px',
-                    backgroundColor: viewMode === 'table' ? '#007bff' : 'white',
-                    color: viewMode === 'table' ? 'white' : 'black',
-                  }}
-                >
-                  Table View ({result.row_count} rows)
-                </button>
-                {viewMode === 'graph' && hasGraphData && (
-                  <>
-                    {exportGraph && (
-                      <button
-                        onClick={async () => {
-                          try {
-                            await exportGraph()
-                          } catch (error) {
-                            console.error('Failed to export graph:', error)
-                            alert('Failed to export graph. Please try again.')
-                          }
-                        }}
-                        style={{
-                          marginLeft: 'auto',
-                          padding: '0.5rem 1rem',
-                          cursor: 'pointer',
-                          border: '1px solid #ccc',
-                          borderRadius: '4px',
-                          backgroundColor: 'white',
-                          color: 'black',
-                        }}
-                        title="Export graph as PNG"
-                      >
-                        Export PNG
-                      </button>
-                    )}
-                    <button
-                      onClick={() => setShowControls(!showControls)}
-                      style={{
-                        marginLeft: exportGraph ? '0.5rem' : 'auto',
-                        padding: '0.5rem 1rem',
-                        cursor: 'pointer',
-                        border: '1px solid #ccc',
-                        borderRadius: '4px',
-                        backgroundColor: showControls ? '#007bff' : 'white',
-                        color: showControls ? 'white' : 'black',
-                      }}
-                    >
-                      {showControls ? 'Hide' : 'Show'} Controls
-                    </button>
-                  </>
-                )}
-              </div>
-
-              {/* Result content */}
-              <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
-                {viewMode === 'graph' && hasGraphData ? (
-                  <>
-                    <GraphView
-                      nodes={graphNodes}
-                      edges={graphEdges}
-                      width={window.innerWidth - 300}
-                      height={window.innerHeight - 400}
-                      onNodeClick={handleNodeClick}
-                      onNodeRightClick={handleNodeRightClick}
-                      onExportReady={setExportGraph}
-                    />
-                    {showControls && (
-                      <GraphControls
-                        availableNodeLabels={availableLabels.nodeLabels}
-                        availableEdgeLabels={availableLabels.edgeLabels}
-                        onClose={() => setShowControls(false)}
-                      />
-                    )}
-                    {contextMenu && (
-                      <NodeContextMenu
-                        x={contextMenu.x}
-                        y={contextMenu.y}
-                        nodeId={contextMenu.nodeId}
-                        onExpand={handleExpandNode}
-                        onDelete={handleDeleteNode}
-                        onClose={() => setContextMenu(null)}
-                      />
-                    )}
-                    {expanding && (
-                      <div
-                        style={{
-                          position: 'absolute',
-                          top: '10px',
-                          right: '10px',
-                          padding: '0.5rem 1rem',
-                          backgroundColor: '#fff3cd',
-                          border: '1px solid #ffc107',
-                          borderRadius: '4px',
-                          color: '#856404',
-                          zIndex: 1001,
-                        }}
-                      >
-                        Expanding neighborhood...
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <TableView
-                    columns={result.columns}
-                    rows={result.rows}
-                    pageSize={tablePageSize}
-                  />
-                )}
-              </div>
-            </div>
+          {/* Results - Show active tab's result */}
+          {activeTab && (
+            <ResultTab
+              tab={activeTab}
+              tablePageSize={tablePageSize}
+              onViewModeChange={(mode) => handleTabViewModeChange(activeTab.id, mode)}
+              onNodeExpand={handleExpandNode}
+              onNodeDelete={handleDeleteNode}
+              onExportReady={(exportFn) => handleTabExportReady(activeTab.id, exportFn)}
+            />
           )}
 
-          {!result && !loading && (
+          {!activeTab && (
             <div
               style={{
                 flex: 1,
@@ -513,7 +361,7 @@ export default function WorkspacePage() {
                 color: '#999',
               }}
             >
-              Execute a query to see results
+              No active tab. Create a new tab to start querying.
             </div>
           )}
         </div>
