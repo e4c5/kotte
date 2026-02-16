@@ -144,9 +144,15 @@ async def connected_client(authenticated_client):
         mock_conn.get_backend_pid = AsyncMock(return_value=12345)
         mock_conn.cancel_backend = AsyncMock()
         
-        # Patch DatabaseConnection
-        with patch('app.api.v1.session.DatabaseConnection') as mock_db_class:
+        # Patch DatabaseConnection for all modules that use it
+        with patch('app.api.v1.session.DatabaseConnection') as mock_db_class, \
+             patch('app.api.v1.query.DatabaseConnection', mock_db_class), \
+             patch('app.api.v1.graph.DatabaseConnection', mock_db_class):
             mock_db_class.return_value = mock_conn
+            
+            # Store mock for tests to access
+            authenticated_client._mock_db = mock_conn
+            authenticated_client._mock_db_class = mock_db_class
             
             # Connect
             connect_response = await authenticated_client.post(

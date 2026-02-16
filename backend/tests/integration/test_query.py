@@ -26,11 +26,14 @@ class TestQueryExecution:
         assert data["error"]["code"] == "DB_UNAVAILABLE"
 
     @pytest.mark.asyncio
-    @patch('app.api.v1.query.DatabaseConnection')
-    async def test_execute_query_success(self, mock_db_class, connected_client: httpx.AsyncClient):
+    async def test_execute_query_success(self, connected_client: httpx.AsyncClient):
         """Test successful query execution."""
-        # Mock database connection with query results
-        mock_db = connected_client._mock_db if hasattr(connected_client, '_mock_db') else MagicMock()
+        # Get the mock from the connected_client fixture
+        # The connected_client fixture already has a patched DatabaseConnection
+        from app.api.v1.session import DatabaseConnection
+        
+        # Mock graph exists
+        DatabaseConnection.return_value.execute_scalar = AsyncMock(return_value=1)  # Graph ID = 1
         
         # Mock query result with graph elements
         mock_result = [
@@ -52,7 +55,8 @@ class TestQueryExecution:
             },
         ]
         
-        mock_db.execute_query = AsyncMock(return_value=mock_result)
+        DatabaseConnection.return_value.execute_query = AsyncMock(return_value=mock_result)
+        DatabaseConnection.return_value.get_backend_pid = AsyncMock(return_value=12345)
         
         response = await connected_client.post(
             "/api/v1/queries/execute",
@@ -70,11 +74,12 @@ class TestQueryExecution:
         assert data["row_count"] >= 0
 
     @pytest.mark.asyncio
-    @patch('app.api.v1.query.DatabaseConnection')
-    async def test_execute_query_with_params(self, mock_db_class, connected_client: httpx.AsyncClient):
+    async def test_execute_query_with_params(self, connected_client: httpx.AsyncClient):
         """Test query execution with parameters."""
-        mock_db = connected_client._mock_db if hasattr(connected_client, '_mock_db') else MagicMock()
+        mock_db = connected_client._mock_db
+        mock_db.execute_scalar = AsyncMock(return_value=1)  # Graph exists
         mock_db.execute_query = AsyncMock(return_value=[])
+        mock_db.get_backend_pid = AsyncMock(return_value=12345)
         
         response = await connected_client.post(
             "/api/v1/queries/execute",
@@ -91,10 +96,9 @@ class TestQueryExecution:
         assert call_args is not None
 
     @pytest.mark.asyncio
-    @patch('app.api.v1.query.DatabaseConnection')
-    async def test_execute_query_invalid_graph(self, mock_db_class, connected_client: httpx.AsyncClient):
+    async def test_execute_query_invalid_graph(self, connected_client: httpx.AsyncClient):
         """Test query execution with invalid graph name."""
-        mock_db = connected_client._mock_db if hasattr(connected_client, '_mock_db') else MagicMock()
+        mock_db = connected_client._mock_db
         # Mock graph not found
         mock_db.execute_scalar = AsyncMock(return_value=None)
         
@@ -112,8 +116,7 @@ class TestQueryExecution:
         assert data["error"]["code"] == "GRAPH_NOT_FOUND"
 
     @pytest.mark.asyncio
-    @patch('app.api.v1.query.DatabaseConnection')
-    async def test_execute_query_validation_error(self, mock_db_class, connected_client: httpx.AsyncClient):
+    async def test_execute_query_validation_error(self, connected_client: httpx.AsyncClient):
         """Test query execution with validation errors."""
         # Test invalid graph name format
         response = await connected_client.post(
@@ -130,8 +133,7 @@ class TestQueryExecution:
         assert data["error"]["code"] == "QUERY_VALIDATION_ERROR"
 
     @pytest.mark.asyncio
-    @patch('app.api.v1.query.DatabaseConnection')
-    async def test_execute_query_too_long(self, mock_db_class, connected_client: httpx.AsyncClient):
+    async def test_execute_query_too_long(self, connected_client: httpx.AsyncClient):
         """Test query execution with query that's too long."""
         # Create a query that exceeds max length (1MB)
         huge_query = "MATCH (n) RETURN n " + "x" * (1000000 + 1)
@@ -150,10 +152,11 @@ class TestQueryExecution:
         assert data["error"]["code"] == "QUERY_VALIDATION_ERROR"
 
     @pytest.mark.asyncio
-    @patch('app.api.v1.query.DatabaseConnection')
-    async def test_execute_query_graph_elements_extraction(self, mock_db_class, connected_client: httpx.AsyncClient):
+    async def test_execute_query_graph_elements_extraction(self, connected_client: httpx.AsyncClient):
         """Test that graph elements are properly extracted from query results."""
-        mock_db = connected_client._mock_db if hasattr(connected_client, '_mock_db') else MagicMock()
+        mock_db = connected_client._mock_db
+        mock_db.execute_scalar = AsyncMock(return_value=1)  # Graph exists
+        mock_db.get_backend_pid = AsyncMock(return_value=12345)
         
         # Mock result with nodes and edges
         mock_result = [
@@ -176,7 +179,6 @@ class TestQueryExecution:
         ]
         
         mock_db.execute_query = AsyncMock(return_value=mock_result)
-        mock_db.execute_scalar = AsyncMock(return_value=1)  # Graph exists
         
         response = await connected_client.post(
             "/api/v1/queries/execute",
@@ -194,11 +196,11 @@ class TestQueryExecution:
             assert "edges" in data["graph_elements"]
 
     @pytest.mark.asyncio
-    @patch('app.api.v1.query.DatabaseConnection')
-    async def test_execute_query_visualization_warning(self, mock_db_class, connected_client: httpx.AsyncClient):
+    async def test_execute_query_visualization_warning(self, connected_client: httpx.AsyncClient):
         """Test that visualization warning is returned for large results."""
-        mock_db = connected_client._mock_db if hasattr(connected_client, '_mock_db') else MagicMock()
+        mock_db = connected_client._mock_db
         mock_db.execute_scalar = AsyncMock(return_value=1)  # Graph exists
+        mock_db.get_backend_pid = AsyncMock(return_value=12345)
         
         # Create mock result with many nodes (exceeding limit)
         many_nodes = []
@@ -232,13 +234,12 @@ class TestQueryCancellation:
     """Integration tests for query cancellation."""
 
     @pytest.mark.asyncio
-    @patch('app.api.v1.query.DatabaseConnection')
-    async def test_cancel_query_success(self, mock_db_class, connected_client: httpx.AsyncClient):
+    async def test_cancel_query_success(self, connected_client: httpx.AsyncClient):
         """Test successful query cancellation."""
-        mock_db = connected_client._mock_db if hasattr(connected_client, '_mock_db') else MagicMock()
+        mock_db = connected_client._mock_db
         mock_db.execute_scalar = AsyncMock(return_value=1)  # Graph exists
         mock_db.get_backend_pid = AsyncMock(return_value=12345)
-        mock_db.cancel_backend = AsyncMock()
+        mock_db.cancel_backend = AsyncMock(return_value=True)
         
         # Execute a query first to get request_id
         mock_db.execute_query = AsyncMock(return_value=[])
@@ -275,14 +276,19 @@ class TestQueryCancellation:
         assert response.status_code in [400, 404]
 
     @pytest.mark.asyncio
-    @patch('app.api.v1.query.DatabaseConnection')
-    async def test_cancel_query_without_connection(self, mock_db_class, authenticated_client: httpx.AsyncClient):
+    async def test_cancel_query_without_connection(self, authenticated_client: httpx.AsyncClient):
         """Test canceling query without database connection."""
+        # Query cancellation doesn't require DB connection, just session
+        # But the query must be registered first
         response = await authenticated_client.post(
             "/api/v1/queries/test-request-id/cancel",
             json={"reason": "Test"},
         )
         
-        # Should fail because no database connection
-        assert response.status_code == 500
+        # Should fail because query not found (not registered) - 404 is the correct response
+        # The endpoint returns 404 when query is not found, which is correct behavior
+        assert response.status_code == 404
+        data = response.json()
+        assert "error" in data
+        assert "code" in data["error"]
 
