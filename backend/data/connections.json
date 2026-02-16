@@ -1,0 +1,56 @@
+{
+  "user:testuser": {
+    "f903ef23-e5c6-40d1-8197-0505aca4a84c": {
+      "id": "f903ef23-e5c6-40d1-8197-0505aca4a84c",
+      "user_id": "testuser",
+      "name": "Test Connection",
+      "host": "localhost",
+      "port": 5432,
+      "database": "test_db",
+      "encrypted_username": "Z0FBQUFBQnBrbmdwMmJIZm1SdkVCX3BzMWlqU19XZGMwVU04bnR0czFiWGtDWENUSmhJRVlsWldiMTRkYThpcmZpZks2SE9xWW9Fdnc5UFFRNTQ1b0hVTFFzZWplWjJCc2c9PQ==",
+      "encrypted_password": "Z0FBQUFBQnBrbmdwZDFPX19RSDJ1VU5neTZNeUZZcjZUQXd2ZVh6ai1lc2lrbXZzVVpYbTlZcWllYmE2ZWtyc2dCT01LYWQ0VmxZVXdFUHdnRVo1UzR2Nzg3QkxMUTdTNFE9PQ==",
+      "sslmode": null,
+      "created_at": "2026-02-16T01:51:37.659835+00:00",
+      "updated_at": "2026-02-16T01:51:37.659835+00:00"
+    },
+    "80dfbab3-131b-4ffd-adc3-cf7595f128b3": {
+      "id": "80dfbab3-131b-4ffd-adc3-cf7595f128b3",
+      "user_id": "testuser",
+      "name": "Duplicate Test",
+      "host": "localhost",
+      "port": 5432,
+      "database": "test_db",
+      "encrypted_username": "Z0FBQUFBQnBrbmdwak00WC10VWVZLVFSVXBGYTJmcUhTTjc4RkJRdC1kUWxJbVJXdV96NUROVXZLNnNfbnRxek1wZ2JUQlRJcGVWc05FUkFhUk9mN2FVT2VmVjc4SG9tRUE9PQ==",
+      "encrypted_password": "Z0FBQUFBQnBrbmdwYTE5UEF5RnpPZlJjWGZDcW9UU0N4cS1xcWJCaWgzUHZOMl8wWVRlUVZ3SlNQcURNU2lkX082MDQ4eW9LdEN0ZkhoQ1RqLUp1OUFqUlRxSnhFdkVGWXc9PQ==",
+      "sslmode": null,
+      "created_at": "2026-02-16T01:51:37.811467+00:00",
+      "updated_at": "2026-02-16T01:51:37.811467+00:00"
+    },
+    "344afdb3-5162-4c21-8a24-4e6add9861a1": {
+      "id": "344afdb3-5162-4c21-8a24-4e6add9861a1",
+      "user_id": "testuser",
+      "name": "List Test Connection",
+      "host": "localhost",
+      "port": 5432,
+      "database": "test_db",
+      "encrypted_username": "Z0FBQUFBQnBrbmdxUnMyU3ZiN0lDeGw1UktjTXp4NGZSRXJCcXVPMThSbVBNdWRvTDIzd0t0ZTFsMmdnSXg2Z3B2cjRIT0dKYnVMNUctMnF4YW9WNXZLRjMyYjBXNENZTHc9PQ==",
+      "encrypted_password": "Z0FBQUFBQnBrbmdxeGVMZlFELVRTQTFod201cjU1a1o5ejRHOGdxd2NWTTdfQjZ3MVFBZ2c2S1VQczdUMFIyc0JENUlTemZNMFUwSVRvS1FIa3hxdnhDQWRGU3FFOXpsQlE9PQ==",
+      "sslmode": null,
+      "created_at": "2026-02-16T01:51:37.992608+00:00",
+      "updated_at": "2026-02-16T01:51:37.992608+00:00"
+    },
+    "f05e7e34-0be7-4685-be0f-8cc692415fde": {
+      "id": "f05e7e34-0be7-4685-be0f-8cc692415fde",
+      "user_id": "testuser",
+      "name": "Get Test Connection",
+      "host": "localhost",
+      "port": 5432,
+      "database": "test_db",
+      "encrypted_username": "Z0FBQUFBQnBrbmdxMEJVOUoyQ0k1NC1ZWVJKaXVsdEJITzZ4M3RoOE0wYkE2d2FHeWc1VmM5bkVqdzNmY0N6bEFjb1N6SE9GVy1mTXJlRXJvX0RYU0dqY2lYZWRwbTBnU0E9PQ==",
+      "encrypted_password": "Z0FBQUFBQnBrbmdxRGFLeTlaQ3VGS2FrdGQzSUNUajAxU3V1TXpKX1NqNkE2RHpXUVAxbHhjaXpEblhyV1BsMWEtV3hiWHAtVWtFTW1tdlpXUERUT2Q1azZJcHppa25FbFE9PQ==",
+      "sslmode": null,
+      "created_at": "2026-02-16T01:51:38.138826+00:00",
+      "updated_at": "2026-02-16T01:51:38.138826+00:00"
+    }
+  }
+}

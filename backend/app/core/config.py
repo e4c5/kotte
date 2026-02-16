@@ -54,7 +54,7 @@ class Settings(BaseSettings):
 
     # Credential Storage
     credential_storage_type: str = "json_file"  # json_file, sqlite, postgresql, redis
-    credential_storage_path: str = "/var/lib/kotte/connections.json"
+    credential_storage_path: str = "./data/connections.json"  # Default to local data directory
     master_encryption_key: str = ""  # Must be set from environment
 
     # Security

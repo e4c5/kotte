@@ -31,7 +31,24 @@ class ConnectionStorage:
 
     def _ensure_storage_file(self):
         """Create storage file if it doesn't exist."""
-        self.storage_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            self.storage_path.parent.mkdir(parents=True, exist_ok=True)
+        except (OSError, PermissionError) as e:
+            # If we can't create the directory, try using a local path
+            if self.storage_path.is_absolute() and str(self.storage_path).startswith("/var"):
+                # Fallback to local data directory
+                local_path = Path("./data/connections.json")
+                logger.warning(
+                    f"Could not create storage directory {self.storage_path.parent}, "
+                    f"using fallback path {local_path.parent}: {e}"
+                )
+                self.storage_path = local_path
+                try:
+                    self.storage_path.parent.mkdir(parents=True, exist_ok=True)
+                except OSError:
+                    logger.error(f"Could not create fallback storage directory: {e}")
+                    raise
+        
         if not self.storage_path.exists():
             # Create empty file
             self._write_connections({})
