@@ -12,6 +12,7 @@ from app.core.config import settings
 from app.core.errors import setup_error_handlers
 from app.core.middleware import (
     CSRFMiddleware,
+    MetricsMiddleware,
     RateLimitMiddleware,
     RequestIDMiddleware,
 )
@@ -49,6 +50,9 @@ def create_app() -> FastAPI:
 
     # Request ID middleware
     app.add_middleware(RequestIDMiddleware)
+    
+    # Metrics middleware (collect metrics for all requests)
+    app.add_middleware(MetricsMiddleware)
 
     # Rate limiting middleware (before CSRF to prevent abuse)
     if settings.rate_limit_enabled:

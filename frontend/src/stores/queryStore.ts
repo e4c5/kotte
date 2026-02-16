@@ -3,6 +3,7 @@
  */
 
 import { create } from 'zustand'
+import { persist } from 'zustand/middleware'
 import { queryAPI, type QueryExecuteRequest, type QueryExecuteResponse } from '../services/query'
 
 interface QueryState {
@@ -34,16 +35,18 @@ interface QueryState {
   updateResult: (updater: (result: QueryExecuteResponse | null) => QueryExecuteResponse | null) => void
 }
 
-export const useQueryStore = create<QueryState>((set, get) => ({
-  query: '',
-  params: '{}',
-  currentGraph: null,
-  result: null,
-  loading: false,
-  error: null,
-  currentRequestId: null,
-  history: [],
-  historyIndex: -1,
+export const useQueryStore = create<QueryState>()(
+  persist(
+    (set, get) => ({
+      query: '',
+      params: '{}',
+      currentGraph: null,
+      result: null,
+      loading: false,
+      error: null,
+      currentRequestId: null,
+      history: [],
+      historyIndex: -1,
 
   setQuery: (query: string) => set({ query }),
   
@@ -148,5 +151,15 @@ export const useQueryStore = create<QueryState>((set, get) => ({
       },
     })
   },
-}))
+    }),
+    {
+      name: 'kotte-query-store',
+      partialize: (state) => ({
+        // Only persist non-ephemeral state
+        history: state.history,
+        // Don't persist: query, params, currentGraph, result, loading, error, currentRequestId
+      }),
+    }
+  )
+)
 

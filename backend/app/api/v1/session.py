@@ -8,6 +8,7 @@ from starlette.responses import JSONResponse
 from app.core.auth import get_session, session_manager
 from app.core.database import DatabaseConnection
 from app.core.errors import APIException, ErrorCode, ErrorCategory
+from app.core.metrics import metrics
 from app.models.session import (
     ConnectRequest,
     ConnectResponse,
@@ -42,10 +43,14 @@ async def connect(
 
     try:
         await db_conn.connect()
+        metrics.record_db_connection_attempt("success")
     except APIException:
+        metrics.record_db_connection_attempt("failed")
         raise
     except Exception as e:
         logger.exception("Unexpected error during connection")
+        metrics.record_db_connection_attempt("failed")
+        metrics.record_error(ErrorCode.DB_CONNECT_FAILED, ErrorCategory.UPSTREAM)
         raise APIException(
             code=ErrorCode.DB_CONNECT_FAILED,
             message=f"Connection failed: {str(e)}",
@@ -75,6 +80,9 @@ async def connect(
         f"Session {session_id[:8]}... connected to {request.connection.database}"
     )
 
+    # Record metrics
+    metrics.record_session_creation()
+
     return ConnectResponse(
         session_id=session_id,
         connected=True,
@@ -102,6 +110,8 @@ async def disconnect(
     # Delete session
     if session_id:
         session_manager.delete_session(session_id)
+        metrics.record_db_connection_attempt("disconnect")
+        metrics.record_session_destruction()
 
     # Clear session cookie
     http_request.session.clear()

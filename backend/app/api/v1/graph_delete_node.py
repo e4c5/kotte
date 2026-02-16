@@ -8,6 +8,7 @@ from app.core.auth import get_session
 from app.core.database import DatabaseConnection
 from app.core.errors import APIException, ErrorCode, ErrorCategory
 from app.core.validation import validate_graph_name
+from app.core.metrics import metrics
 from app.models.graph import NodeDeleteResponse
 from app.services.agtype import AgTypeParser
 
@@ -156,6 +157,9 @@ async def delete_node(
         logger.info(
             f"Deleted node {node_id} from graph {validated_graph_name} (detach={detach}, edges_deleted={edges_deleted})"
         )
+        
+        # Record metrics
+        metrics.record_node_operation("delete", validated_graph_name)
         
         return NodeDeleteResponse(
             deleted=True,

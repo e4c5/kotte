@@ -3,12 +3,13 @@
 import logging
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response
 from pydantic import BaseModel
 
 from app.core.auth import get_session
 from app.core.database import DatabaseConnection
 from app.core.errors import APIException, ErrorCode, ErrorCategory
+from app.core.metrics import metrics
 
 logger = logging.getLogger(__name__)
 
@@ -89,5 +90,20 @@ async def readiness_check(
         status="ready",
         timestamp=datetime.now(timezone.utc).isoformat(),
         database=db_status,
+    )
+
+
+@router.get("/metrics")
+async def metrics_endpoint() -> Response:
+    """
+    Prometheus metrics endpoint.
+    
+    Returns metrics in Prometheus text format.
+    No authentication required (metrics are typically scraped by Prometheus).
+    """
+    metrics_data = metrics.get_metrics()
+    return Response(
+        content=metrics_data,
+        media_type="text/plain; version=0.0.4; charset=utf-8",
     )
 

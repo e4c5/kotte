@@ -12,6 +12,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.core.config import settings
 from app.core.errors import APIException, ErrorCode, ErrorCategory
+from app.core.metrics import metrics
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +30,55 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
         response.headers["X-Request-ID"] = request_id
 
         return response
+
+
+class MetricsMiddleware(BaseHTTPMiddleware):
+    """Collect HTTP request metrics for Prometheus."""
+
+    async def dispatch(
+        self, request: Request, call_next: Callable
+    ) -> Response:
+        # Skip metrics endpoint itself
+        if request.url.path == "/api/v1/metrics" or request.url.path == "/metrics":
+            return await call_next(request)
+
+        start_time = time.time()
+        method = request.method
+        # Normalize endpoint path (remove IDs, etc.)
+        endpoint = self._normalize_endpoint(request.url.path)
+
+        try:
+            response = await call_next(request)
+            status_code = response.status_code
+        except Exception as e:
+            status_code = 500
+            # Re-raise to let error handler deal with it
+            raise
+        finally:
+            duration = time.time() - start_time
+            metrics.record_http_request(method, endpoint, status_code, duration)
+
+        return response
+
+    def _normalize_endpoint(self, path: str) -> str:
+        """Normalize endpoint path for metrics (remove IDs, etc.)."""
+        # Remove API prefix
+        if path.startswith("/api/v1/"):
+            path = path[8:]
+        elif path.startswith("/api/"):
+            path = path[5:]
+
+        # Replace UUIDs and IDs with placeholders
+        import re
+        # Replace UUIDs
+        path = re.sub(r'/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', '/{id}', path)
+        # Replace numeric IDs
+        path = re.sub(r'/\d+', '/{id}', path)
+        # Replace graph names and node IDs in specific patterns
+        path = re.sub(r'/graphs/[^/]+', '/graphs/{graph}', path)
+        path = re.sub(r'/nodes/[^/]+', '/nodes/{node_id}', path)
+
+        return path
 
 
 class CSRFMiddleware(BaseHTTPMiddleware):

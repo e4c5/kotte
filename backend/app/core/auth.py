@@ -10,6 +10,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from app.core.config import settings
 from app.core.errors import APIException, ErrorCode, ErrorCategory
+from app.core.metrics import metrics
 
 logger = logging.getLogger(__name__)
 

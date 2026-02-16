@@ -4,12 +4,14 @@ import { useSessionStore } from '../stores/sessionStore'
 import { useQueryStore } from '../stores/queryStore'
 import { useGraphStore } from '../stores/graphStore'
 import { useAuthStore } from '../stores/authStore'
+import { useSettingsStore } from '../stores/settingsStore'
 import QueryEditor, { getQueryParams } from '../components/QueryEditor'
 import GraphView, { type GraphNode, type GraphEdge } from '../components/GraphView'
 import TableView from '../components/TableView'
 import MetadataSidebar from '../components/MetadataSidebar'
 import GraphControls from '../components/GraphControls'
 import NodeContextMenu from '../components/NodeContextMenu'
+import SettingsModal from '../components/SettingsModal'
 import { graphAPI } from '../services/graph'
 
 type ViewMode = 'graph' | 'table'
@@ -36,12 +38,32 @@ export default function WorkspacePage() {
     updateResult,
   } = useQueryStore()
 
-  const [viewMode, setViewMode] = useState<ViewMode>('graph')
+  const {
+    defaultViewMode,
+    tablePageSize,
+    defaultLayout,
+  } = useSettingsStore()
+  
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    // Initialize view mode from settings
+    if (defaultViewMode === 'auto') {
+      return 'graph' // Default to graph, will auto-switch if needed
+    }
+    return defaultViewMode
+  })
   const [showControls, setShowControls] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
   const [contextMenu, setContextMenu] = useState<{x: number, y: number, nodeId: string} | null>(null)
   const [expanding, setExpanding] = useState(false)
   const [exportGraph, setExportGraph] = useState<(() => Promise<void>) | null>(null)
-  const { setSelectedNode } = useGraphStore()
+  const { setSelectedNode, layout, setLayout } = useGraphStore()
+  
+  // Apply default layout from settings on mount
+  useEffect(() => {
+    if (defaultLayout && layout !== defaultLayout) {
+      setLayout(defaultLayout)
+    }
+  }, [defaultLayout, layout, setLayout])
 
   useEffect(() => {
     checkAuth().then(() => {
@@ -474,6 +496,7 @@ export default function WorkspacePage() {
                   <TableView
                     columns={result.columns}
                     rows={result.rows}
+                    pageSize={tablePageSize}
                   />
                 )}
               </div>
@@ -495,6 +518,12 @@ export default function WorkspacePage() {
           )}
         </div>
       </div>
+      {showSettings && (
+        <SettingsModal
+          isOpen={showSettings}
+          onClose={() => setShowSettings(false)}
+        />
+      )}
     </div>
   )
 }

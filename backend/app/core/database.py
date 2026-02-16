@@ -11,6 +11,7 @@ from psycopg.rows import dict_row
 
 from app.core.config import settings
 from app.core.errors import APIException, ErrorCode, ErrorCategory
+from app.core.metrics import metrics
 
 logger = logging.getLogger(__name__)
 
@@ -108,6 +109,7 @@ class DatabaseConnection:
             timeout: Query timeout in seconds (uses settings.query_timeout if None)
         """
         timeout = timeout or settings.query_timeout
+        start_time = time.time()
         async with self.connection.cursor() as cur:
             try:
                 # Execute with timeout
@@ -115,8 +117,14 @@ class DatabaseConnection:
                     cur.execute(query, params),
                     timeout=timeout,
                 )
-                return await cur.fetchall()
+                result = await cur.fetchall()
+                # Record query duration
+                duration = time.time() - start_time
+                metrics.record_db_query(duration)
+                return result
             except asyncio.TimeoutError:
+                duration = time.time() - start_time
+                metrics.record_db_query(duration)
                 logger.warning(f"Query timeout after {timeout} seconds")
                 raise APIException(
                     code=ErrorCode.QUERY_TIMEOUT,

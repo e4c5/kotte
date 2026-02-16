@@ -9,6 +9,8 @@ from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from app.core.metrics import metrics
+
 logger = logging.getLogger(__name__)
 
 
@@ -121,6 +123,9 @@ def create_error_response(
             "details": details,
         },
     )
+
+    # Record error metrics
+    metrics.record_error(code, category)
 
     return JSONResponse(
         status_code=status_code,

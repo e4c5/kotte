@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import time
 import uuid
 
 from fastapi import APIRouter, Depends
@@ -20,6 +21,7 @@ from app.models.query import (
 )
 from app.services.agtype import AgTypeParser
 from app.services.query_tracker import query_tracker
+from app.core.metrics import metrics
 
 logger = logging.getLogger(__name__)
 
@@ -127,6 +129,7 @@ async def execute_query(
         "params": params_json,
     }
 
+    query_start_time = time.time()
     try:
         # Execute query with parameters and timeout
         raw_rows = await db_conn.execute_query(
@@ -189,6 +192,15 @@ async def execute_query(
         # Unregister query on successful completion
         query_tracker.unregister_query(request_id)
 
+        # Record metrics
+        query_duration = time.time() - query_start_time
+        metrics.record_query_execution(
+            graph=validated_graph_name,
+            status="success",
+            duration=query_duration,
+            row_count=len(result_rows),
+        )
+
         return QueryExecuteResponse(
             columns=columns,
             rows=result_rows,
@@ -205,6 +217,13 @@ async def execute_query(
     except asyncio.TimeoutError:
         # Query timeout
         query_tracker.unregister_query(request_id)
+        query_duration = time.time() - query_start_time
+        metrics.record_query_execution(
+            graph=validated_graph_name,
+            status="timeout",
+            duration=query_duration,
+        )
+        metrics.record_error(ErrorCode.QUERY_TIMEOUT, ErrorCategory.UPSTREAM)
         raise APIException(
             code=ErrorCode.QUERY_TIMEOUT,
             message=f"Query execution timed out after {settings.query_timeout} seconds",
@@ -215,6 +234,7 @@ async def execute_query(
     except Exception as e:
         # Unregister query on error
         query_tracker.unregister_query(request_id)
+        query_duration = time.time() - query_start_time
         logger.exception(f"Query execution failed: {request.cypher[:100]}")
         # Try to determine error type
         error_msg = str(e)
@@ -224,6 +244,14 @@ async def execute_query(
         else:
             code = ErrorCode.QUERY_EXECUTION_ERROR
             category = ErrorCategory.UPSTREAM
+
+        # Record metrics
+        metrics.record_query_execution(
+            graph=validated_graph_name,
+            status="error",
+            duration=query_duration,
+        )
+        metrics.record_error(code, category)
 
         raise APIException(
             code=code,
