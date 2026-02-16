@@ -24,6 +24,14 @@ export interface GraphFilters {
   }>
 }
 
+export interface EdgeWidthMapping {
+  enabled: boolean
+  property: string | null
+  scaleType: 'linear' | 'log'
+  minWidth: number
+  maxWidth: number
+}
+
 interface GraphState {
   // Layout
   layout: LayoutType
@@ -35,6 +43,10 @@ interface GraphState {
   setNodeStyle: (label: string, style: Partial<LabelStyle>) => void
   setEdgeStyle: (label: string, style: Partial<LabelStyle>) => void
   resetStyles: () => void
+
+  // Edge width mapping
+  edgeWidthMapping: EdgeWidthMapping
+  setEdgeWidthMapping: (mapping: Partial<EdgeWidthMapping>) => void
 
   // Filtering
   filters: GraphFilters
@@ -70,6 +82,13 @@ export const useGraphStore = create<GraphState>()(
       layout: 'force',
       nodeStyles: {},
       edgeStyles: {},
+      edgeWidthMapping: {
+        enabled: false,
+        property: null,
+        scaleType: 'linear',
+        minWidth: 1,
+        maxWidth: 10,
+      },
       filters: {
         nodeLabels: new Set(),
         edgeLabels: new Set(),
@@ -80,6 +99,14 @@ export const useGraphStore = create<GraphState>()(
       hiddenNodes: new Set(),
 
       setLayout: (layout) => set({ layout }),
+
+      setEdgeWidthMapping: (mapping) =>
+        set((state) => ({
+          edgeWidthMapping: {
+            ...state.edgeWidthMapping,
+            ...mapping,
+          },
+        })),
 
       setNodeStyle: (label, style) =>
         set((state) => ({

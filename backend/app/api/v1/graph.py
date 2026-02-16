@@ -17,6 +17,8 @@ from app.models.graph import (
     MetaGraphEdge,
     NodeExpandRequest,
     NodeExpandResponse,
+    NodeDeleteRequest,
+    NodeDeleteResponse,
 )
 from app.services.metadata import MetadataService
 from app.services.agtype import AgTypeParser
@@ -162,8 +164,27 @@ async def get_graph_metadata(
                 db_conn, validated_graph_name, validated_label_name, "e"
             )
 
+            # Calculate property statistics for numeric properties
+            from app.models.graph import PropertyStatistics
+            property_stats = []
+            for prop in properties:
+                stats = await MetadataService.get_property_statistics(
+                    db_conn, validated_graph_name, validated_label_name, "e", prop
+                )
+                if stats["min"] is not None and stats["max"] is not None:
+                    property_stats.append(
+                        PropertyStatistics(
+                            property=prop, min=stats["min"], max=stats["max"]
+                        )
+                    )
+
             edge_labels.append(
-                EdgeLabel(label=label_name, count=int(count), properties=properties)
+                EdgeLabel(
+                    label=label_name,
+                    count=int(count),
+                    properties=properties,
+                    property_statistics=property_stats,
+                )
             )
 
         return GraphMetadata(

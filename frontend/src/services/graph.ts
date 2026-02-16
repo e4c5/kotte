@@ -15,10 +15,17 @@ export interface NodeLabel {
   properties: string[]
 }
 
+export interface PropertyStatistics {
+  property: string
+  min: number | null
+  max: number | null
+}
+
 export interface EdgeLabel {
   label: string
   count: number
   properties: string[]
+  property_statistics?: PropertyStatistics[]
 }
 
 export interface GraphMetadata {
@@ -68,6 +75,16 @@ export interface NodeExpandResponse {
   edge_count: number
 }
 
+export interface NodeDeleteRequest {
+  detach?: boolean
+}
+
+export interface NodeDeleteResponse {
+  deleted: boolean
+  node_id: string
+  edges_deleted: number
+}
+
 export const graphAPI = {
   listGraphs: async (): Promise<GraphInfo[]> => {
     const response = await apiClient.get<GraphInfo[]>('/graphs')
@@ -96,6 +113,23 @@ export const graphAPI = {
     const response = await apiClient.post<NodeExpandResponse>(
       `/graphs/${encodeURIComponent(graphName)}/nodes/${encodeURIComponent(nodeId)}/expand`,
       request
+    )
+    return response.data
+  },
+
+  deleteNode: async (
+    graphName: string,
+    nodeId: string,
+    request: NodeDeleteRequest = {}
+  ): Promise<NodeDeleteResponse> => {
+    // Use query params for the detach option (FastAPI DELETE endpoints accept query params)
+    const params = new URLSearchParams()
+    if (request.detach !== undefined) {
+      params.append('detach', String(request.detach))
+    }
+    const url = `/graphs/${encodeURIComponent(graphName)}/nodes/${encodeURIComponent(nodeId)}`
+    const response = await apiClient.delete<NodeDeleteResponse>(
+      params.toString() ? `${url}?${params.toString()}` : url
     )
     return response.data
   },

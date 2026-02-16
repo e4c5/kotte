@@ -5,6 +5,7 @@ export interface NodeContextMenuProps {
   y: number
   nodeId: string
   onExpand?: (nodeId: string) => void
+  onDelete?: (nodeId: string) => void
   onClose: () => void
 }
 
@@ -13,6 +14,7 @@ export default function NodeContextMenu({
   y,
   nodeId,
   onExpand,
+  onDelete,
   onClose,
 }: NodeContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null)
@@ -44,6 +46,13 @@ export default function NodeContextMenu({
     onClose()
   }
 
+  const handleDelete = () => {
+    if (onDelete) {
+      onDelete(nodeId)
+    }
+    onClose()
+  }
+
   return (
     <div
       ref={menuRef}
@@ -60,26 +69,52 @@ export default function NodeContextMenu({
         padding: '4px 0',
       }}
     >
-      <button
-        onClick={handleExpand}
-        style={{
-          width: '100%',
-          padding: '8px 16px',
-          textAlign: 'left',
-          border: 'none',
-          backgroundColor: 'transparent',
-          cursor: 'pointer',
-          fontSize: '14px',
-        }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.backgroundColor = '#f0f0f0'
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.backgroundColor = 'transparent'
-        }}
-      >
-        Expand Neighborhood
-      </button>
+      {onExpand && (
+        <button
+          onClick={handleExpand}
+          style={{
+            width: '100%',
+            padding: '8px 16px',
+            textAlign: 'left',
+            border: 'none',
+            backgroundColor: 'transparent',
+            cursor: 'pointer',
+            fontSize: '14px',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.backgroundColor = '#f0f0f0'
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.backgroundColor = 'transparent'
+          }}
+        >
+          Expand Neighborhood
+        </button>
+      )}
+      {onDelete && (
+        <button
+          onClick={handleDelete}
+          style={{
+            width: '100%',
+            padding: '8px 16px',
+            textAlign: 'left',
+            border: 'none',
+            backgroundColor: 'transparent',
+            cursor: 'pointer',
+            fontSize: '14px',
+            color: '#dc3545',
+            borderTop: onExpand ? '1px solid #eee' : 'none',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.backgroundColor = '#fff5f5'
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.backgroundColor = 'transparent'
+          }}
+        >
+          Delete Node
+        </button>
+      )}
     </div>
   )
 }

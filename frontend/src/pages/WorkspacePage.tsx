@@ -33,6 +33,7 @@ export default function WorkspacePage() {
     clearError,
     history,
     mergeGraphElements,
+    updateResult,
   } = useQueryStore()
 
   const [viewMode, setViewMode] = useState<ViewMode>('graph')
@@ -150,6 +151,61 @@ export default function WorkspacePage() {
       // Could show error message to user
     } finally {
       setExpanding(false)
+    }
+  }
+
+  const handleDeleteNode = async (nodeId: string) => {
+    if (!currentGraph) {
+      return
+    }
+
+    // Show confirmation dialog
+    const confirmMessage = 
+      'Are you sure you want to delete this node?\n\n' +
+      'This will delete the node and all its relationships.\n' +
+      'This action cannot be undone.'
+    
+    if (!confirm(confirmMessage)) {
+      return
+    }
+
+    try {
+      // Delete the node with detach=true to remove relationships
+      await graphAPI.deleteNode(currentGraph, nodeId, { detach: true })
+      
+      // Remove the node from the current result
+      if (result?.graph_elements) {
+        // Remove node from nodes array
+        const updatedNodes = result.graph_elements.nodes?.filter((n) => n.id !== nodeId) || []
+        
+        // Remove edges connected to this node
+        const updatedEdges = result.graph_elements.edges?.filter(
+          (e) => e.source !== nodeId && e.target !== nodeId
+        ) || []
+        
+        // Update result in the store
+        updateResult((currentResult) => {
+          if (!currentResult) return null
+          return {
+            ...currentResult,
+            graph_elements: {
+              nodes: updatedNodes,
+              edges: updatedEdges,
+            },
+          }
+        })
+        
+        // Show success message
+        // Optionally, you could show a toast notification instead
+        console.log(`Node ${nodeId} deleted successfully`)
+      }
+      
+      // Clear selection
+      setSelectedNode(null)
+      setContextMenu(null)
+    } catch (err) {
+      console.error('Failed to delete node:', err)
+      alert('Failed to delete node. Please try again.')
     }
   }
 
@@ -364,6 +420,7 @@ export default function WorkspacePage() {
                         y={contextMenu.y}
                         nodeId={contextMenu.nodeId}
                         onExpand={handleExpandNode}
+                        onDelete={handleDeleteNode}
                         onClose={() => setContextMenu(null)}
                       />
                     )}

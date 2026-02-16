@@ -22,6 +22,8 @@ export default function GraphControls({
     edgeStyles,
     setNodeStyle,
     setEdgeStyle,
+    edgeWidthMapping,
+    setEdgeWidthMapping,
     filters,
     toggleNodeLabel,
     toggleEdgeLabel,
@@ -439,6 +441,118 @@ export default function GraphControls({
                   </div>
                 )
               })}
+            </div>
+
+            <div style={{ marginBottom: '1.5rem' }}>
+              <h4 style={{ marginTop: 0, marginBottom: '0.75rem' }}>Edge Width Mapping</h4>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <input
+                    type="checkbox"
+                    checked={edgeWidthMapping.enabled}
+                    onChange={(e) =>
+                      setEdgeWidthMapping({ enabled: e.target.checked })
+                    }
+                  />
+                  <span>Enable width mapping</span>
+                </label>
+                {edgeWidthMapping.enabled && (
+                  <>
+                    <div>
+                      <label style={{ fontSize: '0.85rem', display: 'block', marginBottom: '0.25rem' }}>
+                        Property:
+                      </label>
+                      <input
+                        type="text"
+                        value={edgeWidthMapping.property || ''}
+                        onChange={(e) =>
+                          setEdgeWidthMapping({ property: e.target.value || null })
+                        }
+                        placeholder="Enter property name (e.g., weight, count)"
+                        style={{
+                          width: '100%',
+                          padding: '0.5rem',
+                          border: '1px solid #ccc',
+                          borderRadius: '4px',
+                        }}
+                      />
+                      <p style={{ fontSize: '0.75rem', color: '#666', marginTop: '0.25rem' }}>
+                        Enter a numeric property name to map to edge width
+                      </p>
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '0.85rem', display: 'block', marginBottom: '0.25rem' }}>
+                        Scale Type:
+                      </label>
+                      <select
+                        value={edgeWidthMapping.scaleType}
+                        onChange={(e) =>
+                          setEdgeWidthMapping({
+                            scaleType: e.target.value as 'linear' | 'log',
+                          })
+                        }
+                        style={{
+                          width: '100%',
+                          padding: '0.5rem',
+                          border: '1px solid #ccc',
+                          borderRadius: '4px',
+                        }}
+                      >
+                        <option value="linear">Linear</option>
+                        <option value="log">Logarithmic</option>
+                      </select>
+                    </div>
+                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                      <div style={{ flex: 1 }}>
+                        <label style={{ fontSize: '0.85rem', display: 'block', marginBottom: '0.25rem' }}>
+                          Min Width:
+                        </label>
+                        <input
+                          type="number"
+                          min="0.5"
+                          max="20"
+                          step="0.5"
+                          value={edgeWidthMapping.minWidth}
+                          onChange={(e) =>
+                            setEdgeWidthMapping({
+                              minWidth: parseFloat(e.target.value) || 1,
+                            })
+                          }
+                          style={{
+                            width: '100%',
+                            padding: '0.5rem',
+                            border: '1px solid #ccc',
+                            borderRadius: '4px',
+                          }}
+                        />
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <label style={{ fontSize: '0.85rem', display: 'block', marginBottom: '0.25rem' }}>
+                          Max Width:
+                        </label>
+                        <input
+                          type="number"
+                          min="0.5"
+                          max="20"
+                          step="0.5"
+                          value={edgeWidthMapping.maxWidth}
+                          onChange={(e) =>
+                            setEdgeWidthMapping({
+                              maxWidth: parseFloat(e.target.value) || 10,
+                            })
+                          }
+                          style={{
+                            width: '100%',
+                            padding: '0.5rem',
+                            border: '1px solid #ccc',
+                            borderRadius: '4px',
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
 
             <button

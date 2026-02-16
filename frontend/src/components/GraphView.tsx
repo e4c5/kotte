@@ -43,6 +43,7 @@ export default function GraphView({
     layout,
     nodeStyles,
     edgeStyles,
+    edgeWidthMapping,
     filters,
     selectedNode,
     pinnedNodes,
@@ -117,11 +118,61 @@ export default function GraphView({
     }
   }
 
+  // Compute edge width mapping scale if enabled
+  const edgeWidthScale = useMemo(() => {
+    if (!edgeWidthMapping.enabled || !edgeWidthMapping.property) {
+      return null
+    }
+    
+    const allValues = filteredEdges
+      .map((e) => {
+        const val = e.properties[edgeWidthMapping.property!]
+        if (val === undefined || val === null) return null
+        const num = typeof val === 'number' ? val : parseFloat(String(val))
+        return isNaN(num) ? null : num
+      })
+      .filter((v): v is number => v !== null)
+    
+    if (allValues.length === 0) {
+      return null
+    }
+    
+    const minVal = Math.min(...allValues)
+    const maxVal = Math.max(...allValues)
+    
+    if (edgeWidthMapping.scaleType === 'log' && minVal > 0) {
+      return d3.scaleLog().domain([minVal, maxVal]).range([edgeWidthMapping.minWidth, edgeWidthMapping.maxWidth])
+    } else {
+      return d3.scaleLinear().domain([minVal, maxVal]).range([edgeWidthMapping.minWidth, edgeWidthMapping.maxWidth])
+    }
+  }, [filteredEdges, edgeWidthMapping])
+
   const getEdgeStyle = (edge: GraphEdge): LabelStyle => {
-    return edgeStyles[edge.label] || {
+    const baseStyle = edgeStyles[edge.label] || {
       color: '#999',
       size: 2,
     }
+    
+    // Apply width mapping if enabled
+    if (edgeWidthScale && edgeWidthMapping.property) {
+      const propValue = edge.properties[edgeWidthMapping.property]
+      if (propValue !== undefined && propValue !== null) {
+        try {
+          const numValue = typeof propValue === 'number' ? propValue : parseFloat(String(propValue))
+          if (!isNaN(numValue)) {
+            const mappedWidth = edgeWidthScale(numValue)
+            return {
+              ...baseStyle,
+              size: mappedWidth,
+            }
+          }
+        } catch (e) {
+          // If mapping fails, use base style
+        }
+      }
+    }
+    
+    return baseStyle
   }
 
   const getNodeCaption = (node: GraphNode): string => {

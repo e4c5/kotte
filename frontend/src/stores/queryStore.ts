@@ -31,6 +31,7 @@ interface QueryState {
   clearResult: () => void
   clearError: () => void
   mergeGraphElements: (nodes: Array<{id: string, label: string, properties: Record<string, unknown>, type: string}>, edges: Array<{id: string, label: string, source: string, target: string, properties: Record<string, unknown>, type: string}>) => void
+  updateResult: (updater: (result: QueryExecuteResponse | null) => QueryExecuteResponse | null) => void
 }
 
 export const useQueryStore = create<QueryState>((set, get) => ({
@@ -98,6 +99,12 @@ export const useQueryStore = create<QueryState>((set, get) => ({
   clearResult: () => set({ result: null, error: null }),
   
   clearError: () => set({ error: null }),
+  
+  updateResult: (updater) => {
+    const { result } = get()
+    const updated = updater(result)
+    set({ result: updated })
+  },
   
   mergeGraphElements: (newNodes, newEdges) => {
     const { result } = get()
