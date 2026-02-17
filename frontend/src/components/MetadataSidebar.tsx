@@ -103,6 +103,9 @@ export default function MetadataSidebar({
             {metadata.node_labels.map((label) => (
               <div
                 key={label.label}
+                role="button"
+                tabIndex={0}
+                aria-label={`Generate query for node label: ${label.label}`}
                 style={{
                   padding: '0.5rem',
                   marginBottom: '0.5rem',
@@ -110,8 +113,15 @@ export default function MetadataSidebar({
                   borderRadius: '4px',
                   border: '1px solid #ddd',
                   cursor: 'pointer',
+                  outline: 'none',
                 }}
                 onClick={() => onQueryTemplate(generateQuery('node', label.label))}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    onQueryTemplate(generateQuery('node', label.label))
+                  }
+                }}
                 title="Click to generate query"
               >
                 <div style={{ fontWeight: 'bold' }}>{label.label}</div>

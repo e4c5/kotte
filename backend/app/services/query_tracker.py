@@ -129,3 +129,4 @@ class QueryTracker:
 # Global query tracker instance
 query_tracker = QueryTracker()
 
+

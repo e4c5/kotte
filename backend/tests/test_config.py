@@ -68,3 +68,4 @@ class TestSettings:
             assert settings.max_nodes_for_graph == 10000
             assert settings.max_edges_for_graph == 20000
 
+

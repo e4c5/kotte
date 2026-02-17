@@ -70,6 +70,9 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
   return (
     <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="settings-title"
       style={{
         position: 'fixed',
         top: 0,
@@ -83,8 +86,14 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
         zIndex: 2000,
       }}
       onClick={onClose}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') {
+          onClose()
+        }
+      }}
     >
       <div
+        role="document"
         style={{
           backgroundColor: 'white',
           borderRadius: '8px',
@@ -97,9 +106,10 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
         onClick={(e) => e.stopPropagation()}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-          <h2 style={{ margin: 0 }}>Settings</h2>
+          <h2 id="settings-title" style={{ margin: 0 }}>Settings</h2>
           <button
             onClick={onClose}
+            aria-label="Close settings dialog"
             style={{
               background: 'none',
               border: 'none',

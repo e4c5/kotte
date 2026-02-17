@@ -53,9 +53,21 @@ export default function NodeContextMenu({
     onClose()
   }
 
+  useEffect(() => {
+    // Focus first button when menu opens
+    if (menuRef.current) {
+      const firstButton = menuRef.current.querySelector('button') as HTMLButtonElement
+      if (firstButton) {
+        firstButton.focus()
+      }
+    }
+  }, [])
+
   return (
     <div
       ref={menuRef}
+      role="menu"
+      aria-label="Node actions menu"
       style={{
         position: 'fixed',
         left: `${x}px`,
@@ -67,11 +79,33 @@ export default function NodeContextMenu({
         zIndex: 1000,
         minWidth: '150px',
         padding: '4px 0',
+        outline: 'none',
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') {
+          onClose()
+        } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+          e.preventDefault()
+          const buttons = Array.from(menuRef.current?.querySelectorAll('button') || []) as HTMLButtonElement[]
+          const currentButton = e.target as HTMLButtonElement
+          const currentIndex = buttons.indexOf(currentButton)
+          if (currentIndex >= 0) {
+            if (e.key === 'ArrowDown') {
+              const nextIndex = currentIndex < buttons.length - 1 ? currentIndex + 1 : 0
+              buttons[nextIndex]?.focus()
+            } else {
+              const prevIndex = currentIndex > 0 ? currentIndex - 1 : buttons.length - 1
+              buttons[prevIndex]?.focus()
+            }
+          }
+        }
       }}
     >
       {onExpand && (
         <button
           onClick={handleExpand}
+          role="menuitem"
+          aria-label={`Expand neighborhood for node ${nodeId}`}
           style={{
             width: '100%',
             padding: '8px 16px',
@@ -80,11 +114,18 @@ export default function NodeContextMenu({
             backgroundColor: 'transparent',
             cursor: 'pointer',
             fontSize: '14px',
+            outline: 'none',
           }}
           onMouseEnter={(e) => {
             e.currentTarget.style.backgroundColor = '#f0f0f0'
           }}
           onMouseLeave={(e) => {
+            e.currentTarget.style.backgroundColor = 'transparent'
+          }}
+          onFocus={(e) => {
+            e.currentTarget.style.backgroundColor = '#f0f0f0'
+          }}
+          onBlur={(e) => {
             e.currentTarget.style.backgroundColor = 'transparent'
           }}
         >
@@ -94,6 +135,8 @@ export default function NodeContextMenu({
       {onDelete && (
         <button
           onClick={handleDelete}
+          role="menuitem"
+          aria-label={`Delete node ${nodeId}`}
           style={{
             width: '100%',
             padding: '8px 16px',
@@ -104,11 +147,18 @@ export default function NodeContextMenu({
             fontSize: '14px',
             color: '#dc3545',
             borderTop: onExpand ? '1px solid #eee' : 'none',
+            outline: 'none',
           }}
           onMouseEnter={(e) => {
             e.currentTarget.style.backgroundColor = '#fff5f5'
           }}
           onMouseLeave={(e) => {
+            e.currentTarget.style.backgroundColor = 'transparent'
+          }}
+          onFocus={(e) => {
+            e.currentTarget.style.backgroundColor = '#fff5f5'
+          }}
+          onBlur={(e) => {
             e.currentTarget.style.backgroundColor = 'transparent'
           }}
         >

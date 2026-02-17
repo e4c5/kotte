@@ -257,6 +257,8 @@ export default function GraphView({
     const node = container
       .append('g')
       .attr('class', 'nodes')
+      .attr('role', 'group')
+      .attr('aria-label', 'Graph nodes')
       .selectAll('circle')
       .data(filteredNodes)
       .enter()
@@ -266,6 +268,10 @@ export default function GraphView({
       .attr('stroke', (d) => (selectedNode === d.id ? '#ff0000' : '#fff'))
       .attr('stroke-width', (d) => (selectedNode === d.id ? 3 : 2))
       .style('cursor', 'pointer')
+      .attr('role', 'button')
+      .attr('tabindex', 0)
+      .attr('aria-label', (d) => `Node: ${d.label}, ID: ${d.id}`)
+      .attr('aria-pressed', (d) => selectedNode === d.id)
       .call(
         d3
           .drag<SVGCircleElement, GraphNode>()

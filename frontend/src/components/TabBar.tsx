@@ -28,6 +28,8 @@ export default function TabBar({
 
   return (
     <div
+      role="tablist"
+      aria-label="Query result tabs"
       style={{
         display: 'flex',
         borderBottom: '1px solid #ccc',
@@ -36,10 +38,33 @@ export default function TabBar({
         alignItems: 'flex-end',
       }}
     >
-      {sortedTabs.map((tab) => (
+      {sortedTabs.map((tab, index) => (
         <div
           key={tab.id}
+          role="tab"
+          aria-selected={activeTabId === tab.id}
+          aria-controls={`tabpanel-${tab.id}`}
+          id={`tab-${tab.id}`}
+          tabIndex={activeTabId === tab.id ? 0 : -1}
           onClick={() => onTabClick(tab.id)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              onTabClick(tab.id)
+            } else if (e.key === 'ArrowLeft' && index > 0) {
+              e.preventDefault()
+              onTabClick(sortedTabs[index - 1].id)
+            } else if (e.key === 'ArrowRight' && index < sortedTabs.length - 1) {
+              e.preventDefault()
+              onTabClick(sortedTabs[index + 1].id)
+            } else if (e.key === 'Home') {
+              e.preventDefault()
+              onTabClick(sortedTabs[0].id)
+            } else if (e.key === 'End') {
+              e.preventDefault()
+              onTabClick(sortedTabs[sortedTabs.length - 1].id)
+            }
+          }}
           style={{
             padding: '0.5rem 1rem',
             borderRight: '1px solid #ccc',
@@ -56,11 +81,12 @@ export default function TabBar({
             position: 'relative',
             marginRight: '2px',
             borderBottom: activeTabId === tab.id ? 'none' : '1px solid #ccc',
+            outline: 'none',
           }}
           title={tab.name}
         >
           {tab.pinned && (
-            <span style={{ fontSize: '0.8rem' }} title="Pinned tab">📌</span>
+            <span style={{ fontSize: '0.8rem' }} aria-label="Pinned tab" role="img">📌</span>
           )}
           <span
             style={{
@@ -74,10 +100,10 @@ export default function TabBar({
             {tab.name}
           </span>
           {tab.loading && (
-            <span style={{ fontSize: '0.8rem' }} title="Query running">⏳</span>
+            <span style={{ fontSize: '0.8rem' }} aria-label="Query running" role="status">⏳</span>
           )}
           {tab.error && (
-            <span style={{ fontSize: '0.8rem', color: '#dc3545' }} title="Error">⚠️</span>
+            <span style={{ fontSize: '0.8rem', color: '#dc3545' }} aria-label="Error in query" role="alert">⚠️</span>
           )}
           <div
             style={{
@@ -89,6 +115,7 @@ export default function TabBar({
             {!tab.pinned && (
               <button
                 onClick={() => onTabPin(tab.id)}
+                aria-label={`Pin tab: ${tab.name}`}
                 style={{
                   padding: '0.125rem 0.25rem',
                   border: 'none',
@@ -104,6 +131,7 @@ export default function TabBar({
             {tab.pinned && (
               <button
                 onClick={() => onTabUnpin(tab.id)}
+                aria-label={`Unpin tab: ${tab.name}`}
                 style={{
                   padding: '0.125rem 0.25rem',
                   border: 'none',
@@ -118,6 +146,7 @@ export default function TabBar({
             )}
             <button
               onClick={(e) => onTabClose(tab.id, e)}
+              aria-label={`Close tab: ${tab.name}`}
               style={{
                 padding: '0.125rem 0.25rem',
                 border: 'none',
@@ -141,6 +170,7 @@ export default function TabBar({
       ))}
       <button
         onClick={onNewTab}
+        aria-label="Create new query tab"
         style={{
           padding: '0.5rem 1rem',
           border: 'none',

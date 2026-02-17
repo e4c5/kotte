@@ -80,14 +80,18 @@ export default function QueryEditor({
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <div style={{ display: 'flex', gap: '1rem', flex: 1, minHeight: 0 }}>
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-          <label style={{ marginBottom: '0.5rem', fontWeight: 'bold' }}>
+          <label htmlFor="cypher-query" style={{ marginBottom: '0.5rem', fontWeight: 'bold' }}>
             Cypher Query
           </label>
           <textarea
+            id="cypher-query"
             ref={textareaRef}
             value={value}
             onChange={(e) => onChange(e.target.value)}
             placeholder="MATCH (n) RETURN n LIMIT 10"
+            aria-label="Cypher query editor"
+            aria-describedby="query-help"
+            role="textbox"
             style={{
               flex: 1,
               fontFamily: 'monospace',
@@ -98,18 +102,21 @@ export default function QueryEditor({
               resize: 'none',
             }}
           />
-          <div style={{ marginTop: '0.5rem', fontSize: '12px', color: '#666' }}>
+          <div id="query-help" style={{ marginTop: '0.5rem', fontSize: '12px', color: '#666' }} role="note">
             Shift+Enter or Ctrl+Enter to execute • Ctrl+Up/Down for history
           </div>
         </div>
         <div style={{ width: '300px', display: 'flex', flexDirection: 'column' }}>
-          <label style={{ marginBottom: '0.5rem', fontWeight: 'bold' }}>
+          <label htmlFor="query-params" style={{ marginBottom: '0.5rem', fontWeight: 'bold' }}>
             Parameters (JSON)
           </label>
           <textarea
+            id="query-params"
             value={params}
             onChange={handleParamsChange}
             placeholder='{"name": "Alice"}'
+            aria-label="Query parameters in JSON format"
+            role="textbox"
             style={{
               flex: 1,
               fontFamily: 'monospace',
@@ -126,6 +133,7 @@ export default function QueryEditor({
         {loading && onCancel ? (
           <button
             onClick={onCancel}
+            aria-label="Cancel running query"
             style={{
               padding: '0.5rem 1.5rem',
               fontSize: '1rem',
@@ -142,6 +150,8 @@ export default function QueryEditor({
           <button
             onClick={onExecute}
             disabled={loading}
+            aria-label={loading ? 'Query is executing' : 'Execute the Cypher query'}
+            aria-busy={loading}
             style={{
               padding: '0.5rem 1.5rem',
               fontSize: '1rem',
@@ -159,6 +169,7 @@ export default function QueryEditor({
         <button
           onClick={() => onChange('')}
           disabled={loading}
+          aria-label="Clear query editor"
           style={{
             padding: '0.5rem 1.5rem',
             fontSize: '1rem',

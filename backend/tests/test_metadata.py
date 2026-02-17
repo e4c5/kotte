@@ -75,3 +75,4 @@ class TestMetadataService:
         # Should handle None/empty properties gracefully
         assert len(properties) == 0
 
+

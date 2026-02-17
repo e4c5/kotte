@@ -254,6 +254,7 @@ export default function WorkspacePage() {
         </div>
         <button
           onClick={handleDisconnect}
+          aria-label="Disconnect from database"
           style={{
             padding: '0.5rem 1rem',
             cursor: 'pointer',

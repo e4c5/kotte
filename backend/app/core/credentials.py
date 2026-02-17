@@ -99,3 +99,4 @@ class CredentialEncryption:
 # Global instance
 credential_encryption = CredentialEncryption()
 
+

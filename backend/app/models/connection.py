@@ -38,3 +38,4 @@ class SavedConnectionListResponse(BaseModel):
     """List of saved connections."""
     connections: list[SavedConnectionResponse]
 
+

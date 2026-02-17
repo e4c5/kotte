@@ -192,3 +192,4 @@ pytest tests/integration/ -v
 
 We have a solid foundation of unit tests covering core functionality and service layers. The integration test infrastructure is set up but needs async test client support for full endpoint testing. The next priority is to add query execution and graph endpoint tests, which can be done with mocks initially.
 
+

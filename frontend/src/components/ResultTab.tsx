@@ -53,6 +53,8 @@ export default function ResultTab({
         <button
           onClick={() => onViewModeChange('graph')}
           disabled={!hasGraphData || !!result.visualization_warning}
+          aria-label="Switch to graph view"
+          aria-pressed={tab.viewMode === 'graph'}
           style={{
             padding: '0.5rem 1rem',
             cursor: hasGraphData && !result.visualization_warning ? 'pointer' : 'not-allowed',
@@ -66,12 +68,14 @@ export default function ResultTab({
           Graph View
           {result.graph_elements && (
             <span style={{ marginLeft: '0.5rem', fontSize: '0.8rem' }}>
-                  ({String(result.stats?.nodes_extracted || 0)} nodes, {String(result.stats?.edges_extracted || 0)} edges)
+              ({String(result.stats?.nodes_extracted || 0)} nodes, {String(result.stats?.edges_extracted || 0)} edges)
             </span>
           )}
         </button>
         <button
           onClick={() => onViewModeChange('table')}
+          aria-label="Switch to table view"
+          aria-pressed={tab.viewMode === 'table'}
           style={{
             padding: '0.5rem 1rem',
             cursor: 'pointer',
