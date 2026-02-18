@@ -16,9 +16,67 @@ The implementation demonstrates solid understanding of PostgreSQL, Apache AGE, a
 
 ---
 
-## 📁 Document Structure
+## 📁 New Structure - Analysis & Implementation Plans
 
-### [00_EXECUTIVE_SUMMARY.md](./00_EXECUTIVE_SUMMARY.md)
+The documentation is now organized into two main sections:
+
+### 📖 Analysis Documents (`analysis/`)
+Detailed technical analysis of issues, with code examples and explanations:
+- [ANALYSIS_AT_A_GLANCE.md](./analysis/ANALYSIS_AT_A_GLANCE.md) - Quick visual summary
+- [00_EXECUTIVE_SUMMARY.md](./analysis/00_EXECUTIVE_SUMMARY.md) - Overall assessment
+- [01_SECURITY_GAPS.md](./analysis/01_SECURITY_GAPS.md) - SQL injection risks
+- [02_PERFORMANCE_OPTIMIZATION.md](./analysis/02_PERFORMANCE_OPTIMIZATION.md) - Indexing & queries
+- [03_TRANSACTION_HANDLING.md](./analysis/03_TRANSACTION_HANDLING.md) - ACID compliance
+- [04_ERROR_HANDLING_IMPROVEMENTS.md](./analysis/04_ERROR_HANDLING_IMPROVEMENTS.md) - Better errors
+- [05_AGE_FEATURE_UTILIZATION.md](./analysis/05_AGE_FEATURE_UTILIZATION.md) - Advanced AGE features
+- [06_VISUALIZATION_QUERY_OPTIMIZATION.md](./analysis/06_VISUALIZATION_QUERY_OPTIMIZATION.md) - Query limits
+- [07_PATH_HANDLING_IMPROVEMENTS.md](./analysis/07_PATH_HANDLING_IMPROVEMENTS.md) - Path semantics
+- [08_TESTING_RECOMMENDATIONS.md](./analysis/08_TESTING_RECOMMENDATIONS.md) - Test strategy
+
+### 🎯 Implementation Plans (`plan/`)
+Actionable task lists structured for implementation:
+- [TASK_LIST.md](./plan/TASK_LIST.md) - **Complete implementation checklist with detailed tasks**
+
+---
+
+## 🚀 Quick Start Guide
+
+### For Project Managers
+1. Start with [ANALYSIS_AT_A_GLANCE.md](./analysis/ANALYSIS_AT_A_GLANCE.md) for a visual overview
+2. Review [TASK_LIST.md](./plan/TASK_LIST.md) for effort estimates and priorities
+3. Use the task list to plan sprints and assign resources
+
+### For Developers
+1. Read [TASK_LIST.md](./plan/TASK_LIST.md) to see all tasks
+2. Each task references specific analysis documents for implementation details
+3. Follow the phase order: Security → Performance → UX → Features → Testing
+
+### For AI Coding Agents
+1. Use [TASK_LIST.md](./plan/TASK_LIST.md) as your primary guide
+2. Each task includes:
+   - Specific file paths to modify
+   - Clear issue description
+   - Concrete implementation approach
+   - Reference to detailed analysis document with code examples
+3. Implement tasks sequentially within each phase
+4. Run tests after each task
+
+---
+
+## 📋 Document Overview
+
+### Analysis Documents (in `analysis/` folder)
+### Analysis Documents (in `analysis/` folder)
+
+#### [ANALYSIS_AT_A_GLANCE.md](./analysis/ANALYSIS_AT_A_GLANCE.md)
+**Quick visual summary with health scores and performance metrics**
+- Visual health scores (security, performance, correctness, etc.)
+- Critical issues summary
+- Performance impact tables (before/after)
+- Quick fix code examples
+- Pre-production checklist
+
+#### [00_EXECUTIVE_SUMMARY.md](./analysis/00_EXECUTIVE_SUMMARY.md)
 **High-level overview of findings, quality scores, and roadmap**
 
 - Quality assessment breakdown
@@ -27,7 +85,7 @@ The implementation demonstrates solid understanding of PostgreSQL, Apache AGE, a
 - 4-phase implementation roadmap (8-10 weeks)
 - Compliance summary (PostgreSQL, AGE, Graph DB best practices)
 
-### [01_SECURITY_GAPS.md](./01_SECURITY_GAPS.md)
+#### [01_SECURITY_GAPS.md](./analysis/01_SECURITY_GAPS.md)
 **Critical security vulnerabilities and SQL injection risks**
 
 **Priority:** HIGH | **Effort:** 10 hours
@@ -43,7 +101,7 @@ The implementation demonstrates solid understanding of PostgreSQL, Apache AGE, a
 - Apply escaping to 6+ locations
 - Comprehensive security testing
 
-### [02_PERFORMANCE_OPTIMIZATION.md](./02_PERFORMANCE_OPTIMIZATION.md)
+#### [02_PERFORMANCE_OPTIMIZATION.md](./analysis/02_PERFORMANCE_OPTIMIZATION.md)
 **Database indexing and query optimization**
 
 **Priority:** HIGH | **Effort:** 30 hours
@@ -65,7 +123,7 @@ The implementation demonstrates solid understanding of PostgreSQL, Apache AGE, a
 - Meta-graph: **116x faster** with 100 edge labels
 - Property discovery: **5-10x faster**
 
-### [03_TRANSACTION_HANDLING.md](./03_TRANSACTION_HANDLING.md)
+#### [03_TRANSACTION_HANDLING.md](./analysis/03_TRANSACTION_HANDLING.md)
 **ACID compliance and data integrity**
 
 **Priority:** HIGH | **Effort:** 23 hours
@@ -87,7 +145,7 @@ The implementation demonstrates solid understanding of PostgreSQL, Apache AGE, a
 - Zero data corruption on failures
 - Proper rollback on errors
 
-### [04_ERROR_HANDLING_IMPROVEMENTS.md](./04_ERROR_HANDLING_IMPROVEMENTS.md)
+#### [04_ERROR_HANDLING_IMPROVEMENTS.md](./analysis/04_ERROR_HANDLING_IMPROVEMENTS.md)
 **Graph-specific exception types and user-friendly messages**
 
 **Priority:** MEDIUM | **Effort:** 16 hours
@@ -102,7 +160,7 @@ The implementation demonstrates solid understanding of PostgreSQL, Apache AGE, a
 - Structured error details with query context
 - User-friendly Cypher error formatting
 
-### [05_AGE_FEATURE_UTILIZATION.md](./05_AGE_FEATURE_UTILIZATION.md)
+#### [05_AGE_FEATURE_UTILIZATION.md](./analysis/05_AGE_FEATURE_UTILIZATION.md)
 **Advanced Apache AGE capabilities**
 
 **Priority:** LOW | **Effort:** 40 hours
@@ -113,7 +171,7 @@ The implementation demonstrates solid understanding of PostgreSQL, Apache AGE, a
 - Advanced pattern matching
 - Query template library
 
-### [06_VISUALIZATION_QUERY_OPTIMIZATION.md](./06_VISUALIZATION_QUERY_OPTIMIZATION.md)
+#### [06_VISUALIZATION_QUERY_OPTIMIZATION.md](./analysis/06_VISUALIZATION_QUERY_OPTIMIZATION.md)
 **Query-time limits for visualization**
 
 **Priority:** MEDIUM | **Effort:** 4 hours
@@ -121,7 +179,7 @@ The implementation demonstrates solid understanding of PostgreSQL, Apache AGE, a
 **Issue:** Currently fetches all results, then warns if too many  
 **Fix:** Add `LIMIT` to Cypher queries automatically for visualization
 
-### [07_PATH_HANDLING_IMPROVEMENTS.md](./07_PATH_HANDLING_IMPROVEMENTS.md)
+#### [07_PATH_HANDLING_IMPROVEMENTS.md](./analysis/07_PATH_HANDLING_IMPROVEMENTS.md)
 **Preserve path semantics in results**
 
 **Priority:** LOW | **Effort:** 12 hours
@@ -129,7 +187,7 @@ The implementation demonstrates solid understanding of PostgreSQL, Apache AGE, a
 **Issue:** Paths flattened to nodes and edges, losing traversal order  
 **Fix:** Maintain path structure with segments and order
 
-### [08_TESTING_RECOMMENDATIONS.md](./08_TESTING_RECOMMENDATIONS.md)
+#### [08_TESTING_RECOMMENDATIONS.md](./analysis/08_TESTING_RECOMMENDATIONS.md)
 **Comprehensive test strategy**
 
 **Priority:** MEDIUM | **Effort:** 50 hours
@@ -140,19 +198,27 @@ The implementation demonstrates solid understanding of PostgreSQL, Apache AGE, a
 - Performance benchmarks (>100k nodes)
 - Security tests (SQL injection attempts)
 
-### [09_IMPLEMENTATION_CHECKLIST.md](./09_IMPLEMENTATION_CHECKLIST.md)
-**Complete task list with effort estimates**
+### Implementation Plans (in `plan/` folder)
+
+#### [TASK_LIST.md](./plan/TASK_LIST.md)
+**Complete actionable task list with detailed implementation guidance**
 
 **Total Effort:** 225 hours (8-10 weeks)
 
 Organized into 5 phases:
-1. Critical fixes (33 hours)
-2. Performance (50 hours)
-3. Error handling & UX (20 hours)
-4. Advanced features (52 hours)
-5. Testing & documentation (70 hours)
+1. Critical fixes (33 hours) - Security & transactions
+2. Performance (50 hours) - Indexing & query optimization
+3. Error handling & UX (20 hours) - Better errors & visualization
+4. Advanced features (52 hours) - AGE algorithms & path handling
+5. Testing & documentation (70 hours) - Comprehensive testing
 
 **MVP (Critical + Performance + Errors):** 79 hours
+
+**Key Features:**
+- Each task includes specific file paths, issue description, and fix approach
+- Cross-references to detailed analysis documents
+- Structured for AI coding agent consumption
+- Includes success metrics and testing guidance
 
 ---
 
@@ -161,7 +227,7 @@ Organized into 5 phases:
 If you have limited time or resources, address issues in this priority order:
 
 ### Phase 1: Critical Security & Data Integrity (33 hours)
-**Must-have before production**
+**Must-have before production** - See [TASK_LIST.md Phase 1](./plan/TASK_LIST.md)
 
 1. **Security Fixes** (10 hours)
    - [ ] Fix unvalidated `graph_name` in `graph.py:221`
@@ -175,7 +241,7 @@ If you have limited time or resources, address issues in this priority order:
    - [ ] Test rollback scenarios
 
 ### Phase 2: Performance (30 hours)
-**Recommended for production**
+**Recommended for production** - See [TASK_LIST.md Phase 2](./plan/TASK_LIST.md)
 
 3. **Database Indexing**
    - [ ] Auto-create indices on metadata access
@@ -188,7 +254,7 @@ If you have limited time or resources, address issues in this priority order:
    - [ ] Add caching
 
 ### Phase 3: Error Handling (16 hours)
-**Nice to have**
+**Nice to have** - See [TASK_LIST.md Phase 3](./plan/TASK_LIST.md)
 
 5. **Better Errors**
    - [ ] Graph-specific exceptions
@@ -332,12 +398,40 @@ For questions about this analysis:
 
 ## Quick Reference: File-Specific Issues
 
-| File | Issues | Priority | Document |
-|------|--------|----------|----------|
-| `backend/app/api/v1/graph.py:221` | Unvalidated graph name | HIGH | 01_SECURITY_GAPS.md |
-| `backend/app/services/metadata.py:45-56` | F-string tables | HIGH | 01_SECURITY_GAPS.md |
-| `backend/app/api/v1/graph_delete_node.py:92-118` | No transaction | HIGH | 03_TRANSACTION_HANDLING.md |
-| `backend/app/api/v1/graph.py:233-313` | N+1 queries | MEDIUM | 02_PERFORMANCE_OPTIMIZATION.md |
-| `backend/app/api/v1/import_csv.py:72-73` | String interpolation | MEDIUM | 01_SECURITY_GAPS.md |
-| Entire codebase | No indices | HIGH | 02_PERFORMANCE_OPTIMIZATION.md |
-| Entire codebase | Generic exceptions | MEDIUM | 04_ERROR_HANDLING_IMPROVEMENTS.md |
+| File | Issues | Priority | Analysis Document |
+|------|--------|----------|-------------------|
+| `backend/app/api/v1/graph.py:221` | Unvalidated graph name | HIGH | [01_SECURITY_GAPS.md](./analysis/01_SECURITY_GAPS.md) |
+| `backend/app/services/metadata.py:45-56` | F-string tables | HIGH | [01_SECURITY_GAPS.md](./analysis/01_SECURITY_GAPS.md) |
+| `backend/app/api/v1/graph_delete_node.py:92-118` | No transaction | HIGH | [03_TRANSACTION_HANDLING.md](./analysis/03_TRANSACTION_HANDLING.md) |
+| `backend/app/api/v1/graph.py:233-313` | N+1 queries | MEDIUM | [02_PERFORMANCE_OPTIMIZATION.md](./analysis/02_PERFORMANCE_OPTIMIZATION.md) |
+| `backend/app/api/v1/import_csv.py:72-73` | String interpolation | MEDIUM | [01_SECURITY_GAPS.md](./analysis/01_SECURITY_GAPS.md) |
+| Entire codebase | No indices | HIGH | [02_PERFORMANCE_OPTIMIZATION.md](./analysis/02_PERFORMANCE_OPTIMIZATION.md) |
+| Entire codebase | Generic exceptions | MEDIUM | [04_ERROR_HANDLING_IMPROVEMENTS.md](./analysis/04_ERROR_HANDLING_IMPROVEMENTS.md) |
+
+---
+
+## 🎓 How to Use This Documentation
+
+### For Implementation
+1. **Start here:** [TASK_LIST.md](./plan/TASK_LIST.md) - Your primary implementation guide
+2. **For details:** Click through to analysis documents for code examples
+3. **For context:** Review [ANALYSIS_AT_A_GLANCE.md](./analysis/ANALYSIS_AT_A_GLANCE.md) first
+
+### Document Organization
+```
+docs/improvements/
+├── README.md (this file)          # Overview and navigation
+├── analysis/                       # Detailed technical analysis
+│   ├── ANALYSIS_AT_A_GLANCE.md    # Quick visual summary
+│   ├── 00_EXECUTIVE_SUMMARY.md    # Overall assessment
+│   ├── 01_SECURITY_GAPS.md        # Security vulnerabilities
+│   ├── 02_PERFORMANCE_OPTIMIZATION.md
+│   ├── 03_TRANSACTION_HANDLING.md
+│   ├── 04_ERROR_HANDLING_IMPROVEMENTS.md
+│   ├── 05_AGE_FEATURE_UTILIZATION.md
+│   ├── 06_VISUALIZATION_QUERY_OPTIMIZATION.md
+│   ├── 07_PATH_HANDLING_IMPROVEMENTS.md
+│   └── 08_TESTING_RECOMMENDATIONS.md
+└── plan/                          # Implementation plans
+    └── TASK_LIST.md              # Complete actionable task list
+```
