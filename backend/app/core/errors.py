@@ -9,6 +9,7 @@ from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from app.core.config import settings
 from app.core.metrics import metrics
 
 logger = logging.getLogger(__name__)
@@ -151,13 +152,19 @@ async def generic_exception_handler(
 ) -> JSONResponse:
     """Handle unexpected exceptions."""
     logger.exception("Unhandled exception", exc_info=exc)
+    message = "An internal error occurred"
+    details: Optional[Dict[str, Any]] = None
+    if settings.environment == "development":
+        message = str(exc) or message
+        details = {"exception_type": type(exc).__name__, "detail": str(exc)}
     return create_error_response(
         request=request,
         code=ErrorCode.INTERNAL_ERROR,
-        message="An internal error occurred",
+        message=message,
         category=ErrorCategory.INTERNAL,
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         retryable=False,
+        details=details,
     )
 
 

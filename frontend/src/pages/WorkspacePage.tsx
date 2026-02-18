@@ -67,13 +67,14 @@ export default function WorkspacePage() {
 
   useEffect(() => {
     checkAuth().then(() => {
-      if (!authenticated) {
+      const isAuthenticated = useAuthStore.getState().authenticated
+      if (!isAuthenticated) {
         navigate('/login')
       } else {
         refreshStatus()
       }
     })
-  }, [authenticated, navigate, checkAuth, refreshStatus])
+  }, [navigate, checkAuth, refreshStatus])
 
   useEffect(() => {
     if (status && !status.connected) {

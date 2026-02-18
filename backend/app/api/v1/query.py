@@ -84,9 +84,18 @@ async def execute_query(
     graph_check = """
         SELECT graphid FROM ag_catalog.ag_graph WHERE name = %(graph_name)s
     """
-    graph_id = await db_conn.execute_scalar(
-        graph_check, {"graph_name": validated_graph_name}
-    )
+    try:
+        graph_id = await db_conn.execute_scalar(
+            graph_check, {"graph_name": validated_graph_name}
+        )
+    except Exception as e:
+        logger.exception("Graph existence check failed")
+        raise APIException(
+            code=ErrorCode.QUERY_EXECUTION_ERROR,
+            message=f"Database error while checking graph: {e!s}",
+            category=ErrorCategory.UPSTREAM,
+            status_code=500,
+        ) from e
     if not graph_id:
         raise APIException(
             code=ErrorCode.GRAPH_NOT_FOUND,

@@ -102,7 +102,7 @@ Configuration is done via environment variables. Create a `.env` file in the `ba
 
 ## Project Structure
 
-```
+```text
 kotte/
 ├── backend/          # FastAPI backend
 │   ├── app/
