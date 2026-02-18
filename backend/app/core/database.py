@@ -254,9 +254,25 @@ class DatabaseConnection:
             return self._first_value(result)
 
     @asynccontextmanager
-    async def transaction(self):
-        """Context manager for database transactions."""
+    async def transaction(self, timeout: Optional[int] = None):
+        """
+        Context manager for database transactions.
+
+        Args:
+            timeout: Optional transaction timeout in seconds. If not provided,
+                     a sensible default is used to prevent long-running transactions.
+        """
+        # Default to 60s for transaction-scoped timeout to avoid long locks
+        effective_timeout = timeout or 60
         async with self.connection.transaction():
+            try:
+                # Apply a statement timeout for all statements in this transaction
+                async with self.connection.cursor() as cur:
+                    await cur.execute(
+                        f"SET LOCAL statement_timeout = {effective_timeout * 1000}"
+                    )
+            except Exception as e:
+                logger.warning(f"Failed to set transaction statement_timeout: {e}")
             yield
 
 

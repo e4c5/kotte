@@ -62,7 +62,7 @@ Before implementing tasks, review these analysis documents for context and detai
   - **Tests:** Basic identifiers, quotes, malicious input
   - **Reference:** Security Gaps, Testing section
   
-- [ ] Security review of all f-string queries
+- [x] Security review of all f-string queries
   - **Action:** Audit all database queries for string interpolation
   - **Tool:** Use grep/automated scanning
   - **Reference:** Security Gaps, Additional Recommendations
@@ -71,37 +71,37 @@ Before implementing tasks, review these analysis documents for context and detai
 
 **Detailed guidance:** [03_TRANSACTION_HANDLING.md](../analysis/03_TRANSACTION_HANDLING.md)
 
-- [ ] Wrap node deletion in transaction
-  - **File:** `backend/app/api/v1/graph_delete_node.py:92-118`
+- [x] Wrap node deletion in transaction
+  - **File:** `backend/app/api/v1/graph_delete_node.py:60-152`
   - **Issue:** Node deletion not atomic
   - **Fix:** Wrap count + delete in `async with db_conn.transaction()`
   - **Reference:** Transaction Handling, Gap #1
   
-- [ ] Add deletion verification
+- [x] Add deletion verification
   - **File:** `backend/app/api/v1/graph_delete_node.py`
   - **Issue:** No verification that deletion succeeded
   - **Fix:** Check deleted_count > 0, raise exception if 0
   - **Reference:** Transaction Handling, Gap #1 - Fixed Implementation
   
-- [ ] CSV pre-validation implementation
+- [x] CSV pre-validation implementation
   - **File:** `backend/app/api/v1/import.py`
   - **Issue:** Validation happens during insert
   - **Fix:** Add Phase 1 validation before any DB operations
   - **Reference:** Transaction Handling, Gap #2 - Phase 1
   
-- [ ] Move graph/label creation into transaction
+- [x] Move graph/label creation into transaction
   - **File:** `backend/app/api/v1/import.py`
   - **Issue:** Graph creation outside transaction
   - **Fix:** Move into transaction block
   - **Reference:** Transaction Handling, Gap #2 - Phase 2
   
-- [ ] Implement batch insertion (1000 rows/batch)
+- [x] Implement batch insertion (1000 rows/batch)
   - **File:** `backend/app/api/v1/import.py`
   - **Issue:** Individual INSERT per row (slow)
   - **Fix:** Build multi-row Cypher queries
   - **Reference:** Transaction Handling, Gap #2 - Fixed Implementation
   
-- [ ] Add transaction timeout support
+- [x] Add transaction timeout support
   - **File:** `backend/app/core/database.py`
   - **Issue:** Transactions can run indefinitely
   - **Fix:** Add timeout parameter to transaction() method

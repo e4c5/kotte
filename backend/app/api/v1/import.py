@@ -8,8 +8,10 @@ from fastapi import APIRouter, Depends, UploadFile, File, Form
 from fastapi.responses import JSONResponse
 
 from app.core.auth import get_session
+from app.core.config import settings
 from app.core.database import DatabaseConnection
 from app.core.errors import APIException, ErrorCode, ErrorCategory
+from app.core.validation import validate_graph_name, validate_label_name, escape_identifier
 from app.models.import import (
     CSVImportResponse,
     ImportJobStatus,
@@ -53,42 +55,7 @@ async def import_csv(
     """
     job_id = str(uuid.uuid4())
 
-    # Validate graph exists or create it
-    graph_check = """
-        SELECT graphid FROM ag_catalog.ag_graph WHERE name = %(graph_name)s
-    """
-    graph_id = await db_conn.execute_scalar(
-        graph_check, {"graph_name": graph_name}
-    )
-
-    if not graph_id:
-        # Create graph if it doesn't exist
-        create_graph_query = f"""
-            SELECT * FROM ag_catalog.create_graph('{graph_name}')
-        """
-        try:
-            await db_conn.execute_query(create_graph_query)
-            logger.info(f"Created graph: {graph_name}")
-        except Exception as e:
-            raise APIException(
-                code=ErrorCode.GRAPH_CONTEXT_INVALID,
-                message=f"Failed to create graph: {str(e)}",
-                category=ErrorCategory.UPSTREAM,
-                status_code=500,
-            ) from e
-
-    # Determine label type
-    label = node_label or edge_label
-    label_kind = "v" if node_label else "e"
-
-    if not label:
-        raise APIException(
-            code=ErrorCode.IMPORT_VALIDATION_ERROR,
-            message="Either node_label or edge_label must be provided",
-            category=ErrorCategory.VALIDATION,
-            status_code=422,
-        )
-
+    # PHASE 1: CSV pre-validation before any database operations
     # Create job status
     job_status = ImportJobStatus(
         job_id=job_id,
@@ -101,6 +68,14 @@ async def import_csv(
     try:
         # Read CSV file
         content = await file.read()
+        if len(content) > settings.import_max_file_size:
+            raise APIException(
+                code=ErrorCode.IMPORT_INVALID_FILE,
+                message="CSV file exceeds maximum allowed size",
+                category=ErrorCategory.VALIDATION,
+                status_code=422,
+            )
+
         lines = content.decode("utf-8").split("\n")
         if not lines or not lines[0].strip():
             raise APIException(
@@ -120,96 +95,155 @@ async def import_csv(
                 status_code=422,
             )
 
-        # Create label if needed
-        if drop_if_exists:
-            drop_query = f"""
-                SELECT * FROM ag_catalog.drop_label('{graph_name}', '{label}', {label_kind == 'v'})
-            """
-            try:
-                await db_conn.execute_query(drop_query)
-            except Exception:
-                pass  # Label might not exist
+        # Enforce maximum row limit
+        row_count = max(0, len(lines) - 1)
+        if row_count > settings.import_max_rows:
+            raise APIException(
+                code=ErrorCode.IMPORT_INVALID_FILE,
+                message=f"CSV file has too many rows ({row_count} > {settings.import_max_rows})",
+                category=ErrorCategory.VALIDATION,
+                status_code=422,
+            )
 
-        create_label_query = f"""
-            SELECT * FROM ag_catalog.create_label('{graph_name}', '{label}', {label_kind == 'v'})
-        """
-        try:
-            await db_conn.execute_query(create_label_query)
-            job_status.created_labels.append(label)
-        except Exception as e:
-            if "already exists" not in str(e).lower():
-                raise
+        # Determine label type
+        label = node_label or edge_label
+        label_kind = "v" if node_label else "e"
 
-        # Insert data in transaction
+        if not label:
+            raise APIException(
+                code=ErrorCode.IMPORT_VALIDATION_ERROR,
+                message="Either node_label or edge_label must be provided",
+                category=ErrorCategory.VALIDATION,
+                status_code=422,
+            )
+
+        # Basic structural validation for edge CSV
+        if label_kind == "e":
+            required_edge_columns = {"source", "target"}
+            missing = required_edge_columns - set(header)
+            if missing:
+                raise APIException(
+                    code=ErrorCode.IMPORT_INVALID_FILE,
+                    message=f"Edge CSV is missing required columns: {', '.join(sorted(missing))}",
+                    category=ErrorCategory.VALIDATION,
+                    status_code=422,
+                )
+
+        # PHASE 2: All database operations in a single transaction
+        validated_graph_name = validate_graph_name(graph_name)
+        validated_label_name = validate_label_name(label)
+        safe_graph = escape_identifier(validated_graph_name)
+        safe_label = escape_identifier(validated_label_name)
+
         inserted = 0
         rejected = 0
-        errors = []
+        errors: list[str] = []
 
-        async with db_conn.transaction():
-            for line_num, line in enumerate(lines[1:], start=2):
-                if not line.strip():
-                    continue
+        async with db_conn.transaction(timeout=300):
+            # Ensure graph exists inside transaction
+            graph_check = """
+                SELECT graphid FROM ag_catalog.ag_graph WHERE name = %(graph_name)s
+            """
+            graph_id = await db_conn.execute_scalar(
+                graph_check, {"graph_name": validated_graph_name}
+            )
 
-                values = [v.strip() for v in line.split(",")]
-                if len(values) != len(header):
-                    rejected += 1
-                    errors.append(f"Row {line_num}: column count mismatch")
-                    continue
+            if not graph_id:
+                create_graph_query = f"""
+                    SELECT * FROM ag_catalog.create_graph({safe_graph})
+                """
+                try:
+                    await db_conn.execute_query(create_graph_query)
+                    logger.info(f"Created graph: {validated_graph_name}")
+                except Exception as e:
+                    raise APIException(
+                        code=ErrorCode.GRAPH_CONTEXT_INVALID,
+                        message=f"Failed to create graph: {str(e)}",
+                        category=ErrorCategory.UPSTREAM,
+                        status_code=500,
+                    ) from e
 
-                # Build properties map
-                properties = {
-                    header[i]: values[i] for i in range(len(header))
-                }
+            # Create label if needed (inside same transaction)
+            if drop_if_exists:
+                drop_query = f"""
+                    SELECT * FROM ag_catalog.drop_label({safe_graph}, {safe_label}, {label_kind == 'v'})
+                """
+                try:
+                    await db_conn.execute_query(drop_query)
+                except Exception:
+                    # Label might not exist; that's fine when dropping conditionally
+                    pass
 
-                # Insert node or edge
-                if label_kind == "v":
-                    insert_query = f"""
-                        SELECT * FROM ag_catalog.cypher('{graph_name}'::text, $$
-                            CREATE (n:{label} $props)
-                            RETURN n
-                        $$::text, json_build_object('props', %(props)s::jsonb)::agtype) AS (result agtype)
-                    """
-                else:
-                    # For edges, we need source and target
-                    if "source" not in properties or "target" not in properties:
+            create_label_query = f"""
+                SELECT * FROM ag_catalog.create_label({safe_graph}, {safe_label}, {label_kind == 'v'})
+            """
+            try:
+                await db_conn.execute_query(create_label_query)
+                job_status.created_labels.append(validated_label_name)
+            except Exception as e:
+                if "already exists" not in str(e).lower():
+                    raise
+
+            # Batch insertion for better performance
+            import json
+
+            data_rows = [
+                (line_num, line)
+                for line_num, line in enumerate(lines[1:], start=2)
+                if line.strip()
+            ]
+
+            batch_size = 1000
+            for batch_start in range(0, len(data_rows), batch_size):
+                batch = data_rows[batch_start : batch_start + batch_size]
+                cypher_statements: list[str] = []
+
+                for line_num, line in batch:
+                    values = [v.strip() for v in line.split(",")]
+                    if len(values) != len(header):
                         rejected += 1
-                        errors.append(f"Row {line_num}: missing source or target")
+                        errors.append(f"Row {line_num}: column count mismatch")
                         continue
 
-                    insert_query = f"""
-                        SELECT * FROM ag_catalog.cypher('{graph_name}'::text, $$
-                            MATCH (a), (b)
-                            WHERE id(a) = $source_id AND id(b) = $target_id
-                            CREATE (a)-[r:{label} $props]->(b)
-                            RETURN r
-                        $$::text, json_build_object(
-                            'source_id', %(source_id)s,
-                            'target_id', %(target_id)s,
-                            'props', %(props)s::jsonb
-                        )::agtype) AS (result agtype)
-                    """
+                    properties = {
+                        header[i]: values[i] for i in range(len(header))
+                    }
 
-                try:
-                    import json
-
-                    props_json = json.dumps(properties)
                     if label_kind == "v":
-                        await db_conn.execute_query(
-                            insert_query, {"props": props_json}
+                        props_json = json.dumps(properties).replace("'", "''")
+                        cypher_statements.append(
+                            f"CREATE (n:{validated_label_name} {props_json}::jsonb)"
                         )
                     else:
-                        await db_conn.execute_query(
-                            insert_query,
-                            {
-                                "source_id": properties["source"],
-                                "target_id": properties["target"],
-                                "props": props_json,
-                            },
+                        # For edges, ensure required IDs are present
+                        if "source" not in properties or "target" not in properties:
+                            rejected += 1
+                            errors.append(f"Row {line_num}: missing source or target")
+                            continue
+
+                        props = {k: v for k, v in properties.items() if k not in {"source", "target"}}
+                        props_json = json.dumps(props).replace("'", "''")
+                        source_id = properties["source"]
+                        target_id = properties["target"]
+                        cypher_statements.append(
+                            f"MATCH (a), (b) "
+                            f"WHERE id(a) = {source_id} AND id(b) = {target_id} "
+                            f"CREATE (a)-[r:{validated_label_name} {props_json}::jsonb]->(b)"
                         )
-                    inserted += 1
-                except Exception as e:
-                    rejected += 1
-                    errors.append(f"Row {line_num}: {str(e)}")
+
+                if not cypher_statements:
+                    continue
+
+                batch_cypher = "\n".join(cypher_statements)
+                batch_query = """
+                    SELECT * FROM ag_catalog.cypher(%(graph_name)s::text, %(cypher)s::text) AS (result agtype)
+                """
+                await db_conn.execute_query(
+                    batch_query,
+                    {"graph_name": validated_graph_name, "cypher": batch_cypher},
+                )
+
+                inserted += len(cypher_statements)
 
         job_status.status = "completed"
         job_status.inserted_rows = inserted
