@@ -1,19 +1,10 @@
 # Kotte - Apache AGE Visualizer
 
-A clean-room implementation of an Apache AGE graph visualizer with a FastAPI backend and React frontend.
-
-## Status
-
-🚧 **In Development** - Core infrastructure is in place. See [Implementation Status](#implementation-status) below.
-
-## Architecture
-
-- **Backend**: FastAPI application providing REST API for database connectivity, query execution, and graph operations
-- **Frontend**: React + TypeScript application (D3.js visualization coming soon)
+A graph visualizer for Apache AGE with a FastAPI backend and React frontend. Connect to your PostgreSQL database with the AGE extension, run Cypher queries, and explore graph data through an interactive visualization or table view.
 
 ## Quick Start
 
-See [docs/QUICKSTART.md](docs/QUICKSTART.md) for detailed setup instructions.
+**Prerequisites:** Python 3.11+, Node.js 18+, PostgreSQL 14+ with Apache AGE extension
 
 ```bash
 # Backend
@@ -22,7 +13,7 @@ python -m venv venv && source venv/bin/activate
 pip install -r requirements-dev.txt
 uvicorn app.main:app --reload --port 8000
 
-# Frontend (new terminal)
+# Frontend (separate terminal)
 cd frontend
 npm install
 npm run dev
@@ -36,6 +27,79 @@ make dev-backend    # Terminal 1
 make dev-frontend   # Terminal 2
 ```
 
+- **Frontend:** http://localhost:5173
+- **API docs:** http://localhost:8000/api/docs
+
+See [docs/QUICKSTART.md](docs/QUICKSTART.md) for detailed setup and database preparation.
+
+## Essential Configuration
+
+Configuration is done via environment variables. Create a `.env` file in the `backend/` directory (no `.env.example` is provided; use the variables below as reference).
+
+### Required (Production)
+
+| Variable | Description |
+|----------|-------------|
+| `SESSION_SECRET_KEY` | Secret key for session signing. Generate with `openssl rand -urlsafe 32`. Required in production. |
+
+### Database (Connection Defaults)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DB_HOST` | `localhost` | PostgreSQL host |
+| `DB_PORT` | `5432` | PostgreSQL port |
+| `DB_NAME` | `postgres` | Default database name |
+| `DB_USER` | `postgres` | Default user |
+| `DB_PASSWORD` | `postgres` | Default password |
+
+*Note: Users connect through the UI with their own credentials; these defaults are for server-side operations.*
+
+### Session & Security
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SESSION_COOKIE_NAME` | `kotte_session` | Cookie name for sessions |
+| `SESSION_MAX_AGE` | `3600` | Session lifetime in seconds (1 hour) |
+| `SESSION_IDLE_TIMEOUT` | `1800` | Idle timeout in seconds (30 minutes) |
+| `CSRF_ENABLED` | `true` | Enable CSRF protection |
+| `RATE_LIMIT_ENABLED` | `true` | Enable rate limiting |
+| `RATE_LIMIT_PER_MINUTE` | `60` | Requests per minute per IP |
+| `RATE_LIMIT_PER_USER` | `100` | Requests per minute per user |
+
+### Query & Visualization Limits
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `QUERY_TIMEOUT` | `300` | Query timeout in seconds (5 minutes) |
+| `QUERY_MAX_RESULT_ROWS` | `100000` | Maximum rows returned by a query |
+| `QUERY_SAFE_MODE` | `false` | When `true`, rejects mutating queries (read-only) |
+| `MAX_NODES_FOR_GRAPH` | `5000` | Maximum nodes shown in graph view |
+| `MAX_EDGES_FOR_GRAPH` | `10000` | Maximum edges shown in graph view |
+
+### Import Limits
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `IMPORT_MAX_FILE_SIZE` | `104857600` | Max CSV file size in bytes (100MB) |
+| `IMPORT_MAX_ROWS` | `1000000` | Max rows per import |
+
+### CORS & Environment
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CORS_ORIGINS` | `http://localhost:5173,http://localhost:3000` | Allowed origins (comma-separated) |
+| `ENVIRONMENT` | `development` | `development` or `production` |
+| `DEBUG` | `false` | Enable debug mode |
+| `LOG_LEVEL` | `INFO` | Log level |
+
+### Credential Storage
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CREDENTIAL_STORAGE_TYPE` | `json_file` | Storage type: `json_file`, `sqlite`, `postgresql`, `redis` |
+| `CREDENTIAL_STORAGE_PATH` | `./data/connections.json` | Path for `json_file` storage |
+| `MASTER_ENCRYPTION_KEY` | *(empty)* | Encryption key for stored credentials |
+
 ## Project Structure
 
 ```
@@ -43,81 +107,56 @@ kotte/
 ├── backend/          # FastAPI backend
 │   ├── app/
 │   │   ├── api/      # API routes (session, graph, query)
-│   │   ├── core/     # Core services (auth, db, errors, config)
+│   │   ├── core/     # Auth, db, config
 │   │   ├── models/   # Pydantic models
-│   │   └── services/ # Business logic (to be implemented)
-│   └── tests/        # Backend tests
+│   │   └── services/ # Business logic
+│   └── tests/
 ├── frontend/         # React frontend
 │   ├── src/
-│   │   ├── components/  # React components
-│   │   ├── pages/       # Page components
-│   │   ├── services/    # API client
-│   │   └── stores/      # State management (Zustand)
-│   └── tests/        # Frontend tests
+│   │   ├── components/
+│   │   ├── pages/
+│   │   ├── services/
+│   │   └── stores/
+│   └── tests/
 └── docs/             # Documentation
 ```
 
-## Implementation Status
+## Using Kotte
 
-### ✅ Completed
-
-- **Backend Core**: FastAPI app, error handling, middleware, configuration
-- **Authentication**: Session management with secure cookies
-- **Database**: Connection management, AGE integration, parameterized queries
-- **API Endpoints**: Session, graph metadata, query execution, CSV import
-- **Services**: AgType parsing, graph element extraction, metadata discovery
-- **Frontend Core**: React + TypeScript + Vite setup, routing, state management
-- **UI Components**: Connection page, query editor, graph view (D3.js), table view, metadata sidebar
-- **Features**: Query execution, graph/table toggle, query history, export, metadata templates
-
-### 🚧 Partially Implemented
-
-- Query cancellation (endpoint exists, needs PostgreSQL integration)
-- CSV import (basic sync implementation, needs async jobs)
-- Meta-graph discovery (basic implementation)
-
-### 📋 Remaining
-
-- Graph interactions (filtering, styling, layout switching, expansion)
-- CSV import UI with progress tracking
-- Settings & persistence (theme, preferences)
-- Comprehensive testing (unit, integration, E2E)
-- Security hardening (audit logging, rate limiting)
-
-See [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md) for detailed status.
-
-## Security
-
-- ✅ Authentication required for all protected endpoints
-- ✅ Parameterized queries (no SQL injection)
-- ✅ Secrets from environment variables only
-- ✅ Session security with HttpOnly cookies
-- ✅ Safe mode for read-only queries (configurable)
-- 🚧 Audit logging (to be implemented)
-- 🚧 Rate limiting (to be implemented)
+1. **Connect** – On first load, enter your PostgreSQL connection details (host, port, database, user, password).
+2. **Select a graph** – Choose an AGE graph from the metadata sidebar.
+3. **Run queries** – Use the Cypher query editor; results appear as graph or table.
+4. **Explore** – Toggle graph/table view, inspect metadata, export results, and browse query history.
 
 ## API Documentation
 
-When running the backend, API documentation is available at:
-- Swagger UI: `http://localhost:8000/api/docs`
-- ReDoc: `http://localhost:8000/api/redoc`
+When the backend is running:
+
+- **Swagger UI:** http://localhost:8000/api/docs
+- **ReDoc:** http://localhost:8000/api/redoc
+
+## Security
+
+- Authentication required for protected endpoints
+- Parameterized queries (SQL injection protection)
+- Secrets from environment variables only
+- HttpOnly session cookies
+- Optional read-only mode via `QUERY_SAFE_MODE`
+- Configurable rate limiting
 
 ## Testing
 
 ```bash
-# Backend tests
+# Backend
 cd backend && pytest
 
-# Frontend tests
+# Frontend
 cd frontend && npm test
 ```
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for architecture details.
+Via Makefile: `make test-backend` and `make test-frontend`
 
-## Contributing
+## Further Documentation
 
-This is a clean-room implementation. See the requirements document for detailed specifications.
-
-## License
-
-[To be determined]
+- [QUICKSTART.md](docs/QUICKSTART.md) – Setup and database setup
+- [ARCHITECTURE.md](docs/ARCHITECTURE.md) – Architecture details
