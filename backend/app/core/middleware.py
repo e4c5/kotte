@@ -180,7 +180,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         # Get client identifier
         client_ip = request.client.host if request.client else "unknown"
-        user_id = request.session.get("user_id") if hasattr(request, "session") else None
+        user_id = request.scope.get("session", {}).get("user_id") if "session" in request.scope else None
 
         now = time.time()
         cutoff = now - 60  # Last minute

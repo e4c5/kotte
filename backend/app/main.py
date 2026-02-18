@@ -39,15 +39,6 @@ def create_app() -> FastAPI:
         redoc_url="/api/redoc" if settings.environment == "development" else None,
     )
 
-    # Session middleware (must be before CORS)
-    app.add_middleware(
-        SessionMiddleware,
-        secret_key=settings.session_secret_key,
-        max_age=settings.session_max_age,
-        same_site="lax",
-        https_only=settings.environment == "production",
-    )
-
     # Request ID middleware
     app.add_middleware(RequestIDMiddleware)
     
@@ -69,6 +60,16 @@ def create_app() -> FastAPI:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+    )
+
+    # Session middleware (must be added last so it runs first and populates
+    # request.session before RateLimit/CSRF middleware access it)
+    app.add_middleware(
+        SessionMiddleware,
+        secret_key=settings.session_secret_key,
+        max_age=settings.session_max_age,
+        same_site="lax",
+        https_only=settings.environment == "production",
     )
 
     # Error handlers
