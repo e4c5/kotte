@@ -127,7 +127,7 @@ class TestQueryExecution:
             },
         )
         
-        assert response.status_code == 422
+        assert response.status_code == 400
         data = response.json()
         assert "error" in data
         assert data["error"]["code"] == "QUERY_VALIDATION_ERROR"

@@ -7,6 +7,7 @@ from app.core.validation import (
     validate_graph_name,
     validate_label_name,
     validate_query_length,
+    escape_identifier,
 )
 
 
@@ -95,6 +96,27 @@ class TestQueryLengthValidation:
         assert exc_info.value.category == ErrorCategory.VALIDATION
         assert exc_info.value.status_code == 413
         assert "exceeds maximum length" in exc_info.value.message
+
+
+class TestEscapeIdentifier:
+    """Tests for PostgreSQL identifier escaping."""
+
+    def test_escape_identifier_basic(self):
+        """Basic identifiers are wrapped in double quotes."""
+        assert escape_identifier("my_graph") == '"my_graph"'
+        assert escape_identifier("Person") == '"Person"'
+
+    def test_escape_identifier_with_quotes(self):
+        """Internal double quotes are doubled."""
+        assert escape_identifier('my"graph') == '"my""graph"'
+        assert escape_identifier('my""graph') == '"my""""graph"'
+
+    def test_escape_identifier_malicious_input(self):
+        """Malicious-looking input is treated as a single identifier when escaped."""
+        malicious = 'test; DROP TABLE users; --'
+        escaped = escape_identifier(malicious)
+        # Should be a single quoted identifier; no characters removed
+        assert escaped == '"test; DROP TABLE users; --"'
 
 
 

@@ -4,6 +4,7 @@ import logging
 from typing import Dict, List, Optional, Set
 
 from app.core.database import DatabaseConnection
+from app.core.validation import validate_graph_name, validate_label_name, escape_identifier
 
 logger = logging.getLogger(__name__)
 
@@ -34,9 +35,12 @@ class MetadataService:
         """
         try:
             # Validate names (defense in depth - should already be validated)
-            from app.core.validation import validate_graph_name, validate_label_name
             validated_graph_name = validate_graph_name(graph_name)
             validated_label_name = validate_label_name(label_name)
+
+            # Escape identifiers for safe use in SQL
+            safe_graph = escape_identifier(validated_graph_name)
+            safe_label = escape_identifier(validated_label_name)
             
             # Build query to sample properties
             # Use validated names (already validated for SQL injection)
@@ -44,14 +48,14 @@ class MetadataService:
                 # For vertices, query the vertex table
                 query = f"""
                     SELECT properties
-                    FROM {validated_graph_name}.{validated_label_name}
+                    FROM {safe_graph}.{safe_label}
                     LIMIT %(limit)s
                 """
             else:
                 # For edges, query the edge table
                 query = f"""
                     SELECT properties
-                    FROM {validated_graph_name}.{validated_label_name}
+                    FROM {safe_graph}.{safe_label}
                     LIMIT %(limit)s
                 """
 
@@ -95,14 +99,17 @@ class MetadataService:
         """
         try:
             # Validate names (defense in depth)
-            from app.core.validation import validate_graph_name, validate_label_name
             validated_graph_name = validate_graph_name(graph_name)
             validated_label_name = validate_label_name(label_name)
-            
-            # Use validated names (already validated for SQL injection)
+
+            # Escape identifiers for safe use in SQL
+            safe_graph = escape_identifier(validated_graph_name)
+            safe_label = escape_identifier(validated_label_name)
+
+            # Use escaped names for defense in depth
             query = f"""
                 SELECT COUNT(*) as count
-                FROM {validated_graph_name}.{validated_label_name}
+                FROM {safe_graph}.{safe_label}
             """
             result = await db_conn.execute_scalar(query)
             return int(result) if result else 0
@@ -136,22 +143,25 @@ class MetadataService:
             Dictionary with 'min' and 'max' values, or None if property is not numeric
         """
         try:
-            from app.core.validation import validate_graph_name, validate_label_name
             validated_graph_name = validate_graph_name(graph_name)
             validated_label_name = validate_label_name(label_name)
-            
+
+            # Escape identifiers for safe use in SQL
+            safe_graph = escape_identifier(validated_graph_name)
+            safe_label = escape_identifier(validated_label_name)
+
             # Build query to sample property values
             if label_kind == "v":
                 query = f"""
                     SELECT properties->>%(prop_name)s as prop_value
-                    FROM {validated_graph_name}.{validated_label_name}
+                    FROM {safe_graph}.{safe_label}
                     WHERE properties ? %(prop_name)s
                     LIMIT %(limit)s
                 """
             else:
                 query = f"""
                     SELECT properties->>%(prop_name)s as prop_value
-                    FROM {validated_graph_name}.{validated_label_name}
+                    FROM {safe_graph}.{safe_label}
                     WHERE properties ? %(prop_name)s
                     LIMIT %(limit)s
                 """

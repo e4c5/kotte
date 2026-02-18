@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends
 from app.core.auth import get_session
 from app.core.database import DatabaseConnection
 from app.core.errors import APIException, ErrorCode, ErrorCategory
-from app.core.validation import validate_graph_name, validate_label_name
+from app.core.validation import validate_graph_name, validate_label_name, escape_identifier
 from app.models.graph import (
     GraphInfo,
     GraphMetadata,
@@ -213,17 +213,21 @@ async def get_meta_graph(
 ) -> MetaGraphResponse:
     """Get meta-graph view showing label-to-label relationship patterns."""
     try:
+        # Validate graph name format (prevents SQL injection)
+        validated_graph_name = validate_graph_name(graph_name)
+        safe_graph = escape_identifier(validated_graph_name)
+
         # Verify graph exists
         graph_check = """
             SELECT graphid FROM ag_catalog.ag_graph WHERE name = %(graph_name)s
         """
         graph_id = await db_conn.execute_scalar(
-            graph_check, {"graph_name": graph_name}
+            graph_check, {"graph_name": validated_graph_name}
         )
         if not graph_id:
             raise APIException(
                 code=ErrorCode.GRAPH_NOT_FOUND,
-                message=f"Graph '{graph_name}' not found",
+                message=f"Graph '{validated_graph_name}' not found",
                 category=ErrorCategory.NOT_FOUND,
                 status_code=404,
             )
@@ -258,7 +262,9 @@ async def get_meta_graph(
             WHERE graph.name = %(graph_name)s AND label.kind = 'e'
             ORDER BY edge_label
         """
-        edge_rows = await db_conn.execute_query(edge_query, {"graph_name": validated_graph_name})
+        edge_rows = await db_conn.execute_query(
+            edge_query, {"graph_name": validated_graph_name}
+        )
 
         relationships = []
         for edge_row in edge_rows:
@@ -266,6 +272,7 @@ async def get_meta_graph(
             try:
                 # Validate edge label name
                 validated_edge_label = validate_label_name(edge_label)
+                safe_edge = escape_identifier(validated_edge_label)
                 
                 # Sample edges to discover source/target label patterns
                 # Use validated names (already validated for SQL injection)
@@ -273,7 +280,7 @@ async def get_meta_graph(
                     SELECT 
                         start_id,
                         end_id
-                    FROM {validated_graph_name}.{validated_edge_label}
+                    FROM {safe_graph}.{safe_edge}
                     LIMIT 100
                 """
                 samples = await db_conn.execute_query(sample_query)
@@ -312,7 +319,6 @@ async def get_meta_graph(
                 logger.warning(f"Failed to analyze edge label {edge_label}: {e}")
                 continue
 
-        validated_graph_name = validate_graph_name(graph_name)
         return MetaGraphResponse(
             graph_name=validated_graph_name,
             relationships=relationships,

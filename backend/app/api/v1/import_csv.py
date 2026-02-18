@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 from app.core.auth import get_session
 from app.core.database import DatabaseConnection
 from app.core.errors import APIException, ErrorCode, ErrorCategory
-from app.core.validation import validate_graph_name, validate_label_name
+from app.core.validation import validate_graph_name, validate_label_name, escape_identifier
 from app.models.import_models import (
     CSVImportResponse,
     ImportJobStatus,
@@ -56,6 +56,7 @@ async def import_csv(
 
     # Validate graph name format (prevents SQL injection)
     validated_graph_name = validate_graph_name(graph_name)
+    safe_graph = escape_identifier(validated_graph_name)
 
     # Validate graph exists or create it (using parameterized query)
     graph_check = """
@@ -67,10 +68,10 @@ async def import_csv(
 
     if not graph_id:
         # Create graph if it doesn't exist
-        # Note: AGE create_graph function doesn't support parameterization,
-        # but we've validated the graph name format, so it's safe
+        # Note: create_graph() doesn't support parameterization; validated + escaped
+        # identifiers prevent SQL injection while still allowing AGE to resolve names.
         create_graph_query = f"""
-            SELECT * FROM ag_catalog.create_graph('{validated_graph_name}')
+            SELECT * FROM ag_catalog.create_graph({safe_graph})
         """
         try:
             await db_conn.execute_query(create_graph_query)
@@ -97,6 +98,7 @@ async def import_csv(
 
     # Validate label name format (prevents SQL injection)
     validated_label = validate_label_name(label)
+    safe_label = escape_identifier(validated_label)
 
     # Create job status
     job_status = ImportJobStatus(
@@ -130,10 +132,11 @@ async def import_csv(
             )
 
         # Create label if needed
-        # Note: AGE functions don't support parameterization, but we've validated names
+        # Note: AGE label DDL doesn't support parameterization; validated + escaped
+        # identifiers are used directly in the function calls below.
         if drop_if_exists:
             drop_query = f"""
-                SELECT * FROM ag_catalog.drop_label('{validated_graph_name}', '{validated_label}', {label_kind == 'v'})
+                SELECT * FROM ag_catalog.drop_label({safe_graph}, {safe_label}, {label_kind == 'v'})
             """
             try:
                 await db_conn.execute_query(drop_query)
@@ -141,7 +144,7 @@ async def import_csv(
                 pass  # Label might not exist
 
         create_label_query = f"""
-            SELECT * FROM ag_catalog.create_label('{validated_graph_name}', '{validated_label}', {label_kind == 'v'})
+            SELECT * FROM ag_catalog.create_label({safe_graph}, {safe_label}, {label_kind == 'v'})
         """
         try:
             await db_conn.execute_query(create_label_query)

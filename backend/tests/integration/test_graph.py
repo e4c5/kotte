@@ -102,7 +102,7 @@ class TestGraphEndpoints:
         """Test getting metadata with invalid graph name."""
         response = await connected_client.get("/api/v1/graphs/123-invalid-name/metadata")
         
-        assert response.status_code == 422
+        assert response.status_code == 400
         data = response.json()
         assert "error" in data
         assert data["error"]["code"] == "QUERY_VALIDATION_ERROR"

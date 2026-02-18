@@ -27,37 +27,37 @@ Before implementing tasks, review these analysis documents for context and detai
 
 **Detailed guidance:** [01_SECURITY_GAPS.md - Gap #1, #2, #3](../analysis/01_SECURITY_GAPS.md)
 
-- [ ] Fix unvalidated graph_name in graph.py:221
-  - **File:** `backend/app/api/v1/graph.py:221`
+- [x] Fix unvalidated graph_name in graph.py:209
+  - **File:** `backend/app/api/v1/graph.py:209`
   - **Issue:** Graph name used without validation before database query
   - **Fix:** Add `validate_graph_name()` call before line 221
   - **Reference:** Security Gaps, Gap #1
   
-- [ ] Implement escape_identifier() utility
+- [x] Implement escape_identifier() utility
   - **File:** `backend/app/core/validation.py`
   - **Issue:** Need PostgreSQL identifier escaping for defense-in-depth
   - **Fix:** Add `escape_identifier()` function
   - **Reference:** Security Gaps, Gap #2 - Step 1
   
-- [ ] Apply escaping to metadata.py (3 locations)
-  - **File:** `backend/app/services/metadata.py` lines 45-56, 103-106, 145-157
+- [x] Apply escaping to metadata.py (3 locations)
+  - **File:** `backend/app/services/metadata.py` lines 36-73, 82-120, 145-198
   - **Issue:** F-string table names without escaping
   - **Fix:** Use `escape_identifier()` for all table names
   - **Reference:** Security Gaps, Gap #2 - Step 2
   
-- [ ] Apply escaping to graph.py:272
-  - **File:** `backend/app/api/v1/graph.py:272-278`
+- [x] Apply escaping to graph.py:269
+  - **File:** `backend/app/api/v1/graph.py:269-285`
   - **Issue:** F-string query construction
   - **Fix:** Apply `escape_identifier()` to validated names
   - **Reference:** Security Gaps, Gap #2 - Step 3
   
-- [ ] Apply escaping to import_csv.py (2 locations)
-  - **File:** `backend/app/api/v1/import_csv.py` lines 72-73, 143-144
+- [x] Apply escaping to import_csv.py (2 locations)
+  - **File:** `backend/app/api/v1/import_csv.py` lines 69-75, 134-148
   - **Issue:** String interpolation in AGE function calls
   - **Fix:** Use `escape_identifier()` with defensive comments
   - **Reference:** Security Gaps, Gap #3
   
-- [ ] Add unit tests for escape_identifier()
+- [x] Add unit tests for escape_identifier()
   - **File:** `backend/tests/test_validation.py`
   - **Tests:** Basic identifiers, quotes, malicious input
   - **Reference:** Security Gaps, Testing section
@@ -161,14 +161,14 @@ Before implementing tasks, review these analysis documents for context and detai
 **Detailed guidance:** [02_PERFORMANCE_OPTIMIZATION.md - Gap #2, #3, #4](../analysis/02_PERFORMANCE_OPTIMIZATION.md)
 
 - [ ] Rewrite meta-graph discovery (single query)
-  - **File:** `backend/app/api/v1/graph.py:233-313`
+  - **File:** `backend/app/api/v1/graph.py:209-323`
   - **Issue:** N+1 query pattern (3N+1 queries for N edge labels)
   - **Fix:** Single Cypher aggregation query
   - **Expected improvement:** 116x faster with 100 edge labels
   - **Reference:** Performance Optimization, Gap #2 - Optimized Implementation
   
 - [ ] Property discovery with jsonb_object_keys()
-  - **File:** `backend/app/services/metadata.py:20-76`
+  - **File:** `backend/app/services/metadata.py:15-79`
   - **Issue:** Samples only first N records, misses rare properties
   - **Fix:** Use PostgreSQL's jsonb_object_keys() to find ALL properties
   - **Expected improvement:** 5-10x faster, finds all properties
@@ -307,6 +307,11 @@ Before implementing tasks, review these analysis documents for context and detai
 
 **Detailed guidance:** [08_TESTING_RECOMMENDATIONS.md](../analysis/08_TESTING_RECOMMENDATIONS.md)
 
+- [ ] Full FastAPI test harness with middleware
+  - **Files:** `backend/tests/conftest.py`, `app/main.py`, `app/core/middleware.py`
+  - **Action:** Configure an async test client that mounts the real session, CSRF, and rate-limit middleware so currently skipped auth/session/middleware tests can run without `@pytest.mark.skip`
+  - **Reference:** Testing Recommendations, #2 Integration Tests
+  
 - [ ] Unit tests for all new code
   - **Files:** `backend/tests/test_*.py`
   - **Coverage:** escape_identifier(), transaction wrappers, error handlers

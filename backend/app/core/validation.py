@@ -35,7 +35,7 @@ def validate_graph_name(graph_name: str) -> str:
             code=ErrorCode.QUERY_VALIDATION_ERROR,
             message="Graph name cannot be empty",
             category=ErrorCategory.VALIDATION,
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_400_BAD_REQUEST,
         )
 
     if len(graph_name) > MAX_GRAPH_NAME_LENGTH:
@@ -43,7 +43,7 @@ def validate_graph_name(graph_name: str) -> str:
             code=ErrorCode.QUERY_VALIDATION_ERROR,
             message=f"Graph name exceeds maximum length of {MAX_GRAPH_NAME_LENGTH}",
             category=ErrorCategory.VALIDATION,
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_400_BAD_REQUEST,
         )
 
     if not GRAPH_NAME_PATTERN.match(graph_name):
@@ -51,7 +51,7 @@ def validate_graph_name(graph_name: str) -> str:
             code=ErrorCode.QUERY_VALIDATION_ERROR,
             message="Graph name must contain only letters, numbers, and underscores, and start with a letter or underscore",
             category=ErrorCategory.VALIDATION,
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_400_BAD_REQUEST,
         )
 
     return graph_name
