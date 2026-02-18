@@ -1,0 +1,199 @@
+import { useState, useRef, useEffect } from 'react'
+
+interface QueryEditorProps {
+  value: string
+  onChange: (value: string) => void
+  onExecute: () => void
+  onCancel?: () => void
+  loading?: boolean
+  history?: string[]
+}
+
+export default function QueryEditor({
+  value,
+  onChange,
+  onExecute,
+  onCancel,
+  loading = false,
+  history = [],
+}: QueryEditorProps) {
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const [historyIndex, setHistoryIndex] = useState(-1)
+  const [params, setParams] = useState('{}')
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Execute on Shift+Enter or Ctrl+Enter
+      if (
+        (e.shiftKey || e.ctrlKey || e.metaKey) &&
+        e.key === 'Enter' &&
+        textareaRef.current === document.activeElement
+      ) {
+        e.preventDefault()
+        onExecute()
+      }
+
+      // History navigation with Ctrl+Up/Down
+      if (e.ctrlKey || e.metaKey) {
+        if (e.key === 'ArrowUp' && history.length > 0) {
+          e.preventDefault()
+          const newIndex = historyIndex < history.length - 1 ? historyIndex + 1 : historyIndex
+          setHistoryIndex(newIndex)
+          if (newIndex >= 0) {
+            onChange(history[history.length - 1 - newIndex])
+          }
+        } else if (e.key === 'ArrowDown' && historyIndex >= 0) {
+          e.preventDefault()
+          const newIndex = historyIndex > 0 ? historyIndex - 1 : -1
+          setHistoryIndex(newIndex)
+          if (newIndex >= 0) {
+            onChange(history[history.length - 1 - newIndex])
+          } else {
+            onChange('')
+          }
+        }
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [history, historyIndex, onChange, onExecute])
+
+  const handleParamsChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setParams(e.target.value)
+    try {
+      JSON.parse(e.target.value)
+    } catch {
+      // Invalid JSON, but allow editing
+    }
+  }
+
+  // const getParams = (): Record<string, unknown> => {
+  //   try {
+  //     return JSON.parse(params)
+  //   } catch {
+  //     return {}
+  //   }
+  // } // Reserved for future use
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <div style={{ display: 'flex', gap: '1rem', flex: 1, minHeight: 0 }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+          <label htmlFor="cypher-query" style={{ marginBottom: '0.5rem', fontWeight: 'bold' }}>
+            Cypher Query
+          </label>
+          <textarea
+            id="cypher-query"
+            ref={textareaRef}
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder="MATCH (n) RETURN n LIMIT 10"
+            aria-label="Cypher query editor"
+            aria-describedby="query-help"
+            role="textbox"
+            style={{
+              flex: 1,
+              fontFamily: 'monospace',
+              padding: '0.75rem',
+              fontSize: '14px',
+              border: '1px solid #ccc',
+              borderRadius: '4px',
+              resize: 'none',
+            }}
+          />
+          <div id="query-help" style={{ marginTop: '0.5rem', fontSize: '12px', color: '#666' }} role="note">
+            Shift+Enter or Ctrl+Enter to execute • Ctrl+Up/Down for history
+          </div>
+        </div>
+        <div style={{ width: '300px', display: 'flex', flexDirection: 'column' }}>
+          <label htmlFor="query-params" style={{ marginBottom: '0.5rem', fontWeight: 'bold' }}>
+            Parameters (JSON)
+          </label>
+          <textarea
+            id="query-params"
+            value={params}
+            onChange={handleParamsChange}
+            placeholder='{"name": "Alice"}'
+            aria-label="Query parameters in JSON format"
+            role="textbox"
+            style={{
+              flex: 1,
+              fontFamily: 'monospace',
+              padding: '0.75rem',
+              fontSize: '12px',
+              border: '1px solid #ccc',
+              borderRadius: '4px',
+              resize: 'none',
+            }}
+          />
+        </div>
+      </div>
+      <div style={{ marginTop: '1rem', display: 'flex', gap: '0.5rem' }}>
+        {loading && onCancel ? (
+          <button
+            onClick={onCancel}
+            aria-label="Cancel running query"
+            style={{
+              padding: '0.5rem 1.5rem',
+              fontSize: '1rem',
+              cursor: 'pointer',
+              backgroundColor: '#dc3545',
+              color: 'white',
+              border: 'none',
+              borderRadius: '4px',
+            }}
+          >
+            Cancel Query
+          </button>
+        ) : (
+          <button
+            onClick={onExecute}
+            disabled={loading}
+            aria-label={loading ? 'Query is executing' : 'Execute the Cypher query'}
+            aria-busy={loading}
+            style={{
+              padding: '0.5rem 1.5rem',
+              fontSize: '1rem',
+              cursor: loading ? 'not-allowed' : 'pointer',
+              backgroundColor: loading ? '#6c757d' : '#007bff',
+              color: 'white',
+              border: 'none',
+              borderRadius: '4px',
+              opacity: loading ? 0.6 : 1,
+            }}
+          >
+            {loading ? 'Executing...' : 'Execute Query'}
+          </button>
+        )}
+        <button
+          onClick={() => onChange('')}
+          disabled={loading}
+          aria-label="Clear query editor"
+          style={{
+            padding: '0.5rem 1.5rem',
+            fontSize: '1rem',
+            cursor: loading ? 'not-allowed' : 'pointer',
+            backgroundColor: '#6c757d',
+            color: 'white',
+            border: 'none',
+            borderRadius: '4px',
+            opacity: loading ? 0.6 : 1,
+          }}
+        >
+          Clear
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// Export helper to get params
+export function getQueryParams(paramsString: string): Record<string, unknown> {
+  try {
+    return JSON.parse(paramsString)
+  } catch {
+    return {}
+  }
+}
+
