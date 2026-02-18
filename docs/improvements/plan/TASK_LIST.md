@@ -129,15 +129,15 @@ Before implementing tasks, review these analysis documents for context and detai
 
 **Detailed guidance:** [02_PERFORMANCE_OPTIMIZATION.md - Gap #1](../analysis/02_PERFORMANCE_OPTIMIZATION.md)
 
-- [ ] Implement create_label_indices()
-  - **File:** `backend/app/services/metadata.py`
+- [x] Implement create_label_indices()
+  - **File:** `backend/app/services/metadata.py:200-240`
   - **Issue:** No indices exist on any graph tables
   - **Fix:** Create function to generate ID, start_id, end_id indices
   - **Expected improvement:** 125x faster node lookups (250ms → 2ms)
   - **Reference:** Performance Optimization, Gap #1 - Recommended Indices
   
-- [ ] Add auto-index on metadata request
-  - **File:** `backend/app/api/v1/graph.py`
+- [x] Add auto-index on metadata request
+  - **File:** `backend/app/api/v1/graph.py:120-144,157-168`
   - **Issue:** Manual index creation required
   - **Fix:** Call create_label_indices() automatically in get_graph_metadata()
   - **Reference:** Performance Optimization, Gap #1 - Auto-Index Creation

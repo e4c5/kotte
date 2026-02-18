@@ -1,4 +1,4 @@
-"""Graph metadata discovery service."""
+"""Graph metadata discovery and indexing service."""
 
 import logging
 from typing import Dict, List, Optional, Set
@@ -196,4 +196,46 @@ class MetadataService:
                 f"Failed to get property statistics for {graph_name}.{label_name}.{property_name}: {e}"
             )
             return {"min": None, "max": None}
+
+    @staticmethod
+    async def create_label_indices(
+        db_conn: DatabaseConnection,
+        graph_name: str,
+        label_name: str,
+        label_kind: str,
+    ) -> None:
+        """
+        Create foundational indices for a given label.
+
+        For vertices, creates an index on id.
+        For edges, creates indices on id, start_id, and end_id.
+        """
+        try:
+            validated_graph_name = validate_graph_name(graph_name)
+            validated_label_name = validate_label_name(label_name)
+
+            safe_graph = escape_identifier(validated_graph_name)
+            safe_label = escape_identifier(validated_label_name)
+            table_name = f"{safe_graph}.{safe_label}"
+
+            # Always index id; for edges also index start_id and end_id
+            columns: list[str] = ["id"]
+            if label_kind == "e":
+                columns.extend(["start_id", "end_id"])
+
+            for column in columns:
+                index_name = f"idx_{validated_graph_name}_{validated_label_name}_{column}"
+                create_index_sql = f"""
+                    CREATE INDEX IF NOT EXISTS {escape_identifier(index_name)}
+                    ON {table_name} ({column})
+                """
+                await db_conn.execute_query(create_index_sql)
+
+            logger.info(
+                f"Ensured indices on {table_name} for columns: {', '.join(columns)}"
+            )
+        except Exception as e:
+            logger.warning(
+                f"Failed to create indices for {graph_name}.{label_name} ({label_kind}): {e}"
+            )
 

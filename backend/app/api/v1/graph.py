@@ -1,5 +1,6 @@
 """Graph metadata endpoints."""
 
+import asyncio
 import logging
 
 from fastapi import APIRouter, Depends
@@ -73,6 +74,7 @@ async def list_graphs(
 @router.get("/{graph_name}/metadata", response_model=GraphMetadata)
 async def get_graph_metadata(
     graph_name: str,
+    create_indices: bool = True,
     db_conn: DatabaseConnection = Depends(get_db_connection),
 ) -> GraphMetadata:
     """Get metadata for a specific graph."""
@@ -112,6 +114,14 @@ async def get_graph_metadata(
             label_name = row["label_name"]
             # Validate label name
             validated_label_name = validate_label_name(label_name)
+
+            # Optionally create indices for this vertex label in the background
+            if create_indices:
+                asyncio.create_task(
+                    MetadataService.create_label_indices(
+                        db_conn, validated_graph_name, validated_label_name, "v"
+                    )
+                )
             
             # Get count (using ANALYZE estimates for performance)
             # Use parameterized query with validated names
@@ -149,6 +159,14 @@ async def get_graph_metadata(
             label_name = row["label_name"]
             # Validate label name
             validated_label_name = validate_label_name(label_name)
+
+            # Optionally create indices for this edge label in the background
+            if create_indices:
+                asyncio.create_task(
+                    MetadataService.create_label_indices(
+                        db_conn, validated_graph_name, validated_label_name, "e"
+                    )
+                )
             
             # Get count estimate (using parameterized query)
             table_name = f"{validated_graph_name}_{validated_label_name}"
