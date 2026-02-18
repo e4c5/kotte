@@ -110,11 +110,13 @@ Before implementing tasks, review these analysis documents for context and detai
 - [ ] Test rollback scenarios
   - **File:** `backend/tests/integration/`
   - **Tests:** Failed deletion, import validation failure
+  - **Prerequisite:** Real PostgreSQL/AGE test database and integration harness (Phase 5: full FastAPI + middleware + DB test setup)
   - **Reference:** Transaction Handling, Testing Strategy
   
 - [ ] Test concurrent operations
   - **File:** `backend/tests/integration/`
-  - **Tests:** Concurrent deletions, race conditions
+  - **Tests:** Concurrent deletions, race conditions (using two independent DB connections/clients)
+  - **Prerequisite:** Real PostgreSQL/AGE test database with support for concurrent integration tests
   - **Reference:** Transaction Handling, Integration Tests
 
 ---

@@ -510,11 +510,16 @@ async with db_conn.transaction(timeout=300):
 - [ ] Document transaction best practices
 
 ### Phase 4: Testing (Week 2)
-- [ ] Test node deletion rollback scenarios
-- [ ] Test import validation failures
-- [ ] Test concurrent modification conflicts
-- [ ] Test transaction timeout behavior
-- [ ] Load test with concurrent operations
+- [ ] Test node deletion rollback scenarios  
+      **Requires:** Real PostgreSQL/AGE test database and integration harness (FastAPI app with middleware + real `DatabaseConnection`)
+- [ ] Test import validation failures  
+      **Requires:** Ability to post CSVs against the real test DB and verify no graph/label/table changes on validation errors
+- [ ] Test concurrent modification conflicts  
+      **Requires:** Two or more independent DB connections/clients executing mutations concurrently
+- [ ] Test transaction timeout behavior  
+      **Requires:** Real transaction timeouts via `SET LOCAL statement_timeout` and long-running test queries
+- [ ] Load test with concurrent operations  
+      **Requires:** Load-test tooling (e.g., locust/k6) pointed at the test environment
 
 ---
 
