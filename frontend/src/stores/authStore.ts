@@ -27,6 +27,9 @@ export const useAuthStore = create<AuthState>((set) => ({
     set({ loading: true, error: null })
     try {
       const response = await authAPI.login({ username, password })
+      if (response.csrf_token) {
+        sessionStorage.setItem('csrf_token', response.csrf_token)
+      }
       set({
         user: { user_id: response.user_id, username: response.username },
         authenticated: true,
@@ -43,6 +46,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   logout: async () => {
     set({ loading: true })
     try {
+      sessionStorage.removeItem('csrf_token')
       await authAPI.logout()
       set({
         user: null,

@@ -73,6 +73,7 @@ async def login(request: LoginRequest, http_request: Request) -> LoginResponse:
         user_id=user["user_id"],
         username=user["username"],
         authenticated=True,
+        csrf_token=session_data.get("csrf_token") if session_data else None,
     )
 
 

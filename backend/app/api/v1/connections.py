@@ -4,7 +4,7 @@ import logging
 from typing import List
 
 from fastapi import APIRouter, Depends, status
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 from app.core.auth import get_session
 from app.core.connection_storage import connection_storage
@@ -204,7 +204,7 @@ async def get_connection(
 async def delete_connection(
     connection_id: str,
     session: dict = Depends(get_session),
-) -> JSONResponse:
+) -> Response:
     """Delete a saved connection."""
     user_id = session.get("user_id")
     if not user_id:
@@ -234,7 +234,7 @@ async def delete_connection(
             },
         )
         
-        return JSONResponse(status_code=status.HTTP_204_NO_CONTENT, content=None)
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
     except APIException:
         raise
     except Exception as e:

@@ -10,6 +10,17 @@ export default function ConnectionPage() {
   const { connect, loading, error } = useSessionStore()
   const { authenticated, checkAuth } = useAuthStore()
 
+  const [config, setConfig] = useState<ConnectionConfig>({
+    host: 'localhost',
+    port: 5432,
+    database: 'postgres',
+    user: 'postgres',
+    password: '',
+    sslmode: undefined,
+  })
+  const [connectionTested, setConnectionTested] = useState(false)
+  const [testSuccessMessage, setTestSuccessMessage] = useState<string | null>(null)
+
   // Check authentication on mount
   useEffect(() => {
     checkAuth().then(() => {
@@ -19,27 +30,31 @@ export default function ConnectionPage() {
     })
   }, [authenticated, navigate, checkAuth])
 
+  // Reset tested state when config changes
+  useEffect(() => {
+    setConnectionTested(false)
+    setTestSuccessMessage(null)
+  }, [config.host, config.port, config.database, config.user, config.password])
+
   // Redirect if not authenticated
   if (!authenticated) {
     return null
   }
-  const [config, setConfig] = useState<ConnectionConfig>({
-    host: 'localhost',
-    port: 5432,
-    database: 'postgres',
-    user: 'postgres',
-    password: '',
-    sslmode: undefined,
-  })
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleTestConnection = async (e: React.FormEvent) => {
     e.preventDefault()
+    setTestSuccessMessage(null)
     try {
       await connect(config)
-      navigate('/workspace')
-    } catch (err) {
+      setConnectionTested(true)
+      setTestSuccessMessage('Connection successful! You can save this connection or go to the workspace.')
+    } catch {
       // Error is handled by store
     }
+  }
+
+  const handleGoToWorkspace = () => {
+    navigate('/workspace')
   }
 
   const handleLoadConnection = (loadedConfig: ConnectionConfig) => {
@@ -54,7 +69,7 @@ export default function ConnectionPage() {
         {/* Connection Form */}
         <div>
           <h3>New Connection</h3>
-          <form onSubmit={handleSubmit}>
+          <form onSubmit={handleTestConnection}>
             <div style={{ marginBottom: '1rem' }}>
               <label>
                 Host:
@@ -118,18 +133,39 @@ export default function ConnectionPage() {
             {error && (
               <div style={{ color: 'red', marginBottom: '1rem' }}>{error}</div>
             )}
-            <button
-              type="submit"
-              disabled={loading}
-              style={{
-                padding: '0.75rem 1.5rem',
-                fontSize: '1rem',
-                cursor: loading ? 'not-allowed' : 'pointer',
-                width: '100%',
-              }}
-            >
-              {loading ? 'Connecting...' : 'Connect'}
-            </button>
+            {testSuccessMessage && (
+              <div style={{ color: 'green', marginBottom: '1rem' }}>{testSuccessMessage}</div>
+            )}
+            <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+              <button
+                type="submit"
+                disabled={loading}
+                style={{
+                  padding: '0.75rem 1.5rem',
+                  fontSize: '1rem',
+                  cursor: loading ? 'not-allowed' : 'pointer',
+                }}
+              >
+                {loading ? 'Testing...' : 'Test Connection'}
+              </button>
+              {connectionTested && (
+                <button
+                  type="button"
+                  onClick={handleGoToWorkspace}
+                  style={{
+                    padding: '0.75rem 1.5rem',
+                    fontSize: '1rem',
+                    cursor: 'pointer',
+                    backgroundColor: '#0d6efd',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                  }}
+                >
+                  Go to Workspace
+                </button>
+              )}
+            </div>
           </form>
         </div>
 
@@ -138,6 +174,7 @@ export default function ConnectionPage() {
           <SavedConnections
             onLoadConnection={handleLoadConnection}
             currentConfig={config}
+            connectionTested={connectionTested}
           />
         </div>
       </div>

@@ -13,6 +13,7 @@ export interface LoginResponse {
   user_id: string
   username: string
   authenticated: boolean
+  csrf_token?: string
 }
 
 export interface LogoutResponse {

@@ -4,6 +4,8 @@ import base64
 import hashlib
 import logging
 import os
+import warnings
+from pathlib import Path
 from typing import Optional
 
 from cryptography.fernet import Fernet
@@ -13,6 +15,40 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+# Key file for persisting auto-generated key (development only)
+_DEV_KEY_FILENAME = ".master_encryption_key"
+
+
+def _get_dev_key_path() -> Path:
+    """Get path for dev master key file (next to connections file)."""
+    storage_path = Path(settings.credential_storage_path)
+    return storage_path.parent / _DEV_KEY_FILENAME
+
+
+def _load_or_create_dev_key() -> str:
+    """
+    Load persisted dev key or create and persist a new one.
+    Ensures encrypted connections survive server restarts in development.
+    """
+    key_path = _get_dev_key_path()
+    try:
+        key_path.parent.mkdir(parents=True, exist_ok=True)
+        if key_path.exists():
+            key_str = key_path.read_text().strip()
+            if len(key_str.encode()) >= 32:
+                return key_str
+        # Generate new key and persist
+        key_str = Fernet.generate_key().decode()
+        key_path.write_text(key_str)
+        try:
+            os.chmod(key_path, 0o600)
+        except OSError as e:
+            logger.warning(f"Could not set restrictive permissions on key file: {e}")
+        return key_str
+    except OSError as e:
+        logger.warning(f"Could not persist dev encryption key to {key_path}: {e}")
+        return Fernet.generate_key().decode()
 
 
 class CredentialEncryption:
@@ -28,16 +64,14 @@ class CredentialEncryption:
         if master_key is None:
             key_str = settings.master_encryption_key
             if not key_str:
-                # Generate a key for development (warn in production)
+                # Generate or load persisted key for development
                 if settings.environment == "production":
                     raise ValueError(
                         "MASTER_ENCRYPTION_KEY must be set in production environment"
                     )
-                key_str = Fernet.generate_key().decode()
-                import warnings
-
+                key_str = _load_or_create_dev_key()
                 warnings.warn(
-                    "MASTER_ENCRYPTION_KEY not set, using generated key. "
+                    "MASTER_ENCRYPTION_KEY not set, using persisted dev key. "
                     "Set MASTER_ENCRYPTION_KEY in production!",
                     UserWarning,
                 )

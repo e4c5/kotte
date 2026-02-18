@@ -18,6 +18,7 @@ class LoginResponse(BaseModel):
     user_id: str
     username: str
     authenticated: bool = True
+    csrf_token: str | None = None
 
 
 class LogoutResponse(BaseModel):

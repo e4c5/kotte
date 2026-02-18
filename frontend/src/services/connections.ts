@@ -36,7 +36,7 @@ export interface SaveConnectionRequest {
 export async function saveConnection(
   connection: SaveConnectionRequest
 ): Promise<SavedConnection> {
-  const response = await api.post<SavedConnection>('/api/v1/connections', connection);
+  const response = await api.post<SavedConnection>('/connections', connection);
   return response.data;
 }
 
@@ -44,7 +44,7 @@ export async function saveConnection(
  * List all saved connections for the current user.
  */
 export async function listConnections(): Promise<SavedConnection[]> {
-  const response = await api.get<SavedConnection[]>('/api/v1/connections');
+  const response = await api.get<SavedConnection[]>('/connections');
   return response.data;
 }
 
@@ -53,7 +53,7 @@ export async function listConnections(): Promise<SavedConnection[]> {
  */
 export async function getConnection(connectionId: string): Promise<SavedConnectionDetail> {
   const response = await api.get<SavedConnectionDetail>(
-    `/api/v1/connections/${connectionId}`
+    `/connections/${connectionId}`
   );
   return response.data;
 }
@@ -62,6 +62,6 @@ export async function getConnection(connectionId: string): Promise<SavedConnecti
  * Delete a saved connection.
  */
 export async function deleteConnection(connectionId: string): Promise<void> {
-  await api.delete(`/api/v1/connections/${connectionId}`);
+  await api.delete(`/connections/${connectionId}`);
 }
 

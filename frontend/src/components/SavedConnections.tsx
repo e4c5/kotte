@@ -15,11 +15,13 @@ import type { ConnectionConfig } from '../services/session'
 interface SavedConnectionsProps {
   onLoadConnection: (config: ConnectionConfig) => void
   currentConfig?: ConnectionConfig
+  connectionTested?: boolean
 }
 
 export default function SavedConnections({
   onLoadConnection,
   currentConfig,
+  connectionTested = false,
 }: SavedConnectionsProps) {
   const [connections, setConnections] = useState<SavedConnection[]>([])
   const [loading, setLoading] = useState(false)
@@ -105,22 +107,30 @@ export default function SavedConnections({
 
   return (
     <div style={{ marginTop: '2rem' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
         <h3>Saved Connections</h3>
         {currentConfig && (
           <button
             type="button"
-            onClick={() => setShowSaveDialog(true)}
+            onClick={() => connectionTested && setShowSaveDialog(true)}
+            disabled={!connectionTested}
+            title={!connectionTested ? 'Test the connection first to save it' : 'Save this connection'}
             style={{
               padding: '0.5rem 1rem',
               fontSize: '0.9rem',
-              cursor: 'pointer',
+              cursor: connectionTested ? 'pointer' : 'not-allowed',
+              opacity: connectionTested ? 1 : 0.6,
             }}
           >
             Save Current Connection
           </button>
         )}
       </div>
+      {currentConfig && !connectionTested && (
+        <p style={{ fontSize: '0.85rem', color: '#666', marginBottom: '1rem' }}>
+          Test the connection first to enable saving.
+        </p>
+      )}
 
       {showSaveDialog && (
         <div
