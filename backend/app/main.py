@@ -39,20 +39,6 @@ def create_app() -> FastAPI:
         redoc_url="/api/redoc" if settings.environment == "development" else None,
     )
 
-    # Request ID middleware
-    app.add_middleware(RequestIDMiddleware)
-    
-    # Metrics middleware (collect metrics for all requests)
-    app.add_middleware(MetricsMiddleware)
-
-    # Rate limiting middleware (before CSRF to prevent abuse)
-    if settings.rate_limit_enabled:
-        app.add_middleware(RateLimitMiddleware)
-
-    # CSRF protection middleware
-    if settings.csrf_enabled:
-        app.add_middleware(CSRFMiddleware)
-
     # CORS middleware
     app.add_middleware(
         CORSMiddleware,
@@ -62,8 +48,15 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # Session middleware (must be added last so it runs first and populates
-    # request.session before RateLimit/CSRF middleware access it)
+    # CSRF protection middleware (needs request.session, so Session must run before it)
+    if settings.csrf_enabled:
+        app.add_middleware(CSRFMiddleware)
+
+    # Rate limiting middleware (runs before CSRF to limit abuse early)
+    if settings.rate_limit_enabled:
+        app.add_middleware(RateLimitMiddleware)
+
+    # Session middleware (added after CSRF/CORS so it runs before them and populates request.session)
     app.add_middleware(
         SessionMiddleware,
         secret_key=settings.session_secret_key,
@@ -71,6 +64,12 @@ def create_app() -> FastAPI:
         same_site="lax",
         https_only=settings.environment == "production",
     )
+
+    # Metrics middleware (collect metrics for all requests)
+    app.add_middleware(MetricsMiddleware)
+
+    # Request ID middleware (added last so it runs first on requests)
+    app.add_middleware(RequestIDMiddleware)
 
     # Error handlers
     setup_error_handlers(app)

@@ -52,7 +52,7 @@ class DatabaseConnection:
                 conn_str, row_factory=dict_row
             )
 
-            # Verify AGE extension
+            # Verify AGE extension and configure session for AGE
             async with self._conn.cursor() as cur:
                 await cur.execute(
                     "SELECT EXISTS(SELECT 1 FROM pg_extension WHERE extname = 'age')"
@@ -65,6 +65,11 @@ class DatabaseConnection:
                         category=ErrorCategory.UPSTREAM,
                         status_code=500,
                     )
+                # Per Apache AGE docs, for every connection we must load AGE and set search_path.
+                # See: https://age.apache.org/getstarted/quickstart/ (Post Installation)
+                await cur.execute("LOAD 'age'")
+                await cur.execute('SET search_path = ag_catalog, "$user", public')
+            await self._conn.commit()
 
             logger.info(
                 f"Connected to database {self.database} on {self.host}:{self.port}"

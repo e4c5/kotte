@@ -28,6 +28,14 @@ export default function ResultTab({
 
   const result = tab.result
   if (!result) {
+    // Hide "no results yet" when user has already run a query (error or loading)
+    if (tab.error || tab.loading) {
+      return (
+        <div style={{ padding: '2rem', textAlign: 'center', color: '#666' }}>
+          {tab.loading ? 'Executing query...' : 'Query failed. See the error message above.'}
+        </div>
+      )
+    }
     return (
       <div style={{ padding: '2rem', textAlign: 'center', color: '#666' }}>
         No results yet. Execute a query to see results here.

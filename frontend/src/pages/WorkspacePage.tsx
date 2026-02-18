@@ -318,9 +318,11 @@ export default function WorkspacePage() {
                   border: '1px solid #fcc',
                   borderRadius: '4px',
                   color: '#c00',
+                  userSelect: 'text',
+                  cursor: 'text',
                 }}
               >
-                <strong>Error:</strong> {error}
+                <strong>Error:</strong> <span style={{ userSelect: 'text' }}>{error}</span>
                 <button
                   onClick={() => activeTabId && clearError(activeTabId)}
                   style={{

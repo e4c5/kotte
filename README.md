@@ -98,7 +98,7 @@ Configuration is done via environment variables. Create a `.env` file in the `ba
 |----------|---------|-------------|
 | `CREDENTIAL_STORAGE_TYPE` | `json_file` | Storage type: `json_file`, `sqlite`, `postgresql`, `redis` |
 | `CREDENTIAL_STORAGE_PATH` | `./data/connections.json` | Path for `json_file` storage |
-| `MASTER_ENCRYPTION_KEY` | *(empty)* | Encryption key for stored credentials |
+| `MASTER_ENCRYPTION_KEY` | *(empty)* | Encryption key for stored credentials. **Development:** If unset, a key is auto-generated on first use and persisted to `.master_encryption_key` (next to the connections file), so credentials in `connections.json` remain encrypted. **Production:** Must be set—otherwise the app raises an error when using credential storage. For non-development environments with `CREDENTIAL_STORAGE_TYPE=json_file`, set this before persisting connections, or consider alternative storage (`sqlite`, `postgresql`, `redis`). |
 
 ## Project Structure
 
