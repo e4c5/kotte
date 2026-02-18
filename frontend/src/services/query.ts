@@ -2,7 +2,7 @@
  * Query execution API.
  */
 
-import apiClient from './api'
+import apiClient, { ensureCsrfToken } from './api'
 
 export interface QueryExecuteRequest {
   graph: string
@@ -83,11 +83,12 @@ export const queryAPI = {
   stream: async function* (
     request: QueryStreamRequest
   ): AsyncGenerator<QueryStreamChunk, void, unknown> {
+    const csrfToken = (await ensureCsrfToken()) || sessionStorage.getItem('csrf_token') || ''
     const response = await fetch('/api/v1/queries/stream', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-CSRF-Token': sessionStorage.getItem('csrf_token') || '',
+        'X-CSRF-Token': csrfToken,
       },
       credentials: 'include',
       body: JSON.stringify(request),

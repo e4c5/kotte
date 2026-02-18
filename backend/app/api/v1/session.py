@@ -72,6 +72,9 @@ async def connect(
                 "db_connection": db_conn,
             },
         )
+        # Ensure cookie session has csrf_token so response cookie includes it (CSRF validation)
+        if "csrf_token" not in http_request.session and session.get("csrf_token"):
+            http_request.session["csrf_token"] = session["csrf_token"]
 
     # Set session cookie
     http_request.session["session_id"] = session_id

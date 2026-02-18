@@ -39,52 +39,63 @@ const apiClient: AxiosInstance = axios.create({
   },
 })
 
+/** Fetch and store CSRF token using the same client so cookies are sent. Exported for use by fetch-based APIs (e.g. stream). */
+export async function ensureCsrfToken(): Promise<string | null> {
+  let token = sessionStorage.getItem('csrf_token')
+  if (token) return token
+  try {
+    const response = await apiClient.get<{ csrf_token: string }>('/auth/csrf-token')
+    token = response.data?.csrf_token ?? null
+    if (token) sessionStorage.setItem('csrf_token', token)
+    return token
+  } catch {
+    return null
+  }
+}
+
 // Request interceptor to add CSRF token
 apiClient.interceptors.request.use(
   async (config) => {
-    // Get CSRF token from session storage or fetch it
+    const method = config.method?.toLowerCase()
+    const needsCsrf = method && ['post', 'put', 'patch', 'delete'].includes(method)
+    if (!needsCsrf) return config
+
     let csrfToken = sessionStorage.getItem('csrf_token')
-    
     if (!csrfToken) {
-      try {
-        // Fetch CSRF token
-        const response = await axios.get('/api/v1/auth/csrf-token', {
-          withCredentials: true,
-        })
-        csrfToken = response.data.csrf_token
-        if (csrfToken) {
-          sessionStorage.setItem('csrf_token', csrfToken)
-        }
-      } catch (error) {
-        // If CSRF fetch fails, continue without token (might be first request)
-        console.warn('Failed to fetch CSRF token:', error)
-      }
+      csrfToken = await ensureCsrfToken()
     }
-    
-    // Add CSRF token to protected methods
-    if (csrfToken && config.method && ['post', 'put', 'patch', 'delete'].includes(config.method.toLowerCase())) {
+    if (csrfToken) {
       config.headers['X-CSRF-Token'] = csrfToken
     }
-    
     return config
   },
-  (error) => {
-    return Promise.reject(error)
-  }
+  (error) => Promise.reject(error)
 )
 
-// Response interceptor to transform errors and update CSRF token
+// Response interceptor: update stored token, and on 403 CSRF refetch token and retry once
 apiClient.interceptors.response.use(
   (response) => {
-    // Update CSRF token if provided in response
     if (response.data?.csrf_token) {
       sessionStorage.setItem('csrf_token', response.data.csrf_token)
     }
     return response
   },
-  (error: AxiosError<APIError>) => {
-    if (error.response?.data?.error) {
-      const apiError = error.response.data.error
+  async (error: AxiosError<APIError>) => {
+    const apiError = error.response?.data?.error
+    const isCsrfFailure =
+      error.response?.status === 403 &&
+      apiError?.message === 'CSRF token validation failed'
+
+    if (isCsrfFailure && error.config && !(error.config as { _csrfRetry?: boolean })._csrfRetry) {
+      const token = await ensureCsrfToken()
+      if (token) {
+        (error.config as { _csrfRetry?: boolean })._csrfRetry = true
+        error.config.headers['X-CSRF-Token'] = token
+        return apiClient.request(error.config)
+      }
+    }
+
+    if (apiError) {
       throw new APIErrorException(
         apiError.code,
         apiError.category,

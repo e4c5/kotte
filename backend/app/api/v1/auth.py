@@ -132,19 +132,46 @@ async def get_current_user(
 
 
 @router.get("/csrf-token")
-async def get_csrf_token(
-    http_request: Request, session: dict = Depends(get_session)
-) -> dict:
-    """Get CSRF token for current session."""
-    csrf_token = session.get("csrf_token") or http_request.session.get("csrf_token")
-    if not csrf_token:
-        # Generate and store CSRF token
-        import secrets
-        csrf_token = secrets.token_urlsafe(32)
-        session_id = http_request.session.get("session_id")
-        if session_id:
-            session_manager.update_session(session_id, {"csrf_token": csrf_token})
-            http_request.session["csrf_token"] = csrf_token
+async def get_csrf_token(http_request: Request) -> dict:
+    """
+    Get CSRF token for the current session.
 
-    return {"csrf_token": csrf_token}
+    Does not require get_session so we can return the token from the cookie
+    even when session_manager has lost the session (e.g. after backend restart).
+    """
+    import secrets
+
+    # Prefer token already in cookie (survives backend restart)
+    csrf_token = http_request.session.get("csrf_token")
+    if csrf_token:
+        return {"csrf_token": csrf_token}
+
+    # Try to get from session_manager and sync to cookie
+    session_id = http_request.session.get("session_id")
+    if session_id:
+        session_data = session_manager.get_session(session_id)
+        if session_data and session_data.get("csrf_token"):
+            csrf_token = session_data["csrf_token"]
+            http_request.session["csrf_token"] = csrf_token
+            return {"csrf_token": csrf_token}
+        # Session expired or lost (e.g. backend restart) – require re-auth
+        if not session_data:
+            raise APIException(
+                code=ErrorCode.AUTH_SESSION_EXPIRED,
+                message="Session expired or invalid",
+                category=ErrorCategory.AUTHENTICATION,
+                status_code=status.HTTP_401_UNAUTHORIZED,
+            )
+        # Session exists but missing token – generate and store
+        csrf_token = secrets.token_urlsafe(32)
+        session_manager.update_session(session_id, {"csrf_token": csrf_token})
+        http_request.session["csrf_token"] = csrf_token
+        return {"csrf_token": csrf_token}
+
+    raise APIException(
+        code=ErrorCode.AUTH_REQUIRED,
+        message="Authentication required",
+        category=ErrorCategory.AUTHENTICATION,
+        status_code=status.HTTP_401_UNAUTHORIZED,
+    )
 
