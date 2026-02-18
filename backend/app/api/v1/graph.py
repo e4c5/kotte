@@ -387,19 +387,17 @@ async def expand_node_neighborhood(
             RETURN DISTINCT m, rel
         """
         
-        # Execute query using AGE cypher function
+        # Execute query using AGE cypher (::text and ::agtype for correct overload)
         import json
         params = {
             "node_id": node_id_int,
             "limit": limit,
         }
         params_json = json.dumps(params)
-        
-        sql_query = f"""
-            SELECT * FROM cypher('{validated_graph_name}', $${cypher_query}$$, %(params)s::jsonb) AS (result agtype)
+        sql_query = """
+            SELECT * FROM ag_catalog.cypher(%(graph_name)s::text, %(cypher)s::text, %(params)s::agtype) AS (result agtype)
         """
-        sql_params = {"params": params_json}
-        
+        sql_params = {"graph_name": validated_graph_name, "cypher": cypher_query, "params": params_json}
         raw_rows = await db_conn.execute_query(sql_query, sql_params)
         
         # Parse results and extract nodes/edges

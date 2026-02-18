@@ -175,10 +175,10 @@ async def import_csv(
                 # Use validated names (already validated for SQL injection)
                 if label_kind == "v":
                     insert_query = f"""
-                        SELECT * FROM cypher('{validated_graph_name}', $$
+                        SELECT * FROM ag_catalog.cypher('{validated_graph_name}'::text, $$
                             CREATE (n:{validated_label} $props)
                             RETURN n
-                        $$, json_build_object('props', %(props)s::jsonb)::jsonb) AS (result agtype)
+                        $$::text, json_build_object('props', %(props)s::jsonb)::agtype) AS (result agtype)
                     """
                 else:
                     # For edges, we need source and target
@@ -188,16 +188,16 @@ async def import_csv(
                         continue
 
                     insert_query = f"""
-                        SELECT * FROM cypher('{validated_graph_name}', $$
+                        SELECT * FROM ag_catalog.cypher('{validated_graph_name}'::text, $$
                             MATCH (a), (b)
                             WHERE id(a) = $source_id AND id(b) = $target_id
                             CREATE (a)-[r:{validated_label} $props]->(b)
                             RETURN r
-                        $$, json_build_object(
+                        $$::text, json_build_object(
                             'source_id', %(source_id)s,
                             'target_id', %(target_id)s,
                             'props', %(props)s::jsonb
-                        )::jsonb) AS (result agtype)
+                        )::agtype) AS (result agtype)
                     """
 
                 try:

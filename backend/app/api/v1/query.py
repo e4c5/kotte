@@ -104,15 +104,14 @@ async def execute_query(
             status_code=404,
         )
 
-    # Build parameterized SQL query
-    # AGE Cypher queries are executed via: SELECT * FROM cypher('graph_name', $$cypher$$, params) AS (result agtype)
-    # Note: Graph name is validated above. Cypher query is passed as literal (AGE will parse it).
-    # Parameters are passed as JSONB to prevent injection.
-    cypher_params = request.params or {}
-    
-    # Convert params to JSON string for AGE
+    # Build parameterized SQL for AGE.
+    # AGE cypher(): (graph_name text, query_string text [, params agtype]).
+    # Use 2-arg form when no params (third arg defaults to NULL); use 3-arg with ::agtype otherwise.
+    # Explicit ::text casts ensure the correct overload is chosen (avoids "function ... does not exist").
     import json
+    cypher_params = request.params or {}
     params_json = json.dumps(cypher_params)
+    has_params = bool(cypher_params)
 
     # Safe mode: reject mutating queries if enabled
     if settings.query_safe_mode:
@@ -126,17 +125,16 @@ async def execute_query(
                 status_code=422,
             )
 
-    # AGE cypher function requires graph name and query as text literals
-    # We've validated graph_name format and existence, so it's safe to use
-    # The cypher query itself is parsed by AGE, which provides some protection
-    # Parameters are passed as JSONB (parameterized)
-    # Use validated_graph_name (already validated for SQL injection)
-    sql_query = f"""
-        SELECT * FROM cypher('{validated_graph_name}', $${request.cypher}$$, %(params)s::jsonb) AS (result agtype)
-    """
-    sql_params = {
-        "params": params_json,
-    }
+    if has_params:
+        sql_query = """
+            SELECT * FROM ag_catalog.cypher(%(graph_name)s::text, %(cypher)s::text, %(params)s::agtype) AS (result agtype)
+        """
+        sql_params = {"graph_name": validated_graph_name, "cypher": request.cypher, "params": params_json}
+    else:
+        sql_query = """
+            SELECT * FROM ag_catalog.cypher(%(graph_name)s::text, %(cypher)s::text) AS (result agtype)
+        """
+        sql_params = {"graph_name": validated_graph_name, "cypher": request.cypher}
 
     query_start_time = time.time()
     try:

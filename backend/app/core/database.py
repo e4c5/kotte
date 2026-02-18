@@ -118,6 +118,10 @@ class DatabaseConnection:
         start_time = time.time()
         async with self.connection.cursor() as cur:
             try:
+                # Ensure AGE is loaded and search_path set for this connection (session).
+                # Required per Apache AGE docs; running here guarantees it's in effect for this query.
+                await cur.execute("LOAD 'age'")
+                await cur.execute('SET search_path = ag_catalog, "$user", public')
                 # Execute with timeout
                 await asyncio.wait_for(
                     cur.execute(query, params),

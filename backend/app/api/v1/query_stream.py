@@ -73,8 +73,10 @@ async def stream_query_results(
                 status_code=404,
             )
         
-        # Convert params to JSON string for AGE
-        params_json = json.dumps(params or {})
+        # Convert params for AGE (agtype for 3-arg cypher; 2-arg when empty)
+        cypher_params = params or {}
+        params_json = json.dumps(cypher_params)
+        has_params = bool(cypher_params)
         
         # Build SQL query with LIMIT and OFFSET for pagination
         # Note: We need to wrap the original query in a subquery to add LIMIT/OFFSET
@@ -107,11 +109,17 @@ async def stream_query_results(
                 modified_cypher = f"{cypher_query.rstrip(';')} SKIP {current_offset} LIMIT {chunk_size}"
                 is_final_chunk = False
             
-            # Build SQL query
-            sql_query = f"""
-                SELECT * FROM cypher('{validated_graph_name}', $${modified_cypher}$$, %(params)s::jsonb) AS (result agtype)
-            """
-            sql_params = {"params": params_json}
+            # Build SQL: 2-arg cypher when no params, 3-arg with ::agtype; ::text for overload resolution
+            if has_params:
+                sql_query = """
+                    SELECT * FROM ag_catalog.cypher(%(graph_name)s::text, %(cypher)s::text, %(params)s::agtype) AS (result agtype)
+                """
+                sql_params = {"graph_name": validated_graph_name, "cypher": modified_cypher, "params": params_json}
+            else:
+                sql_query = """
+                    SELECT * FROM ag_catalog.cypher(%(graph_name)s::text, %(cypher)s::text) AS (result agtype)
+                """
+                sql_params = {"graph_name": validated_graph_name, "cypher": modified_cypher}
             
             # Execute query
             raw_rows = await db_conn.execute_query(
