@@ -58,7 +58,7 @@ class DatabaseConnection:
                     "SELECT EXISTS(SELECT 1 FROM pg_extension WHERE extname = 'age')"
                 )
                 result = await cur.fetchone()
-                if not result or not result["exists"]:
+                if not result or not result.get("exists"):
                     raise APIException(
                         code=ErrorCode.DB_UNAVAILABLE,
                         message="Apache AGE extension not found in database",
@@ -146,7 +146,7 @@ class DatabaseConnection:
             async with self.connection.cursor() as cur:
                 await cur.execute("SELECT pg_backend_pid()")
                 result = await cur.fetchone()
-                return result[0] if result else None
+                return self._first_value(result)
         except Exception as e:
             logger.warning(f"Failed to get backend PID: {e}")
             return None
@@ -182,7 +182,7 @@ class DatabaseConnection:
                 async with cancel_conn.cursor() as cur:
                     await cur.execute("SELECT pg_cancel_backend(%(pid)s)", {"pid": pid})
                     result = await cur.fetchone()
-                    cancelled = result[0] if result else False
+                    cancelled = (list(result.values())[0] if result else False)
                     if cancelled:
                         logger.info(f"Successfully cancelled backend PID {pid}")
                     return cancelled
@@ -223,10 +223,17 @@ class DatabaseConnection:
             async with self.connection.cursor() as cur:
                 await cur.execute(find_query, {"pid": current_pid})
                 result = await cur.fetchone()
-                return result[0] if result else None
+                return self._first_value(result)
         except Exception as e:
             logger.warning(f"Failed to get query PID: {e}")
             return None
+
+    def _first_value(self, row: Optional[dict]) -> Optional[any]:
+        """Get the first value from a dict row (row_factory=dict_row)."""
+        if not row:
+            return None
+        values = list(row.values())
+        return values[0] if values else None
 
     async def execute_scalar(
         self, query: str, params: Optional[dict] = None
@@ -235,7 +242,7 @@ class DatabaseConnection:
         async with self.connection.cursor() as cur:
             await cur.execute(query, params)
             result = await cur.fetchone()
-            return result[0] if result else None
+            return self._first_value(result)
 
     @asynccontextmanager
     async def transaction(self):
