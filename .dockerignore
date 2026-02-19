@@ -1,0 +1,25 @@
+# Dependencies
+node_modules
+backend/venv
+backend/.venv
+__pycache__
+*.pyc
+.pytest_cache
+.mypy_cache
+
+# Git and IDE
+.git
+.gitignore
+.cursor
+.vscode
+
+# Docs and tests (not needed for runtime)
+docs
+backend/tests
+frontend/tests
+*.md
+!deployment/README.md
+
+# Local data
+backend/data/connections.json
+.master_encryption_key
