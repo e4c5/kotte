@@ -1244,4 +1244,4 @@ Kotte doesn't use traditional migrations (AGE manages schema). For setup scripts
 
 Thank you for contributing to Kotte! Your contributions help make graph database visualization better for everyone.
 
-**Last Updated:** February 2026*
+**Last Updated:** February 2026

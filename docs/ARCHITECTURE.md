@@ -857,5 +857,5 @@ VITE_API_BASE_URL=https://kotte.example.com
 
 ---
 
-**Last Updated:** February 2026*
+**Last Updated:** February 2026
 
