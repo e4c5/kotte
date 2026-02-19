@@ -84,19 +84,19 @@ Before implementing tasks, review these analysis documents for context and detai
   - **Reference:** Transaction Handling, Gap #1 - Fixed Implementation
   
 - [x] CSV pre-validation implementation
-  - **File:** `backend/app/api/v1/import.py`
+  - **File:** `backend/app/api/v1/csv_importer.py`
   - **Issue:** Validation happens during insert
   - **Fix:** Add Phase 1 validation before any DB operations
   - **Reference:** Transaction Handling, Gap #2 - Phase 1
   
 - [x] Move graph/label creation into transaction
-  - **File:** `backend/app/api/v1/import.py`
+  - **File:** `backend/app/api/v1/csv_importer.py`
   - **Issue:** Graph creation outside transaction
   - **Fix:** Move into transaction block
   - **Reference:** Transaction Handling, Gap #2 - Phase 2
   
 - [x] Implement batch insertion (1000 rows/batch)
-  - **File:** `backend/app/api/v1/import.py`
+  - **File:** `backend/app/api/v1/csv_importer.py`
   - **Issue:** Individual INSERT per row (slow)
   - **Fix:** Build multi-row Cypher queries
   - **Reference:** Transaction Handling, Gap #2 - Fixed Implementation
@@ -177,7 +177,7 @@ Before implementing tasks, review these analysis documents for context and detai
   - **Reference:** Performance Optimization, Gap #3 - Option 2
   
 - [x] Add ANALYZE after imports
-  - **File:** `backend/app/api/v1/import.py`
+  - **File:** `backend/app/api/v1/csv_importer.py`
   - **Issue:** Count estimates inaccurate without statistics
   - **Fix:** Call ANALYZE on table after import completes
   - **Reference:** Performance Optimization, Gap #4

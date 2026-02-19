@@ -209,7 +209,7 @@ async def delete_node(
 ## Gap #2: CSV Import Without Pre-Validation Transaction
 
 ### Current Implementation
-**File:** `backend/app/api/v1/import.py`, lines 148-200
+**File:** `backend/app/api/v1/csv_importer.py`, lines 148-200
 
 ```python
 async def import_csv_data(
