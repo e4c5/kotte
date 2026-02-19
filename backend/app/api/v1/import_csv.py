@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 from app.core.auth import get_session
 from app.services.metadata import MetadataService, property_cache
 from app.core.database import DatabaseConnection
-from app.core.errors import APIException, ErrorCode, ErrorCategory
+from app.core.errors import APIException, ErrorCode, ErrorCategory, translate_db_error
 from app.core.validation import validate_graph_name, validate_label_name, escape_identifier
 from app.models.import_models import (
     CSVImportResponse,
@@ -78,11 +78,17 @@ async def import_csv(
             await db_conn.execute_query(create_graph_query)
             logger.info(f"Created graph: {validated_graph_name}")
         except Exception as e:
+            api_exc = translate_db_error(
+                e, context={"graph": validated_graph_name, "operation": "create_graph"}
+            )
+            if api_exc:
+                raise api_exc from e
             raise APIException(
                 code=ErrorCode.GRAPH_CONTEXT_INVALID,
                 message=f"Failed to create graph: {str(e)}",
                 category=ErrorCategory.UPSTREAM,
                 status_code=500,
+                details={"graph": validated_graph_name},
             ) from e
 
     # Determine label type
@@ -151,7 +157,19 @@ async def import_csv(
             await db_conn.execute_query(create_label_query)
             job_status.created_labels.append(validated_label)
         except Exception as e:
-            if "already exists" not in str(e).lower():
+            if "already exists" in str(e).lower():
+                pass  # Label exists, continue
+            else:
+                api_exc = translate_db_error(
+                    e,
+                    context={
+                        "graph": validated_graph_name,
+                        "label": validated_label,
+                        "operation": "create_label",
+                    },
+                )
+                if api_exc:
+                    raise api_exc from e
                 raise
 
         # Insert data in transaction

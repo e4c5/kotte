@@ -1,6 +1,7 @@
 """Error handling and structured error responses."""
 
 import logging
+import re
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
@@ -102,12 +103,18 @@ class APIException(Exception):
 class GraphConstraintViolation(APIException):
     """Raised when a graph constraint is violated (unique, foreign key, etc.)."""
 
-    def __init__(self, constraint_type: str, details: str):
+    def __init__(
+        self,
+        constraint_type: str,
+        details: str,
+        extra_details: Optional[Dict[str, Any]] = None,
+    ):
         super().__init__(
             code=ErrorCode.GRAPH_CONSTRAINT_VIOLATION,
             message=f"{constraint_type} constraint violated: {details}",
             category=ErrorCategory.VALIDATION,
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            details=extra_details or {},
         )
 
 
@@ -139,13 +146,76 @@ class GraphCypherSyntaxError(APIException):
     """Raised when a Cypher query has syntax errors."""
 
     def __init__(self, query: str, error_message: str):
+        friendly_message = format_cypher_error(error_message, query)
         super().__init__(
             code=ErrorCode.CYPHER_SYNTAX_ERROR,
-            message=f"Cypher syntax error: {error_message}",
+            message=friendly_message,
             category=ErrorCategory.VALIDATION,
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             details={"query": query[:200], "error": error_message},
         )
+
+
+def format_cypher_error(error: str, query: str = "") -> str:
+    """
+    Convert PostgreSQL error to user-friendly Cypher error message.
+
+    Args:
+        error: Raw PostgreSQL error message
+        query: Cypher query (optional, for line context)
+
+    Returns:
+        User-friendly error message
+    """
+    user_message = error
+
+    patterns = [
+        (r"syntax error at or near", "Syntax error near"),
+        (r"column .* does not exist", "Property or column does not exist"),
+        (r"relation .* does not exist", "Label or relation does not exist"),
+    ]
+    for pattern, replacement in patterns:
+        user_message = re.sub(pattern, replacement, user_message, flags=re.IGNORECASE)
+
+    # Extract line number and add context
+    line_match = re.search(r"[Ll]ine (\d+):", error)
+    if line_match and query:
+        line_num = int(line_match.group(1))
+        query_lines = query.split("\n")
+        if 1 <= line_num <= len(query_lines):
+            user_message += f"\nAt: {query_lines[line_num - 1].strip()}"
+
+    return user_message
+
+
+def translate_db_error(
+    e: Exception,
+    context: Optional[Dict[str, Any]] = None,
+) -> Optional[APIException]:
+    """
+    Translate a database exception to an appropriate APIException.
+
+    Catches psycopg constraint violations and returns GraphConstraintViolation.
+    Returns None if the exception is not a known DB error (caller should handle).
+    context: Optional dict with graph, query, params for structured error details.
+    """
+    try:
+        import psycopg.errors as pg_errors
+
+        if isinstance(e, pg_errors.UniqueViolation):
+            return GraphConstraintViolation("unique", str(e), extra_details=context)
+        if isinstance(e, pg_errors.ForeignKeyViolation):
+            return GraphConstraintViolation(
+                "referential integrity", str(e), extra_details=context
+            )
+        if isinstance(e, pg_errors.NotNullViolation):
+            return GraphConstraintViolation("not null", str(e), extra_details=context)
+        if isinstance(e, pg_errors.CheckViolation):
+            return GraphConstraintViolation("check", str(e), extra_details=context)
+    except ImportError:
+        pass
+
+    return None
 
 
 def create_error_response(

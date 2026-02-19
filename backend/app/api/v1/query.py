@@ -10,7 +10,13 @@ from fastapi import APIRouter, Depends
 from app.core.auth import get_session
 from app.core.config import settings
 from app.core.database import DatabaseConnection
-from app.core.errors import APIException, ErrorCode, ErrorCategory, GraphCypherSyntaxError
+from app.core.errors import (
+    APIException,
+    ErrorCode,
+    ErrorCategory,
+    GraphCypherSyntaxError,
+    translate_db_error,
+)
 from app.core.validation import validate_graph_name, validate_query_length
 from app.models.query import (
     QueryExecuteRequest,
@@ -245,11 +251,33 @@ async def execute_query(
             retryable=True,
         )
     except Exception as e:
-        # Unregister query on error
         query_tracker.unregister_query(request_id)
         query_duration = time.time() - query_start_time
         logger.exception(f"Query execution failed: {request.cypher[:100]}")
         error_msg = str(e)
+
+        # Constraint violations (UniqueViolation, ForeignKeyViolation, etc.)
+        api_exc = translate_db_error(
+            e,
+            context={
+                "graph": validated_graph_name,
+                "query": cypher_to_execute[:500],
+                "params": (
+                    {k: str(v)[:100] for k, v in (request.params or {}).items()}
+                    if request.params
+                    else None
+                ),
+            },
+        )
+        if api_exc:
+            metrics.record_query_execution(
+                graph=validated_graph_name, status="error", duration=query_duration
+            )
+            metrics.record_error(
+                ErrorCode.GRAPH_CONSTRAINT_VIOLATION, ErrorCategory.VALIDATION
+            )
+            raise api_exc from e
+
         if "syntax" in error_msg.lower():
             metrics.record_query_execution(
                 graph=validated_graph_name, status="error", duration=query_duration
@@ -266,7 +294,16 @@ async def execute_query(
             message=f"Query execution failed: {error_msg}",
             category=ErrorCategory.UPSTREAM,
             status_code=500,
-            details={"cypher": request.cypher[:200], "error": error_msg},
+            details={
+                "graph": validated_graph_name,
+                "query": request.cypher[:500],
+                "error": error_msg,
+                "params": (
+                    {k: str(v)[:100] for k, v in (request.params or {}).items()}
+                    if request.params
+                    else None
+                ),
+            },
         ) from e
 
 

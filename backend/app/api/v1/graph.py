@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends
 
 from app.core.auth import get_session
 from app.core.database import DatabaseConnection
-from app.core.errors import APIException, ErrorCode, ErrorCategory
+from app.core.errors import APIException, ErrorCode, ErrorCategory, translate_db_error
 from app.core.validation import validate_graph_name, validate_label_name, escape_identifier
 from app.models.graph import (
     GraphInfo,
@@ -61,12 +61,16 @@ async def list_graphs(
         ]
     except Exception as e:
         logger.exception("Error listing graphs")
+        api_exc = translate_db_error(e)
+        if api_exc:
+            raise api_exc from e
         raise APIException(
             code=ErrorCode.DB_UNAVAILABLE,
             message=f"Failed to list graphs: {str(e)}",
             category=ErrorCategory.UPSTREAM,
             status_code=500,
             retryable=True,
+            details={"operation": "list_graphs"},
         ) from e
 
 
@@ -197,12 +201,16 @@ async def get_graph_metadata(
         raise
     except Exception as e:
         logger.exception(f"Error getting metadata for graph {graph_name}")
+        api_exc = translate_db_error(e, context={"graph": graph_name})
+        if api_exc:
+            raise api_exc from e
         raise APIException(
             code=ErrorCode.DB_UNAVAILABLE,
             message=f"Failed to get graph metadata: {str(e)}",
             category=ErrorCategory.UPSTREAM,
             status_code=500,
             retryable=True,
+            details={"graph": graph_name, "operation": "get_graph_metadata"},
         ) from e
 
 
@@ -280,12 +288,16 @@ async def get_meta_graph(
         raise
     except Exception as e:
         logger.exception(f"Error getting meta-graph for {graph_name}")
+        api_exc = translate_db_error(e, context={"graph": graph_name})
+        if api_exc:
+            raise api_exc from e
         raise APIException(
             code=ErrorCode.DB_UNAVAILABLE,
             message=f"Failed to get meta-graph: {str(e)}",
             category=ErrorCategory.UPSTREAM,
             status_code=500,
             retryable=True,
+            details={"graph": graph_name, "operation": "get_meta_graph"},
         ) from e
 
 
@@ -406,11 +418,17 @@ async def expand_node_neighborhood(
         raise
     except Exception as e:
         logger.exception(f"Error expanding neighborhood for node {node_id} in graph {graph_name}")
+        api_exc = translate_db_error(
+            e, context={"graph": graph_name, "node_id": node_id}
+        )
+        if api_exc:
+            raise api_exc from e
         raise APIException(
             code=ErrorCode.DB_UNAVAILABLE,
             message=f"Failed to expand node neighborhood: {str(e)}",
             category=ErrorCategory.UPSTREAM,
             status_code=500,
             retryable=True,
+            details={"graph": graph_name, "node_id": node_id, "operation": "expand_node"},
         ) from e
 

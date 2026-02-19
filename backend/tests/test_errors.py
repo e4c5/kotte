@@ -2,7 +2,15 @@
 
 from fastapi.testclient import TestClient
 
-from app.core.errors import APIException, ErrorCode, ErrorCategory
+from app.core.errors import (
+    APIException,
+    ErrorCode,
+    ErrorCategory,
+    format_cypher_error,
+    GraphConstraintViolation,
+    GraphCypherSyntaxError,
+    translate_db_error,
+)
 
 
 def test_error_response_structure(client: TestClient):
@@ -48,4 +56,43 @@ def test_api_exception():
     assert exc.message == "Test error"
     assert exc.category == ErrorCategory.AUTHENTICATION
     assert exc.status_code == 401
+
+
+def test_format_cypher_error_basic():
+    """Test format_cypher_error maps PostgreSQL patterns."""
+    err = format_cypher_error("syntax error at or near \")\"")
+    assert "Syntax error near" in err
+
+
+def test_format_cypher_error_with_line_context():
+    """Test format_cypher_error adds line context when available."""
+    err = format_cypher_error("ERROR: line 2: invalid", "MATCH (n)\nRETURN invalid")
+    assert "At:" in err
+    assert "RETURN invalid" in err
+
+
+def test_translate_db_error_unknown():
+    """Test translate_db_error returns None for unknown exceptions."""
+    assert translate_db_error(ValueError("oops")) is None
+
+
+def test_translate_db_error_constraint_with_context():
+    """Test translate_db_error passes context to GraphConstraintViolation."""
+    try:
+        import psycopg.errors as pg_errors
+
+        err = pg_errors.UniqueViolation()
+        result = translate_db_error(err, context={"graph": "g1", "label": "Person"})
+        assert result is not None
+        assert isinstance(result, GraphConstraintViolation)
+        assert result.details.get("graph") == "g1"
+    except (ImportError, TypeError):
+        pass
+
+
+def test_graph_cypher_syntax_error_uses_format():
+    """Test GraphCypherSyntaxError uses format_cypher_error for message."""
+    exc = GraphCypherSyntaxError("MATCH (n", "syntax error at or near \")\"")
+    assert "Syntax error near" in exc.message
+    assert exc.details.get("query") == "MATCH (n"
 

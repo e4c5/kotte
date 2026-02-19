@@ -203,22 +203,22 @@ Before implementing tasks, review these analysis documents for context and detai
   - **Fix:** Add GraphConstraintViolation, GraphNodeNotFound, GraphCypherSyntaxError
   - **Reference:** Error Handling, Gap #1 - Recommended Implementation
   
-- [ ] Add constraint violation detection
-  - **Files:** All API endpoints
+- [x] Add constraint violation detection
+  - **Files:** query.py, import_csv.py, graph_delete_node.py, graph.py
   - **Issue:** No specific handling for constraint violations
-  - **Fix:** Catch psycopg.errors.UniqueViolation, ForeignKeyViolation
+  - **Fix:** translate_db_error() catches UniqueViolation, ForeignKeyViolation, etc.
   - **Reference:** Error Handling, Gap #1 - Usage Example
   
-- [ ] Format Cypher syntax errors
+- [x] Format Cypher syntax errors
   - **File:** `backend/app/core/errors.py`
   - **Issue:** PostgreSQL errors not user-friendly
-  - **Fix:** Implement format_cypher_error() function
+  - **Fix:** format_cypher_error() in errors.py, used by GraphCypherSyntaxError
   - **Reference:** Error Handling, Gap #3
   
-- [ ] Add structured error details
+- [x] Add structured error details
   - **Files:** All API endpoints
   - **Issue:** No context for debugging
-  - **Fix:** Include query, graph name, parameters in error details
+  - **Fix:** details with graph, query, params in query.py; context in translate_db_error
   - **Reference:** Error Handling, Gap #2
   
 - [ ] Update all endpoints

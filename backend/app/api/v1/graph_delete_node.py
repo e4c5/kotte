@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Query
 
 from app.core.auth import get_session
 from app.core.database import DatabaseConnection
-from app.core.errors import APIException, ErrorCode, ErrorCategory
+from app.core.errors import APIException, ErrorCode, ErrorCategory, translate_db_error
 from app.core.validation import validate_graph_name
 from app.core.metrics import metrics
 from app.models.graph import NodeDeleteResponse
@@ -173,11 +173,18 @@ async def delete_node(
         raise
     except Exception as e:
         logger.exception(f"Error deleting node {node_id} from graph {graph_name}")
+        api_exc = translate_db_error(
+            e,
+            context={"graph": validated_graph_name, "node_id": node_id},
+        )
+        if api_exc:
+            raise api_exc from e
         raise APIException(
             code=ErrorCode.DB_UNAVAILABLE,
             message=f"Failed to delete node: {str(e)}",
             category=ErrorCategory.UPSTREAM,
             status_code=500,
             retryable=True,
+            details={"graph": validated_graph_name, "node_id": node_id},
         ) from e
 
