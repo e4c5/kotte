@@ -1,0 +1,70 @@
+# Kotte - Apache AGE Visualizer
+# Run: docker-compose up -d
+# Access: http://localhost:5173 (frontend), http://localhost:8000/api/docs (API)
+
+services:
+  age:
+    image: apache/age:latest
+    container_name: kotte-age
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - age-data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/01-init-age.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ..
+      dockerfile: deployment/backend.Dockerfile
+    container_name: kotte-backend
+    environment:
+      DB_HOST: age
+      DB_PORT: 5432
+      DB_NAME: postgres
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      SESSION_SECRET_KEY: ${SESSION_SECRET_KEY}
+      CORS_ORIGINS: http://localhost:5173,http://localhost:3000,http://frontend:5173
+      ENVIRONMENT: development
+      CREDENTIAL_STORAGE_PATH: /app/data/connections.json
+    ports:
+      - "8000:8000"
+    volumes:
+      - backend-data:/app/data
+    depends_on:
+      age:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: deployment/frontend.Dockerfile
+      args:
+        VITE_PROXY_TARGET: http://backend:8000
+    container_name: kotte-frontend
+    environment:
+      VITE_PROXY_TARGET: http://backend:8000
+    ports:
+      - "5173:5173"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  age-data:
+  backend-data:

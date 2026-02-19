@@ -5,7 +5,7 @@
 - Python 3.11+
 - Node.js 18+
 - PostgreSQL 14+ with Apache AGE extension
-- Docker (optional, for devcontainer)
+- Docker (optional: for [Docker Compose deployment](../deployment/README.md) or devcontainer)
 
 ## Setup
 
@@ -51,6 +51,17 @@ Create a test graph:
 ```sql
 SELECT * FROM ag_catalog.create_graph('test_graph');
 ```
+
+## Docker Compose (Simplest)
+
+Run everything—Apache AGE, backend, and frontend—with one command:
+
+```bash
+cd deployment
+docker compose up -d
+```
+
+Open http://localhost:5173 and connect with host `age`, database `postgres`, user `postgres`, password `postgres`. See [deployment/README.md](../deployment/README.md) for details.
 
 ## Using Makefile
 

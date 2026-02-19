@@ -1,0 +1,32 @@
+# Dependencies
+node_modules
+backend/venv
+backend/.venv
+__pycache__
+*.pyc
+.pytest_cache
+.mypy_cache
+
+# Git and IDE
+.git
+.gitignore
+.cursor
+.vscode
+
+# Docs and tests (not needed for runtime)
+docs
+backend/tests
+frontend/tests
+*.md
+!deployment/README.md
+
+# Environment and secrets (avoid leaking into build context)
+.env
+.env.*
+.env.local
+backend/.env
+frontend/.env
+
+# Local data
+backend/data/connections.json
+.master_encryption_key
