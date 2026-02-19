@@ -48,6 +48,8 @@ class Settings(BaseSettings):
     # Import Limits
     import_max_file_size: int = 104857600  # 100MB
     import_max_rows: int = 1000000
+    max_import_jobs: int = 1000  # Max jobs in memory; oldest evicted when exceeded
+    import_job_ttl_seconds: int = 86400  # Remove jobs older than 24h
 
     # Logging
     log_level: str = "INFO"

@@ -114,7 +114,8 @@ class DatabaseConnection:
             params: Query parameters
             timeout: Query timeout in seconds (uses settings.query_timeout if None)
         """
-        timeout = timeout or settings.query_timeout
+        if timeout is None:
+            timeout = settings.query_timeout
         start_time = time.time()
         async with self.connection.cursor() as cur:
             try:
@@ -151,7 +152,8 @@ class DatabaseConnection:
         Execute a command that returns no result set (e.g. ANALYZE, DDL).
         Do not use for SELECT or commands with RETURNING.
         """
-        timeout = timeout or settings.query_timeout
+        if timeout is None:
+            timeout = settings.query_timeout
         start_time = time.time()
         async with self.connection.cursor() as cur:
             try:
@@ -294,7 +296,10 @@ class DatabaseConnection:
                      a sensible default is used to prevent long-running transactions.
         """
         # Default to 60s for transaction-scoped timeout to avoid long locks
-        effective_timeout = timeout or 60
+        if timeout is None:
+            effective_timeout = 60
+        else:
+            effective_timeout = timeout
         async with self.connection.transaction():
             try:
                 # Apply a statement timeout for all statements in this transaction

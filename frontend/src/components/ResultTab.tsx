@@ -27,6 +27,22 @@ export default function ResultTab({
   const [exportGraph, setExportGraph] = useState<(() => Promise<void>) | null>(null)
 
   const result = tab.result
+
+  const hasGraphData = !!(
+    result?.graph_elements?.nodes?.length ||
+    result?.graph_elements?.edges?.length
+  )
+
+  const pathHighlights = useMemo((): PathHighlights | undefined => {
+    const paths = result?.graph_elements?.paths
+    if (!paths?.length) return undefined
+    const first = paths[0]
+    return {
+      nodeIds: (first?.node_ids ?? []).map(String),
+      edgeIds: (first?.edge_ids ?? []).map(String),
+    }
+  }, [result?.graph_elements?.paths])
+
   if (!result) {
     // Hide "no results yet" when user has already run a query (error or loading)
     if (tab.error || tab.loading) {
@@ -42,21 +58,6 @@ export default function ResultTab({
       </div>
     )
   }
-
-  const hasGraphData = !!(
-    result.graph_elements?.nodes?.length ||
-    result.graph_elements?.edges?.length
-  )
-
-  const pathHighlights = useMemo((): PathHighlights | undefined => {
-    const paths = result.graph_elements?.paths
-    if (!paths?.length) return undefined
-    const first = paths[0]
-    return {
-      nodeIds: (first?.node_ids ?? []).map(String),
-      edgeIds: (first?.edge_ids ?? []).map(String),
-    }
-  }, [result.graph_elements?.paths])
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>

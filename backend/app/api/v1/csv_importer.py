@@ -26,6 +26,33 @@ router = APIRouter()
 _import_jobs: dict[str, ImportJobStatus] = {}
 
 
+def _cleanup_import_jobs() -> None:
+    """Remove stale jobs by TTL and evict oldest if over max size."""
+    now = datetime.now(timezone.utc)
+    ttl_secs = settings.import_job_ttl_seconds
+    max_jobs = settings.max_import_jobs
+
+    # TTL eviction: remove jobs older than JOB_TTL_SECONDS
+    to_remove: list[str] = []
+    for job_id, job in _import_jobs.items():
+        ts_str = job.started_at or job.completed_at
+        if not ts_str:
+            continue
+        try:
+            ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+            if (now - ts).total_seconds() > ttl_secs:
+                to_remove.append(job_id)
+        except (ValueError, TypeError):
+            pass
+    for job_id in to_remove:
+        del _import_jobs[job_id]
+
+    # Size eviction: remove oldest when over cap (dict preserves insertion order)
+    while len(_import_jobs) >= max_jobs and _import_jobs:
+        oldest_id = next(iter(_import_jobs))
+        del _import_jobs[oldest_id]
+
+
 def get_db_connection(session: dict = Depends(get_session)) -> DatabaseConnection:
     """Get database connection from session."""
     db_conn = session.get("db_connection")
@@ -64,6 +91,7 @@ async def import_csv(
         phase="reading_file",
         started_at=datetime.now(timezone.utc).isoformat(),
     )
+    _cleanup_import_jobs()
     _import_jobs[job_id] = job_status
 
     try:
@@ -293,6 +321,7 @@ async def get_import_job_status(
     session: dict = Depends(get_session),
 ) -> ImportJobStatus:
     """Get import job status."""
+    _cleanup_import_jobs()
     job = _import_jobs.get(job_id)
     if not job:
         raise APIException(
