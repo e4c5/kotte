@@ -27,11 +27,18 @@ from app.models.query import (
 )
 from app.services.agtype import AgTypeParser
 from app.services.query_tracker import query_tracker
+from app.services.query_templates import get_templates
 from app.core.metrics import metrics
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+@router.get("/templates")
+async def list_query_templates():
+    """List available Cypher query templates for common graph patterns."""
+    return get_templates()
 
 
 def get_db_connection(session: dict = Depends(get_session)) -> DatabaseConnection:

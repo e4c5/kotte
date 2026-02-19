@@ -19,6 +19,8 @@ from app.models.graph import (
     NodeExpandResponse,
     NodeDeleteRequest,
     NodeDeleteResponse,
+    ShortestPathRequest,
+    ShortestPathResponse,
 )
 from app.services.metadata import MetadataService
 from app.services.agtype import AgTypeParser
@@ -430,5 +432,121 @@ async def expand_node_neighborhood(
             status_code=500,
             retryable=True,
             details={"graph": graph_name, "node_id": node_id, "operation": "expand_node"},
+        ) from e
+
+
+@router.post(
+    "/{graph_name}/shortest-path",
+    response_model=ShortestPathResponse,
+)
+async def find_shortest_path(
+    graph_name: str,
+    request: ShortestPathRequest,
+    db_conn: DatabaseConnection = Depends(get_db_connection),
+) -> ShortestPathResponse:
+    """Find shortest path between two nodes using variable-length path matching."""
+    try:
+        validated_graph_name = validate_graph_name(graph_name)
+
+        # Verify graph exists
+        graph_check = """
+            SELECT graphid FROM ag_catalog.ag_graph WHERE name = %(graph_name)s
+        """
+        graph_id = await db_conn.execute_scalar(
+            graph_check, {"graph_name": validated_graph_name}
+        )
+        if not graph_id:
+            raise APIException(
+                code=ErrorCode.GRAPH_NOT_FOUND,
+                message=f"Graph '{validated_graph_name}' not found",
+                category=ErrorCategory.NOT_FOUND,
+                status_code=404,
+            )
+
+        max_depth = request.max_depth
+        cypher_query = f"""
+            MATCH path = (src)-[*1..{max_depth}]-(dst)
+            WHERE id(src) = $source_id AND id(dst) = $target_id
+            WITH path, size(relationships(path)) as path_length
+            ORDER BY path_length
+            LIMIT 1
+            RETURN nodes(path) as path_nodes, relationships(path) as path_edges, path_length
+        """
+        import json
+
+        params = {
+            "source_id": request.source_id,
+            "target_id": request.target_id,
+        }
+        params_json = json.dumps(params)
+        sql_query = """
+            SELECT * FROM ag_catalog.cypher(%(graph_name)s::text, %(cypher)s::text, %(params)s::agtype)
+            AS (path_nodes agtype, path_edges agtype, path_length agtype)
+        """
+        raw_rows = await db_conn.execute_query(
+            sql_query,
+            {
+                "graph_name": validated_graph_name,
+                "cypher": cypher_query,
+                "params": params_json,
+            },
+        )
+
+        if not raw_rows:
+            return ShortestPathResponse(path_length=0)
+
+        row = raw_rows[0]
+        nodes_raw = AgTypeParser.parse(row.get("path_nodes"))
+        edges_raw = AgTypeParser.parse(row.get("path_edges"))
+        path_length_val = AgTypeParser.parse(row.get("path_length")) or 0
+        path_length_int = int(path_length_val) if path_length_val is not None else 0
+
+        nodes_list: list[dict] = []
+        edges_list: list[dict] = []
+
+        if isinstance(nodes_raw, list):
+            for item in nodes_raw:
+                if isinstance(item, dict):
+                    nodes_list.append(item)
+        if isinstance(edges_raw, list):
+            for item in edges_raw:
+                if isinstance(item, dict):
+                    edges_list.append(item)
+
+        path_combined = nodes_list + edges_list if (nodes_list or edges_list) else None
+        return ShortestPathResponse(
+            path=path_combined,
+            path_length=path_length_int,
+            nodes=nodes_list,
+            edges=edges_list,
+        )
+
+    except APIException:
+        raise
+    except Exception as e:
+        logger.exception(
+            f"Error finding shortest path in graph {graph_name}: {e}"
+        )
+        api_exc = translate_db_error(
+            e,
+            context={
+                "graph": graph_name,
+                "source_id": request.source_id,
+                "target_id": request.target_id,
+            },
+        )
+        if api_exc:
+            raise api_exc from e
+        raise APIException(
+            code=ErrorCode.DB_UNAVAILABLE,
+            message=f"Failed to find shortest path: {str(e)}",
+            category=ErrorCategory.UPSTREAM,
+            status_code=500,
+            retryable=True,
+            details={
+                "graph": graph_name,
+                "source_id": request.source_id,
+                "target_id": request.target_id,
+            },
         ) from e
 

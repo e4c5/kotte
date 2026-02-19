@@ -256,26 +256,24 @@ Before implementing tasks, review these analysis documents for context and detai
 
 **Detailed guidance:** [05_AGE_FEATURE_UTILIZATION.md](../analysis/05_AGE_FEATURE_UTILIZATION.md)
 
-- [ ] Research AGE algorithms
-  - **Action:** Review Apache AGE documentation for available algorithms
-  - **Focus:** Shortest path, aggregations, pattern matching
+- [x] Research AGE algorithms
+  - **Action:** AGE uses variable-length paths [*1..n], nodes(path), relationships(path), size()
+  - **Focus:** Shortest path via variable-length MATCH, unweighted
   - **Reference:** AGE Features, Gap #1, #2, #3
   
-- [ ] Implement shortest path endpoint
+- [x] Implement shortest path endpoint
   - **File:** `backend/app/api/v1/graph.py`
   - **Feature:** New endpoint for finding shortest path between nodes
-  - **Implementation:** Use AGE shortestPath() function
+  - **Implementation:** Variable-length path MATCH with ORDER BY path_length LIMIT 1
   - **Reference:** AGE Features, Gap #1 - Implementation Example
   
-- [ ] Add query templates
+- [x] Add query templates
   - **File:** `backend/app/services/`
-  - **Feature:** Pre-built query templates for common patterns
-  - **Examples:** "Find influencers", "Detect cycles", "Community detection"
+  - **Feature:** GET /queries/templates, query_templates.py with find_influencers, detect_cycles, etc.
   - **Reference:** AGE Features, Recommended Features - #2
   
-- [ ] Document advanced features
-  - **File:** `docs/`
-  - **Action:** User guide for AGE-specific functionality
+- [x] Document advanced features
+  - **File:** `docs/ADVANCED_FEATURES.md`
   - **Reference:** AGE Features, Implementation Checklist
 
 ### Path Handling (LOW Priority - 12 hours)
