@@ -96,3 +96,28 @@ def test_graph_cypher_syntax_error_uses_format():
     assert "Syntax error near" in exc.message
     assert exc.details.get("query") == "MATCH (n"
 
+
+def test_api_error_response_structure(client: TestClient):
+    """Verify API error responses include code, category, message, request_id, timestamp."""
+    response = client.get("/api/v1/auth/me")
+    assert response.status_code == 401
+    data = response.json()
+    assert "error" in data
+    err = data["error"]
+    assert "code" in err
+    assert err["code"] == "AUTH_REQUIRED"
+    assert "category" in err
+    assert "message" in err
+    assert "request_id" in err
+    assert "timestamp" in err
+    assert "retryable" in err
+
+
+def test_validation_error_structure(client: TestClient):
+    """Verify validation errors have clear structure."""
+    response = client.post(
+        "/api/v1/auth/login",
+        json={"username": "admin"},  # missing password
+    )
+    assert response.status_code == 422
+

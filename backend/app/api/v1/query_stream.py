@@ -12,7 +12,7 @@ from fastapi.responses import StreamingResponse
 from app.core.auth import get_session
 from app.core.config import settings
 from app.core.database import DatabaseConnection
-from app.core.errors import APIException, ErrorCode, ErrorCategory
+from app.core.errors import APIException, ErrorCode, ErrorCategory, translate_db_error
 from app.core.validation import validate_graph_name, validate_query_length
 from app.models.query import QueryStreamChunk, QueryResultRow, QueryStreamRequest
 from app.services.agtype import AgTypeParser
@@ -179,15 +179,23 @@ async def stream_query_results(
         raise
     except Exception as e:
         logger.exception(f"Error streaming query results: {e}")
-        # Send error as final chunk
-        error_chunk = {
-            "error": {
-                "code": ErrorCode.QUERY_EXECUTION_ERROR,
-                "message": f"Failed to stream results: {str(e)}",
-            }
-        }
+        api_exc = translate_db_error(
+            e,
+            context={"graph": graph_name, "query": cypher_query[:200]},
+        )
+        code = api_exc.code if api_exc else ErrorCode.QUERY_EXECUTION_ERROR
+        message = api_exc.message if api_exc else f"Failed to stream results: {str(e)}"
+        error_chunk = {"error": {"code": code, "message": message}}
         yield json.dumps(error_chunk) + "\n"
-        raise
+        if api_exc:
+            raise api_exc from e
+        raise APIException(
+            code=ErrorCode.QUERY_EXECUTION_ERROR,
+            message=f"Failed to stream results: {str(e)}",
+            category=ErrorCategory.UPSTREAM,
+            status_code=500,
+            details={"graph": graph_name, "query": cypher_query[:200]},
+        ) from e
 
 
 @router.post("/stream")

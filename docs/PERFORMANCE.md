@@ -92,4 +92,20 @@ Metadata uses `pg_class.reltuples` for fast approximate counts. For exact counts
 - Maximum nodes for graph visualization: 5,000 (configurable via `max_nodes_for_graph`)
 - Maximum edges: 5,000 (configurable via `max_edges_for_graph`)
 
-Queries that exceed these limits return a warning. Consider adding `LIMIT` to Cypher queries when visualizing large result sets.
+When `for_visualization` is true on query execute, a `LIMIT` is automatically added to the Cypher query if not present, to avoid fetching huge result sets. Queries that exceed limits return a warning.
+
+---
+
+## Optimization Tips
+
+### Query Patterns
+
+- Use `LIMIT` in Cypher when exploring: `MATCH (n:Person) RETURN n LIMIT 100`
+- Prefer specific labels over `MATCH (n)`: `MATCH (n:Person)` is faster
+- Use indexes: queries that filter by `id(n) = $id` benefit from the `id` index
+- Variable-length paths `[*1..n]` can be slow; keep `n` small (e.g. ≤10)
+
+### Configuration
+
+- Set `query_timeout` appropriately for long-running queries
+- Adjust `max_nodes_for_graph` and `max_edges_for_graph` if your use case needs more or fewer nodes in the graph view

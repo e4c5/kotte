@@ -17,7 +17,11 @@ from app.core.errors import (
     GraphCypherSyntaxError,
     translate_db_error,
 )
-from app.core.validation import validate_graph_name, validate_query_length
+from app.core.validation import (
+    add_visualization_limit,
+    validate_graph_name,
+    validate_query_length,
+)
 from app.models.query import (
     QueryExecuteRequest,
     QueryExecuteResponse,
@@ -76,10 +80,11 @@ async def execute_query(
     validate_query_length(request.cypher)
 
     # Add query-time LIMIT for visualization to avoid fetching huge result sets
-    cypher_to_execute = request.cypher
-    if request.for_visualization and "LIMIT" not in request.cypher.upper():
-        limit_val = settings.max_nodes_for_graph
-        cypher_to_execute = f"{request.cypher.rstrip()} LIMIT {limit_val}"
+    cypher_to_execute = (
+        add_visualization_limit(request.cypher, settings.max_nodes_for_graph)
+        if request.for_visualization
+        else request.cypher
+    )
     
     # Register query for cancellation tracking
     query_tracker.register_query(
@@ -109,6 +114,9 @@ async def execute_query(
         )
     except Exception as e:
         logger.exception("Graph existence check failed")
+        api_exc = translate_db_error(e, context={"graph": request.graph})
+        if api_exc:
+            raise api_exc from e
         raise APIException(
             code=ErrorCode.QUERY_EXECUTION_ERROR,
             message=f"Database error while checking graph: {e!s}",
@@ -187,9 +195,11 @@ async def execute_query(
         nodes_count = len(graph_elements["nodes"])
         edges_count = len(graph_elements["edges"])
         
+        paths_list = graph_elements.get("paths", [])
         stats = {
             "nodes_extracted": nodes_count,
             "edges_extracted": edges_count,
+            "paths_extracted": len(paths_list),
             "other_results": len(graph_elements["other"]),
         }
 
@@ -236,7 +246,8 @@ async def execute_query(
             graph_elements={
                 "nodes": graph_elements["nodes"],
                 "edges": graph_elements["edges"],
-            } if (graph_elements["nodes"] or graph_elements["edges"]) else None,
+                "paths": paths_list,
+            } if (graph_elements["nodes"] or graph_elements["edges"] or paths_list) else None,
             visualization_warning=visualization_warning,
         )
 

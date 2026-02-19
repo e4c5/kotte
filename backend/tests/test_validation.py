@@ -4,10 +4,11 @@ import pytest
 
 from app.core.errors import APIException, ErrorCode, ErrorCategory
 from app.core.validation import (
+    add_visualization_limit,
+    escape_identifier,
     validate_graph_name,
     validate_label_name,
     validate_query_length,
-    escape_identifier,
 )
 
 
@@ -96,6 +97,30 @@ class TestQueryLengthValidation:
         assert exc_info.value.category == ErrorCategory.VALIDATION
         assert exc_info.value.status_code == 413
         assert "exceeds maximum length" in exc_info.value.message
+
+
+class TestAddVisualizationLimit:
+    """Tests for add_visualization_limit."""
+
+    def test_adds_limit_when_absent(self):
+        """LIMIT is appended when not present."""
+        result = add_visualization_limit("MATCH (n) RETURN n", 5000)
+        assert result.endswith(" LIMIT 5000")
+        assert "MATCH (n) RETURN n" in result
+
+    def test_preserves_existing_limit(self):
+        """Query with LIMIT is unchanged."""
+        cypher = "MATCH (n) RETURN n LIMIT 10"
+        result = add_visualization_limit(cypher, 5000)
+        assert result == cypher
+        assert "LIMIT 5000" not in result
+
+    def test_limit_case_insensitive(self):
+        """LIMIT in any case is detected."""
+        result = add_visualization_limit("MATCH (n) RETURN n limit 5", 5000)
+        assert result == "MATCH (n) RETURN n limit 5"
+        result2 = add_visualization_limit("MATCH (n) RETURN n Limit 5", 5000)
+        assert result2 == "MATCH (n) RETURN n Limit 5"
 
 
 class TestEscapeIdentifier:

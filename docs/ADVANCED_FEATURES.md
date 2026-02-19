@@ -102,6 +102,17 @@ Variable-length paths can be slow for large graphs and long paths. Prefer:
 
 ---
 
+## Path Structure in Results
+
+When a query returns path data (e.g. `MATCH path = (a)-[]->(b)-[]->(c) RETURN path`), results preserve path structure:
+
+- **paths**: List of path objects with `segments`, `node_ids`, `edge_ids`, `start_node_id`, `end_node_id`
+- **segments**: Each segment is `{start_node, edge, end_node}` for one hop
+- Path nodes and edges are also included in `nodes` and `edges` for visualization
+- In Graph View, path nodes and edges are highlighted (blue) when paths are present
+
+---
+
 ## References
 
 - [Apache AGE Cypher Manual](https://age.apache.org/age-manual/master/intro/cypher.html)

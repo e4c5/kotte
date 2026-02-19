@@ -221,14 +221,14 @@ Before implementing tasks, review these analysis documents for context and detai
   - **Fix:** details with graph, query, params in query.py; context in translate_db_error
   - **Reference:** Error Handling, Gap #2
   
-- [ ] Update all endpoints
+- [x] Update all endpoints
   - **Files:** `backend/app/api/v1/*.py`
-  - **Action:** Replace generic exceptions with specific types
+  - **Action:** Replace generic exceptions with specific types (translate_db_error in query.py, query_stream.py)
   - **Reference:** Error Handling, Implementation Checklist
   
-- [ ] Test error messages
-  - **File:** `backend/tests/`
-  - **Tests:** Verify error clarity and structure
+- [x] Test error messages
+  - **File:** `backend/tests/test_errors.py`
+  - **Tests:** Verify error clarity and structure (test_api_error_response_structure, test_validation_error_structure)
   - **Reference:** Error Handling, Implementation Checklist
 
 ### Visualization (MEDIUM Priority - 4 hours)
@@ -241,9 +241,9 @@ Before implementing tasks, review these analysis documents for context and detai
   - **Fix:** Add LIMIT clause to Cypher if not present
   - **Reference:** Visualization Optimization, Recommended: Query-Time LIMIT
   
-- [ ] Test with large result sets
-  - **File:** `backend/tests/`
-  - **Tests:** Verify LIMIT applied correctly, no memory issues
+- [x] Test with large result sets
+  - **File:** `backend/tests/test_validation.py`
+  - **Tests:** add_visualization_limit unit tests verify LIMIT applied when for_visualization
   - **Reference:** Visualization Optimization, Effort Estimate
 
 ---
@@ -280,15 +280,15 @@ Before implementing tasks, review these analysis documents for context and detai
 
 **Detailed guidance:** [07_PATH_HANDLING_IMPROVEMENTS.md](../analysis/07_PATH_HANDLING_IMPROVEMENTS.md)
 
-- [ ] Preserve path structure in results
+- [x] Preserve path structure in results
   - **File:** `backend/app/services/agtype.py`
   - **Issue:** Paths flattened to separate nodes and edges
-  - **Fix:** Return paths with segments, maintaining traversal order
+  - **Fix:** Paths with segments (start_node, edge, end_node), node_ids, edge_ids
   - **Reference:** Path Handling, Recommended: Preserve Path Structure
   
-- [ ] Add path-based visualizations
-  - **File:** `frontend/src/components/`
-  - **Feature:** Visualize paths distinctly from general graphs
+- [x] Add path-based visualizations
+  - **File:** `frontend/src/components/GraphView.tsx`, `ResultTab.tsx`
+  - **Feature:** Path nodes/edges highlighted in blue when graph_elements.paths present
   - **Reference:** Path Handling, Benefits
 
 ---
@@ -301,12 +301,12 @@ Before implementing tasks, review these analysis documents for context and detai
 
 **Detailed guidance:** [08_TESTING_RECOMMENDATIONS.md](../analysis/08_TESTING_RECOMMENDATIONS.md)
 
-- [ ] Full FastAPI test harness with middleware
+- [x] Full FastAPI test harness with middleware
   - **Files:** `backend/tests/conftest.py`, `app/main.py`, `app/core/middleware.py`
   - **Action:** Configure an async test client that mounts the real session, CSRF, and rate-limit middleware so currently skipped auth/session/middleware tests can run without `@pytest.mark.skip`
   - **Reference:** Testing Recommendations, #2 Integration Tests
   
-- [ ] Unit tests for all new code
+- [x] Unit tests for all new code
   - **Files:** `backend/tests/test_*.py`
   - **Coverage:** escape_identifier(), transaction wrappers, error handlers
   - **Reference:** Testing Recommendations, #1 Unit Tests
@@ -321,7 +321,7 @@ Before implementing tasks, review these analysis documents for context and detai
   - **Tests:** >100k nodes, measure execution times
   - **Reference:** Testing Recommendations, #3 Performance Tests
   
-- [ ] Security test suite
+- [x] Security test suite
   - **Files:** `backend/tests/security/`
   - **Tests:** SQL injection attempts, validation bypass scenarios
   - **Reference:** Testing Recommendations, #4 Security Tests
@@ -333,22 +333,22 @@ Before implementing tasks, review these analysis documents for context and detai
 
 ### Documentation (MEDIUM Priority - 20 hours)
 
-- [ ] Update API documentation
+- [x] Update API documentation
   - **Files:** OpenAPI specs, docstrings
   - **Action:** Document new endpoints, error types
   - **Reference:** Multiple analysis documents
   
-- [ ] Create user guide for advanced features
+- [x] Create user guide for advanced features
   - **File:** `docs/USER_GUIDE.md`
   - **Content:** AGE algorithms, query templates, best practices
   - **Reference:** AGE Features documentation
   
-- [ ] Document performance tuning
+- [x] Document performance tuning
   - **File:** `docs/PERFORMANCE.md`
-  - **Content:** Indexing strategy, caching, optimization tips
+  - **Content:** Indexing strategy, caching, optimization tips, query patterns, configuration
   - **Reference:** Performance Optimization document
   
-- [ ] Create troubleshooting guide
+- [x] Create troubleshooting guide
   - **File:** `docs/TROUBLESHOOTING.md`
   - **Content:** Common errors, debugging tips
   - **Reference:** Error Handling document

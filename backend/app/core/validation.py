@@ -121,6 +121,22 @@ def validate_query_length(cypher_query: str) -> str:
     return cypher_query
 
 
+def add_visualization_limit(cypher: str, max_limit: int) -> str:
+    """
+    Add LIMIT to Cypher query if not present (for visualization to cap result size).
+
+    Args:
+        cypher: Cypher query string
+        max_limit: Maximum number of rows to return
+
+    Returns:
+        Cypher with LIMIT appended if absent, otherwise unchanged
+    """
+    if "LIMIT" in cypher.upper():
+        return cypher
+    return f"{cypher.rstrip()} LIMIT {max_limit}"
+
+
 def escape_identifier(identifier: str) -> str:
     """
     Escape PostgreSQL identifier for safe use in SQL.

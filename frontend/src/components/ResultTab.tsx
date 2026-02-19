@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import GraphView, { type GraphNode, type GraphEdge } from './GraphView'
+import { useState, useMemo } from 'react'
+import GraphView, { type GraphNode, type GraphEdge, type PathHighlights } from './GraphView'
 import TableView from './TableView'
 import GraphControls from './GraphControls'
 import NodeContextMenu from './NodeContextMenu'
@@ -43,7 +43,21 @@ export default function ResultTab({
     )
   }
 
-  const hasGraphData = !!(result.graph_elements?.nodes?.length || result.graph_elements?.edges?.length)
+  const hasGraphData = !!(
+    result.graph_elements?.nodes?.length ||
+    result.graph_elements?.edges?.length ||
+    result.graph_elements?.paths?.length
+  )
+
+  const pathHighlights = useMemo((): PathHighlights | undefined => {
+    const paths = result.graph_elements?.paths
+    if (!paths?.length) return undefined
+    const first = paths[0]
+    return {
+      nodeIds: (first?.node_ids ?? []).map(String),
+      edgeIds: (first?.edge_ids ?? []).map(String),
+    }
+  }, [result.graph_elements?.paths])
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
@@ -177,6 +191,7 @@ export default function ResultTab({
               <GraphView
                 nodes={result.graph_elements?.nodes as GraphNode[] || []}
                 edges={result.graph_elements?.edges as GraphEdge[] || []}
+                pathHighlights={pathHighlights}
                 onNodeRightClick={(node, event) => {
                   setContextMenu({ nodeId: node.id, x: event.clientX, y: event.clientY })
                 }}

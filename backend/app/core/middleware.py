@@ -18,12 +18,13 @@ logger = logging.getLogger(__name__)
 
 
 class RequestIDMiddleware(BaseHTTPMiddleware):
-    """Add request ID to request state and response headers."""
+    """Add request ID to request state and response headers.
+    Preserves X-Request-ID from request if provided, otherwise generates one."""
 
     async def dispatch(
         self, request: Request, call_next: Callable
     ) -> Response:
-        request_id = str(uuid.uuid4())
+        request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
         request.state.request_id = request_id
 
         response = await call_next(request)

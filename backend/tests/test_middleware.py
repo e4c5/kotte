@@ -5,60 +5,59 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.core.middleware import RequestIDMiddleware, CSRFMiddleware, RateLimitMiddleware
-from app.core.config import settings
 
 
 class TestRequestIDMiddleware:
     """Tests for request ID middleware."""
 
-    @pytest.mark.skip(reason="Requires session middleware setup in test client")
     def test_request_id_generated(self, client: TestClient):
         """Test that request ID is generated and included in response."""
-        # This test requires proper session middleware setup
-        pytest.skip("Requires session middleware in test client")
+        response = client.get("/api/v1/auth/me")
+        assert "X-Request-ID" in response.headers
+        request_id = response.headers["X-Request-ID"]
+        assert len(request_id) > 0
 
-    @pytest.mark.skip(reason="Requires session middleware setup in test client")
     def test_request_id_preserved(self, client: TestClient):
         """Test that provided request ID is preserved."""
-        # This test requires proper session middleware setup
-        pytest.skip("Requires session middleware in test client")
+        response = client.get(
+            "/api/v1/auth/me",
+            headers={"X-Request-ID": "test-request-id-123"},
+        )
+        assert response.headers.get("X-Request-ID") == "test-request-id-123"
 
 
 class TestCSRFMiddleware:
-    """Tests for CSRF middleware."""
+    """Tests for CSRF middleware (disabled in test app)."""
 
-    @pytest.mark.skip(reason="Requires session middleware setup in test client")
-    def test_csrf_token_endpoint(self, client: TestClient):
-        """Test that CSRF token endpoint works."""
-        # This test requires proper session middleware setup
-        # Skipping for now as it needs session support
-        response = client.get("/api/v1/csrf-token")
-        # May fail without session, but endpoint should exist
-        assert response.status_code in [200, 500, 401]
+    def test_csrf_token_endpoint_requires_auth(self, client: TestClient):
+        """CSRF token endpoint requires session (401 without auth)."""
+        response = client.get("/api/v1/auth/csrf-token")
+        assert response.status_code == 401
 
-    @pytest.mark.skip(reason="Requires session middleware setup in test client")
-    def test_csrf_protection_enabled(self, client: TestClient):
-        """Test that CSRF protection is enforced for state-changing requests."""
-        if not settings.csrf_enabled:
-            pytest.skip("CSRF protection is disabled")
-        # This test requires proper session middleware setup
-        pytest.skip("Requires session middleware in test client")
+    def test_csrf_protection_disabled_in_test(self, client: TestClient):
+        """Test app has CSRF disabled, so login works without CSRF token."""
+        response = client.post(
+            "/api/v1/auth/login",
+            json={"username": "admin", "password": "admin"},
+        )
+        assert response.status_code == 200
 
-    @pytest.mark.skip(reason="Requires session middleware setup in test client")
-    def test_login_exempt_from_csrf(self, client: TestClient):
-        """Test that login endpoint is exempt from CSRF."""
-        # This test requires proper session middleware setup
-        pytest.skip("Requires session middleware in test client")
+    def test_login_works_without_csrf_when_disabled(self, client: TestClient):
+        """Login works when CSRF is disabled (test app config)."""
+        response = client.post(
+            "/api/v1/auth/login",
+            json={"username": "admin", "password": "admin"},
+        )
+        assert response.status_code == 200
 
 
 class TestRateLimitMiddleware:
-    """Tests for rate limiting middleware."""
+    """Tests for rate limiting middleware (disabled in test app)."""
 
-    @pytest.mark.skip(reason="Requires session middleware setup in test client")
-    def test_rate_limit_headers(self, client: TestClient):
-        """Test that rate limit headers are present."""
-        if not settings.rate_limit_enabled:
-            pytest.skip("Rate limiting is disabled")
-        # This test requires proper session middleware setup
-        pytest.skip("Requires session middleware in test client")
+    def test_rate_limit_disabled_in_test(self, client: TestClient):
+        """Test app has rate limit disabled; requests are not throttled."""
+        # Multiple requests should all succeed (no 429)
+        for _ in range(5):
+            response = client.get("/api/v1/auth/me")
+            assert response.status_code == 401  # No auth, but not 429
 

@@ -11,7 +11,6 @@ from app.core.database import DatabaseConnection
 class TestConnect:
     """Tests for /session/connect endpoint."""
 
-    @pytest.mark.skip(reason="Requires session middleware setup")
     def test_connect_without_authentication(self, client: TestClient):
         """Test connect without authentication."""
         response = client.post(
@@ -30,7 +29,6 @@ class TestConnect:
         # Should require authentication first
         assert response.status_code == 401
 
-    @pytest.mark.skip(reason="Requires session middleware setup")
     @patch('app.api.v1.session.DatabaseConnection')
     def test_connect_success(self, mock_db_class, client: TestClient):
         """Test successful connection."""
@@ -71,7 +69,6 @@ class TestConnect:
             assert data["host"] == "localhost"
             assert data["port"] == 5432
 
-    @pytest.mark.skip(reason="Requires session middleware setup")
     def test_connect_invalid_credentials(self, client: TestClient):
         """Test connect with invalid database credentials."""
         # First login
@@ -105,7 +102,6 @@ class TestConnect:
             # Should fail with connection error
             assert response.status_code in [500, 401]
 
-    @pytest.mark.skip(reason="Requires session middleware setup")
     def test_connect_missing_fields(self, client: TestClient):
         """Test connect with missing required fields."""
         # First login
@@ -134,7 +130,6 @@ class TestConnect:
 class TestDisconnect:
     """Tests for /session/disconnect endpoint."""
 
-    @pytest.mark.skip(reason="Requires session middleware setup")
     def test_disconnect_without_session(self, client: TestClient):
         """Test disconnect without active session."""
         response = client.post("/api/v1/session/disconnect")
@@ -142,7 +137,6 @@ class TestDisconnect:
         # Should require authentication
         assert response.status_code == 401
 
-    @pytest.mark.skip(reason="Requires session middleware setup")
     def test_disconnect_with_session(self, client: TestClient):
         """Test successful disconnect."""
         # First login
@@ -173,7 +167,6 @@ class TestDisconnect:
 class TestStatus:
     """Tests for /session/status endpoint."""
 
-    @pytest.mark.skip(reason="Requires session middleware setup")
     def test_status_without_session(self, client: TestClient):
         """Test status without active session."""
         response = client.get("/api/v1/session/status")
@@ -181,7 +174,6 @@ class TestStatus:
         # Should require authentication
         assert response.status_code == 401
 
-    @pytest.mark.skip(reason="Requires session middleware setup")
     def test_status_with_session_not_connected(self, client: TestClient):
         """Test status when session exists but not connected to DB."""
         # First login
@@ -202,7 +194,6 @@ class TestStatus:
             data = response.json()
             assert data["connected"] is False
 
-    @pytest.mark.skip(reason="Requires session middleware setup")
     def test_status_with_session_connected(self, client: TestClient):
         """Test status when session is connected to DB."""
         # First login

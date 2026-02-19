@@ -37,6 +37,12 @@ export interface QueryExecuteResponse {
       properties: Record<string, unknown>
       type: string
     }>
+    paths?: Array<{
+      type: string
+      node_ids?: string[]
+      edge_ids?: string[]
+      segments?: unknown[]
+    }>
   }
   visualization_warning?: string
 }
