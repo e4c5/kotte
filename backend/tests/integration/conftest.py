@@ -143,7 +143,13 @@ async def connected_client(authenticated_client):
         mock_conn.execute_scalar = AsyncMock(return_value=None)
         mock_conn.get_backend_pid = AsyncMock(return_value=12345)
         mock_conn.cancel_backend = AsyncMock()
-        
+
+        # Transaction context manager for node delete and other transactional ops
+        class _MockTransaction:
+            async def __aenter__(self): return None
+            async def __aexit__(self, *args): return None
+        mock_conn.transaction = lambda timeout=None: _MockTransaction()
+
         # Patch DatabaseConnection for all modules that use it
         with patch('app.api.v1.session.DatabaseConnection') as mock_db_class, \
              patch('app.api.v1.query.DatabaseConnection', mock_db_class), \

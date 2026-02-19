@@ -268,3 +268,63 @@ class TestNeighborhoodExpansion:
         assert "nodes" in data
         assert "edges" in data
 
+
+class TestNodeDeletion:
+    """Integration tests for node deletion (transaction behavior with mocked DB)."""
+
+    @pytest.mark.asyncio
+    async def test_delete_node_success(self, connected_client: httpx.AsyncClient):
+        """Test successful node deletion with mocked DB."""
+        mock_db = connected_client._mock_db
+        mock_db.execute_scalar = AsyncMock(return_value=1)  # Graph exists
+        # When detach=false: node check, then delete
+        mock_db.execute_query = AsyncMock(side_effect=[
+            [{"result": {"id": 1, "label": "Person", "properties": {}}}],  # Node exists
+            [{"result": {"deleted_count": 1}}],  # Delete succeeded
+        ])
+        
+        response = await connected_client.delete(
+            "/api/v1/graphs/test_graph/nodes/1?detach=false",
+        )
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert data["deleted"] is True
+        assert data["node_id"] == "1"
+
+    @pytest.mark.asyncio
+    async def test_delete_node_db_error_propagates(self, connected_client: httpx.AsyncClient):
+        """Test that DB errors during delete propagate (simulates rollback scenario)."""
+        mock_db = connected_client._mock_db
+        mock_db.execute_scalar = AsyncMock(return_value=1)  # Graph exists
+        # First query succeeds (node check), second raises
+        mock_db.execute_query = AsyncMock(side_effect=[
+            [{"result": {"id": 1, "label": "Person", "properties": {}}}],  # Node exists
+            Exception("Database connection lost"),  # Simulate failure during delete
+        ])
+        
+        response = await connected_client.delete(
+            "/api/v1/graphs/test_graph/nodes/1?detach=false",
+        )
+        
+        # Should return 500 with DB error (transaction would rollback on real DB)
+        assert response.status_code == 500
+        data = response.json()
+        assert "error" in data
+
+    @pytest.mark.asyncio
+    async def test_delete_node_not_found(self, connected_client: httpx.AsyncClient):
+        """Test delete when node does not exist."""
+        mock_db = connected_client._mock_db
+        mock_db.execute_scalar = AsyncMock(return_value=1)  # Graph exists
+        mock_db.execute_query = AsyncMock(return_value=[])  # Node not found
+        
+        response = await connected_client.delete(
+            "/api/v1/graphs/test_graph/nodes/999?detach=false",
+        )
+        
+        assert response.status_code == 404
+        data = response.json()
+        assert "error" in data
+        assert data["error"]["code"] == "GRAPH_NOT_FOUND"
+
