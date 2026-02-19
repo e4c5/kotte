@@ -16,6 +16,10 @@ class QueryExecuteRequest(BaseModel):
     options: Optional[Dict[str, Any]] = Field(
         default=None, description="Execution options"
     )
+    for_visualization: bool = Field(
+        default=False,
+        description="If true, LIMIT is added to Cypher when absent to cap result size",
+    )
 
 
 class QueryResultRow(BaseModel):

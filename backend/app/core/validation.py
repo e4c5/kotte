@@ -35,7 +35,7 @@ def validate_graph_name(graph_name: str) -> str:
             code=ErrorCode.QUERY_VALIDATION_ERROR,
             message="Graph name cannot be empty",
             category=ErrorCategory.VALIDATION,
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_400_BAD_REQUEST,
         )
 
     if len(graph_name) > MAX_GRAPH_NAME_LENGTH:
@@ -43,7 +43,7 @@ def validate_graph_name(graph_name: str) -> str:
             code=ErrorCode.QUERY_VALIDATION_ERROR,
             message=f"Graph name exceeds maximum length of {MAX_GRAPH_NAME_LENGTH}",
             category=ErrorCategory.VALIDATION,
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_400_BAD_REQUEST,
         )
 
     if not GRAPH_NAME_PATTERN.match(graph_name):
@@ -51,7 +51,7 @@ def validate_graph_name(graph_name: str) -> str:
             code=ErrorCode.QUERY_VALIDATION_ERROR,
             message="Graph name must contain only letters, numbers, and underscores, and start with a letter or underscore",
             category=ErrorCategory.VALIDATION,
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_400_BAD_REQUEST,
         )
 
     return graph_name
@@ -119,6 +119,32 @@ def validate_query_length(cypher_query: str) -> str:
         )
 
     return cypher_query
+
+
+def add_visualization_limit(cypher: str, max_limit: int) -> str:
+    """
+    Add LIMIT to Cypher query if not present (for visualization to cap result size).
+
+    Args:
+        cypher: Cypher query string
+        max_limit: Maximum number of rows to return
+
+    Returns:
+        Cypher with LIMIT appended if absent, otherwise unchanged
+    """
+    if "LIMIT" in cypher.upper():
+        return cypher
+    return f"{cypher.rstrip()} LIMIT {max_limit}"
+
+
+def escape_string_literal(value: str) -> str:
+    """
+    Escape a value for safe use as a SQL string literal (single-quoted).
+    Use for DDL function args (create_graph, create_label, etc.) which expect text.
+    Must be used after validation (e.g. validate_graph_name, validate_label_name).
+    """
+    escaped = value.replace("'", "''")
+    return f"'{escaped}'"
 
 
 def escape_identifier(identifier: str) -> str:

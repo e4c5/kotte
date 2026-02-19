@@ -15,7 +15,7 @@ import { graphAPI } from '../services/graph'
 export default function WorkspacePage() {
   const navigate = useNavigate()
   const { status, refreshStatus, disconnect } = useSessionStore()
-  const { authenticated, logout: authLogout, checkAuth } = useAuthStore()
+  const { logout: authLogout, checkAuth } = useAuthStore()
   const {
     tabs,
     activeTabId,

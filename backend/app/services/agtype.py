@@ -114,17 +114,70 @@ class AgTypeParser:
         }
 
     @staticmethod
+    def _build_path_structure(elements: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        """
+        Build path structure from a list of parsed elements.
+        Expects alternating [node, edge, node, edge, ...].
+        """
+        if len(elements) < 2:
+            return None
+        segments = []
+        node_ids = []
+        edge_ids = []
+        i = 0
+        while i + 2 < len(elements):
+            n1, e, n2 = elements[i], elements[i + 1], elements[i + 2]
+            if (
+                isinstance(n1, dict)
+                and n1.get("type") == "node"
+                and isinstance(e, dict)
+                and e.get("type") == "edge"
+                and isinstance(n2, dict)
+                and n2.get("type") == "node"
+            ):
+                segments.append({"start_node": n1, "edge": e, "end_node": n2})
+                nid = n1.get("id")
+                if nid is not None and str(nid) not in {str(x) for x in node_ids}:
+                    node_ids.append(str(nid))
+                if e.get("id") is not None and str(e["id"]) not in {str(x) for x in edge_ids}:
+                    edge_ids.append(str(e["id"]))
+                n2id = n2.get("id")
+                if n2id is not None and str(n2id) not in {str(x) for x in node_ids}:
+                    node_ids.append(str(n2id))
+                i += 2
+            else:
+                i += 1
+        if not segments:
+            return None
+        first = elements[0]
+        last = elements[-1]
+        start_id = str(first["id"]) if isinstance(first, dict) and first.get("type") == "node" else None
+        end_id = str(last["id"]) if isinstance(last, dict) and last.get("type") == "node" else None
+        return {
+            "type": "path",
+            "segments": segments,
+            "length": len(segments),
+            "node_ids": node_ids,
+            "edge_ids": edge_ids,
+            "start_node_id": start_id,
+            "end_node_id": end_id,
+        }
+
+    @staticmethod
     def _parse_path(path_data: List[Any]) -> Dict[str, Any]:
-        """Parse a path (sequence of vertices and edges)."""
+        """
+        Parse a path (sequence of vertices and edges) preserving structure.
+        Path format: [node, edge, node, edge, ...].
+        """
         elements = []
         for item in path_data:
             parsed = AgTypeParser.parse(item)
             elements.append(parsed)
-
-        return {
-            "type": "path",
-            "elements": elements,
-        }
+        built = AgTypeParser._build_path_structure(elements)
+        if built:
+            built["elements"] = elements
+            return built
+        return {"type": "path", "elements": elements, "segments": [], "length": 0, "node_ids": [], "edge_ids": []}
 
     @staticmethod
     def _parse_id(id_value: Any) -> Union[int, str]:
@@ -155,22 +208,39 @@ class AgTypeParser:
     @staticmethod
     def extract_graph_elements(
         rows: List[Dict[str, Any]]
-    ) -> Dict[str, List[Dict[str, Any]]]:
+    ) -> Dict[str, Any]:
         """
-        Extract nodes and edges from query results.
+        Extract nodes, edges, and paths from query results.
+
+        Paths are preserved with segments when result contains path-like structures
+        (alternating node-edge-node or type="path").
 
         Returns:
             {
                 "nodes": [...],
                 "edges": [...],
-                "other": [...]  # non-graph results (scalars, maps, etc.)
+                "paths": [...],  # path structures with segments, node_ids, edge_ids
+                "other": [...]
             }
         """
-        nodes = []
-        edges = []
-        other = []
-        node_ids = set()
-        edge_ids = set()
+        nodes: List[Dict[str, Any]] = []
+        edges: List[Dict[str, Any]] = []
+        paths: List[Dict[str, Any]] = []
+        other: List[Dict[str, Any]] = []
+        node_ids: set[str] = set()
+        edge_ids: set[str] = set()
+
+        def _add_node(n: Dict[str, Any]) -> None:
+            nid = n.get("id")
+            if nid is not None and str(nid) not in node_ids:
+                nodes.append(n)
+                node_ids.add(str(nid))
+
+        def _add_edge(e: Dict[str, Any]) -> None:
+            eid = e.get("id")
+            if eid is not None and str(eid) not in edge_ids:
+                edges.append(e)
+                edge_ids.add(str(eid))
 
         for row in rows:
             for col_name, value in row.items():
@@ -178,43 +248,59 @@ class AgTypeParser:
 
                 if isinstance(parsed, dict):
                     if parsed.get("type") == "node":
-                        node_id = parsed.get("id")
-                        if node_id and node_id not in node_ids:
-                            nodes.append(parsed)
-                            node_ids.add(node_id)
+                        _add_node(parsed)
                     elif parsed.get("type") == "edge":
-                        edge_id = parsed.get("id")
-                        if edge_id and edge_id not in edge_ids:
-                            edges.append(parsed)
-                            edge_ids.add(edge_id)
+                        _add_edge(parsed)
+                    elif parsed.get("type") == "path":
+                        paths.append(parsed)
+                        for seg in parsed.get("segments", []):
+                            if isinstance(seg, dict):
+                                for key in ("start_node", "end_node"):
+                                    n = seg.get(key)
+                                    if isinstance(n, dict) and n.get("type") == "node":
+                                        _add_node(n)
+                                e = seg.get("edge")
+                                if isinstance(e, dict) and e.get("type") == "edge":
+                                    _add_edge(e)
+                        for elem in parsed.get("elements", []):
+                            if isinstance(elem, dict):
+                                if elem.get("type") == "node":
+                                    _add_node(elem)
+                                elif elem.get("type") == "edge":
+                                    _add_edge(elem)
                     else:
                         other.append({"column": col_name, "value": parsed})
                 elif isinstance(parsed, list):
-                    # Check if list contains graph elements
-                    for item in parsed:
-                        if isinstance(item, dict):
-                            if item.get("type") == "node":
-                                node_id = item.get("id")
-                                if node_id and node_id not in node_ids:
-                                    nodes.append(item)
-                                    node_ids.add(node_id)
-                            elif item.get("type") == "edge":
-                                edge_id = item.get("id")
-                                if edge_id and edge_id not in edge_ids:
-                                    edges.append(item)
-                                    edge_ids.add(edge_id)
-                    if not any(
-                        isinstance(item, dict)
-                        and item.get("type") in ("node", "edge")
-                        for item in parsed
-                    ):
-                        other.append({"column": col_name, "value": parsed})
+                    path_candidate = AgTypeParser._build_path_structure(parsed)
+                    if path_candidate:
+                        path_candidate["elements"] = parsed
+                        paths.append(path_candidate)
+                        for elem in parsed:
+                            if isinstance(elem, dict):
+                                if elem.get("type") == "node":
+                                    _add_node(elem)
+                                elif elem.get("type") == "edge":
+                                    _add_edge(elem)
+                    else:
+                        for item in parsed:
+                            if isinstance(item, dict):
+                                if item.get("type") == "node":
+                                    _add_node(item)
+                                elif item.get("type") == "edge":
+                                    _add_edge(item)
+                        if not any(
+                            isinstance(item, dict)
+                            and item.get("type") in ("node", "edge")
+                            for item in parsed
+                        ):
+                            other.append({"column": col_name, "value": parsed})
                 else:
                     other.append({"column": col_name, "value": parsed})
 
         return {
             "nodes": nodes,
             "edges": edges,
+            "paths": paths,
             "other": other,
         }
 

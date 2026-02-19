@@ -10,8 +10,18 @@ from fastapi import APIRouter, Depends
 from app.core.auth import get_session
 from app.core.config import settings
 from app.core.database import DatabaseConnection
-from app.core.errors import APIException, ErrorCode, ErrorCategory
-from app.core.validation import validate_graph_name, validate_query_length
+from app.core.errors import (
+    APIException,
+    ErrorCode,
+    ErrorCategory,
+    GraphCypherSyntaxError,
+    translate_db_error,
+)
+from app.core.validation import (
+    add_visualization_limit,
+    validate_graph_name,
+    validate_query_length,
+)
 from app.models.query import (
     QueryExecuteRequest,
     QueryExecuteResponse,
@@ -21,11 +31,18 @@ from app.models.query import (
 )
 from app.services.agtype import AgTypeParser
 from app.services.query_tracker import query_tracker
+from app.services.query_templates import get_templates
 from app.core.metrics import metrics
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+@router.get("/templates")
+async def list_query_templates():
+    """List available Cypher query templates for common graph patterns."""
+    return get_templates()
 
 
 def get_db_connection(session: dict = Depends(get_session)) -> DatabaseConnection:
@@ -61,6 +78,13 @@ async def execute_query(
     
     # Validate query length
     validate_query_length(request.cypher)
+
+    # Add query-time LIMIT for visualization to avoid fetching huge result sets
+    cypher_to_execute = (
+        add_visualization_limit(request.cypher, settings.max_nodes_for_graph)
+        if request.for_visualization
+        else request.cypher
+    )
     
     # Register query for cancellation tracking
     query_tracker.register_query(
@@ -90,6 +114,9 @@ async def execute_query(
         )
     except Exception as e:
         logger.exception("Graph existence check failed")
+        api_exc = translate_db_error(e, context={"graph": request.graph})
+        if api_exc:
+            raise api_exc from e
         raise APIException(
             code=ErrorCode.QUERY_EXECUTION_ERROR,
             message=f"Database error while checking graph: {e!s}",
@@ -129,12 +156,12 @@ async def execute_query(
         sql_query = """
             SELECT * FROM ag_catalog.cypher(%(graph_name)s::text, %(cypher)s::text, %(params)s::agtype) AS (result agtype)
         """
-        sql_params = {"graph_name": validated_graph_name, "cypher": request.cypher, "params": params_json}
+        sql_params = {"graph_name": validated_graph_name, "cypher": cypher_to_execute, "params": params_json}
     else:
         sql_query = """
             SELECT * FROM ag_catalog.cypher(%(graph_name)s::text, %(cypher)s::text) AS (result agtype)
         """
-        sql_params = {"graph_name": validated_graph_name, "cypher": request.cypher}
+        sql_params = {"graph_name": validated_graph_name, "cypher": cypher_to_execute}
 
     query_start_time = time.time()
     try:
@@ -168,9 +195,11 @@ async def execute_query(
         nodes_count = len(graph_elements["nodes"])
         edges_count = len(graph_elements["edges"])
         
+        paths_list = graph_elements.get("paths", [])
         stats = {
             "nodes_extracted": nodes_count,
             "edges_extracted": edges_count,
+            "paths_extracted": len(paths_list),
             "other_results": len(graph_elements["other"]),
         }
 
@@ -217,7 +246,8 @@ async def execute_query(
             graph_elements={
                 "nodes": graph_elements["nodes"],
                 "edges": graph_elements["edges"],
-            } if (graph_elements["nodes"] or graph_elements["edges"]) else None,
+                "paths": paths_list,
+            } if (graph_elements["nodes"] or graph_elements["edges"] or paths_list) else None,
             visualization_warning=visualization_warning,
         )
 
@@ -239,33 +269,59 @@ async def execute_query(
             retryable=True,
         )
     except Exception as e:
-        # Unregister query on error
         query_tracker.unregister_query(request_id)
         query_duration = time.time() - query_start_time
         logger.exception(f"Query execution failed: {request.cypher[:100]}")
-        # Try to determine error type
         error_msg = str(e)
-        if "syntax" in error_msg.lower():
-            code = ErrorCode.QUERY_SYNTAX_ERROR
-            category = ErrorCategory.VALIDATION
-        else:
-            code = ErrorCode.QUERY_EXECUTION_ERROR
-            category = ErrorCategory.UPSTREAM
 
-        # Record metrics
-        metrics.record_query_execution(
-            graph=validated_graph_name,
-            status="error",
-            duration=query_duration,
+        # Constraint violations (UniqueViolation, ForeignKeyViolation, etc.)
+        api_exc = translate_db_error(
+            e,
+            context={
+                "graph": validated_graph_name,
+                "query": cypher_to_execute[:500],
+                "params": (
+                    {k: str(v)[:100] for k, v in (request.params or {}).items()}
+                    if request.params
+                    else None
+                ),
+            },
         )
-        metrics.record_error(code, category)
+        if api_exc:
+            metrics.record_query_execution(
+                graph=validated_graph_name, status="error", duration=query_duration
+            )
+            metrics.record_error(
+                ErrorCode.GRAPH_CONSTRAINT_VIOLATION, ErrorCategory.VALIDATION
+            )
+            raise api_exc from e
 
+        if "syntax" in error_msg.lower():
+            metrics.record_query_execution(
+                graph=validated_graph_name, status="error", duration=query_duration
+            )
+            metrics.record_error(ErrorCode.CYPHER_SYNTAX_ERROR, ErrorCategory.VALIDATION)
+            raise GraphCypherSyntaxError(cypher_to_execute, error_msg) from e
+
+        metrics.record_query_execution(
+            graph=validated_graph_name, status="error", duration=query_duration
+        )
+        metrics.record_error(ErrorCode.QUERY_EXECUTION_ERROR, ErrorCategory.UPSTREAM)
         raise APIException(
-            code=code,
+            code=ErrorCode.QUERY_EXECUTION_ERROR,
             message=f"Query execution failed: {error_msg}",
-            category=category,
-            status_code=422,
-            details={"cypher": request.cypher[:200]},
+            category=ErrorCategory.UPSTREAM,
+            status_code=500,
+            details={
+                "graph": validated_graph_name,
+                "query": request.cypher[:500],
+                "error": error_msg,
+                "params": (
+                    {k: str(v)[:100] for k, v in (request.params or {}).items()}
+                    if request.params
+                    else None
+                ),
+            },
         ) from e
 
 

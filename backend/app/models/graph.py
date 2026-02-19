@@ -95,3 +95,37 @@ class NodeDeleteResponse(BaseModel):
     node_id: str = Field(..., description="ID of the deleted node")
     edges_deleted: int = Field(default=0, description="Number of edges deleted (if detach=true)")
 
+
+class ShortestPathRequest(BaseModel):
+    """Request to find shortest path between two nodes."""
+
+    source_id: int = Field(..., description="Source node ID")
+    target_id: int = Field(..., description="Target node ID")
+    max_depth: int = Field(
+        default=10,
+        ge=1,
+        le=20,
+        description="Maximum path length in hops (1-20)",
+    )
+
+
+class ShortestPathResponse(BaseModel):
+    """Response from shortest path query."""
+
+    path: Optional[List[Dict[str, Any]]] = Field(
+        default=None,
+        description="Nodes and edges in path order, or None if no path found",
+    )
+    path_length: int = Field(
+        default=0,
+        description="Number of edges in the path (0 if no path)",
+    )
+    nodes: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="Nodes in path order",
+    )
+    edges: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="Edges in path order",
+    )
+

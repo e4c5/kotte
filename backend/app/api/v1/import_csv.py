@@ -8,9 +8,10 @@ from fastapi import APIRouter, Depends, UploadFile, File, Form
 from fastapi.responses import JSONResponse
 
 from app.core.auth import get_session
+from app.services.metadata import MetadataService, property_cache
 from app.core.database import DatabaseConnection
-from app.core.errors import APIException, ErrorCode, ErrorCategory
-from app.core.validation import validate_graph_name, validate_label_name
+from app.core.errors import APIException, ErrorCode, ErrorCategory, translate_db_error
+from app.core.validation import validate_graph_name, validate_label_name, escape_string_literal
 from app.models.import_models import (
     CSVImportResponse,
     ImportJobStatus,
@@ -56,6 +57,7 @@ async def import_csv(
 
     # Validate graph name format (prevents SQL injection)
     validated_graph_name = validate_graph_name(graph_name)
+    graph_lit = escape_string_literal(validated_graph_name)
 
     # Validate graph exists or create it (using parameterized query)
     graph_check = """
@@ -67,20 +69,25 @@ async def import_csv(
 
     if not graph_id:
         # Create graph if it doesn't exist
-        # Note: AGE create_graph function doesn't support parameterization,
-        # but we've validated the graph name format, so it's safe
+        # Note: create_graph() expects string literals, not identifiers.
         create_graph_query = f"""
-            SELECT * FROM ag_catalog.create_graph('{validated_graph_name}')
+            SELECT * FROM ag_catalog.create_graph({graph_lit})
         """
         try:
             await db_conn.execute_query(create_graph_query)
             logger.info(f"Created graph: {validated_graph_name}")
         except Exception as e:
+            api_exc = translate_db_error(
+                e, context={"graph": validated_graph_name, "operation": "create_graph"}
+            )
+            if api_exc:
+                raise api_exc from e
             raise APIException(
                 code=ErrorCode.GRAPH_CONTEXT_INVALID,
                 message=f"Failed to create graph: {str(e)}",
                 category=ErrorCategory.UPSTREAM,
                 status_code=500,
+                details={"graph": validated_graph_name},
             ) from e
 
     # Determine label type
@@ -97,6 +104,7 @@ async def import_csv(
 
     # Validate label name format (prevents SQL injection)
     validated_label = validate_label_name(label)
+    label_lit = escape_string_literal(validated_label)
 
     # Create job status
     job_status = ImportJobStatus(
@@ -130,10 +138,11 @@ async def import_csv(
             )
 
         # Create label if needed
-        # Note: AGE functions don't support parameterization, but we've validated names
+        # Note: AGE label DDL doesn't support parameterization; validated + escaped
+        # identifiers are used directly in the function calls below.
         if drop_if_exists:
             drop_query = f"""
-                SELECT * FROM ag_catalog.drop_label('{validated_graph_name}', '{validated_label}', {label_kind == 'v'})
+                SELECT * FROM ag_catalog.drop_label({graph_lit}, {label_lit}, {label_kind == 'v'})
             """
             try:
                 await db_conn.execute_query(drop_query)
@@ -141,13 +150,25 @@ async def import_csv(
                 pass  # Label might not exist
 
         create_label_query = f"""
-            SELECT * FROM ag_catalog.create_label('{validated_graph_name}', '{validated_label}', {label_kind == 'v'})
+            SELECT * FROM ag_catalog.create_label({graph_lit}, {label_lit}, {label_kind == 'v'})
         """
         try:
             await db_conn.execute_query(create_label_query)
             job_status.created_labels.append(validated_label)
         except Exception as e:
-            if "already exists" not in str(e).lower():
+            if "already exists" in str(e).lower():
+                pass  # Label exists, continue
+            else:
+                api_exc = translate_db_error(
+                    e,
+                    context={
+                        "graph": validated_graph_name,
+                        "label": validated_label,
+                        "operation": "create_label",
+                    },
+                )
+                if api_exc:
+                    raise api_exc from e
                 raise
 
         # Insert data in transaction
@@ -228,6 +249,12 @@ async def import_csv(
         job_status.errors = errors[:100]  # Limit errors
         job_status.completed_at = datetime.now(timezone.utc).isoformat()
         job_status.progress = 1.0
+
+        # Invalidate property cache so new properties are discovered
+        property_cache.invalidate(validated_graph_name, validated_label)
+
+        # Update table statistics for accurate count estimates
+        await MetadataService.analyze_table(db_conn, validated_graph_name, validated_label)
 
         return CSVImportResponse(
             job_id=job_id,
