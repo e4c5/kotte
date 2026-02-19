@@ -27,8 +27,8 @@ make dev-backend    # Terminal 1
 make dev-frontend   # Terminal 2
 ```
 
-- **Frontend:** http://localhost:5173
-- **API docs:** http://localhost:8000/api/docs
+- **Frontend:** <http://localhost:5173>
+- **API docs:** <http://localhost:8000/api/docs>
 
 See [docs/QUICKSTART.md](docs/QUICKSTART.md) for detailed setup and database preparation.
 
@@ -87,7 +87,7 @@ Configuration is done via environment variables. Create a `.env` file in the `ba
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `CORS_ORIGINS` | `http://localhost:5173,http://localhost:3000` | Allowed origins (comma-separated) |
+| `CORS_ORIGINS` | `<http://localhost:5173>,http://localhost:3000` | Allowed origins (comma-separated) |
 | `ENVIRONMENT` | `development` | `development` or `production` |
 | `DEBUG` | `false` | Enable debug mode |
 | `LOG_LEVEL` | `INFO` | Log level |
@@ -128,21 +128,45 @@ kotte/
 3. **Run queries** – Use the Cypher query editor; results appear as graph or table.
 4. **Explore** – Toggle graph/table view, inspect metadata, export results, and browse query history.
 
+## Key Features
+
+- **Interactive Graph Visualization** - D3.js-powered force-directed layouts with zoom, pan, and node pinning
+- **Cypher Query Editor** - Write and execute Cypher queries with syntax highlighting and history
+- **Multiple View Modes** - Switch between interactive graph visualization and table view
+- **Saved Connections** - Securely store frequently-used database connections with AES-256-GCM encryption
+- **Metadata Explorer** - Browse graphs, node labels, edge types, and discover properties
+- **Export Capabilities** - Export query results as CSV or JSON
+- **Session Management** - Secure session-based authentication with automatic timeout
+- **Query Cancellation** - Cancel long-running queries
+- **Graph Layouts** - Force-directed, hierarchical, radial, grid, and random layouts
+
+## Documentation
+
+- **[User Guide](docs/USER_GUIDE.md)** – Complete guide to using Kotte
+- **[Quick Start](docs/QUICKSTART.md)** – Installation and setup
+- **[Architecture](docs/ARCHITECTURE.md)** – Technical architecture and design
+- **[Contributing](docs/CONTRIBUTING.md)** – Development guide for contributors
+
 ## API Documentation
 
 When the backend is running:
 
-- **Swagger UI:** http://localhost:8000/api/docs
-- **ReDoc:** http://localhost:8000/api/redoc
+- **Swagger UI:** <http://localhost:8000/api/docs>
+- **ReDoc:** <http://localhost:8000/api/redoc>
+
+See [Architecture documentation](docs/ARCHITECTURE.md) for detailed API reference.
 
 ## Security
 
-- Authentication required for protected endpoints
-- Parameterized queries (SQL injection protection)
-- Secrets from environment variables only
-- HttpOnly session cookies
-- Optional read-only mode via `QUERY_SAFE_MODE`
-- Configurable rate limiting
+- **Session-based authentication** with secure HttpOnly cookies
+- **Encrypted credential storage** using AES-256-GCM
+- **Parameterized queries** for SQL injection protection
+- **CSRF protection** on state-changing requests
+- **Rate limiting** (configurable per-IP and per-user)
+- **Input validation** with strict Pydantic schemas
+- **Optional read-only mode** via `QUERY_SAFE_MODE`
+
+See [Contributing guide](docs/CONTRIBUTING.md) for detailed security implementation.
 
 ## Testing
 
@@ -156,7 +180,4 @@ cd frontend && npm test
 
 Via Makefile: `make test-backend` and `make test-frontend`
 
-## Further Documentation
-
-- [QUICKSTART.md](docs/QUICKSTART.md) – Setup and database setup
-- [ARCHITECTURE.md](docs/ARCHITECTURE.md) – Architecture details
+See [Contributing guide](docs/CONTRIBUTING.md) for testing guidelines.
