@@ -468,7 +468,7 @@ def validate_identifier(name: str) -> bool:
 async def execute_query(...):
     pass
 
-# Per-user rate limiting  
+# Per-user rate limiting
 @limiter.limit("100/minute", key_func=get_user_id)
 async def execute_query(...):
     pass
@@ -761,13 +761,13 @@ http://localhost:5173          http://localhost:8000
 server {
     listen 443 ssl http2;
     server_name kotte.example.com;
-    
+
     # Frontend static files
     location / {
         root /var/www/kotte/frontend;
         try_files $uri /index.html;
     }
-    
+
     # Backend API
     location /api/ {
         proxy_pass http://127.0.0.1:8000;
@@ -857,5 +857,5 @@ VITE_API_BASE_URL=https://kotte.example.com
 
 ---
 
-*Last Updated: February 2026*
+**Last Updated:** February 2026*
 

@@ -53,7 +53,7 @@ Before you begin, ensure you have:
    ```bash
    # Terminal 1
    make dev-backend
-   
+
    # Terminal 2
    make dev-frontend
    ```
@@ -125,9 +125,9 @@ uvicorn app.main:app --reload --port 8000
 ```
 
 Access:
-- API: http://localhost:8000
-- Swagger Docs: http://localhost:8000/api/docs
-- ReDoc: http://localhost:8000/api/redoc
+- API: <http://localhost:8000>
+- Swagger Docs: <http://localhost:8000>/api/docs
+- ReDoc: <http://localhost:8000>/api/redoc
 
 ### Frontend Setup
 
@@ -145,7 +145,7 @@ npm install
 Create a `.env` file in the `frontend/` directory:
 
 ```env
-VITE_API_BASE_URL=http://localhost:8000
+VITE_API_BASE_URL=<http://localhost:8000>
 ```
 
 #### 3. Run Frontend
@@ -154,7 +154,7 @@ VITE_API_BASE_URL=http://localhost:8000
 npm run dev
 ```
 
-Access: http://localhost:5173
+Access: <http://localhost:5173>
 
 ### Database Setup
 
@@ -341,7 +341,7 @@ For detailed architecture information, see [ARCHITECTURE.md](ARCHITECTURE.md).
    ```bash
    # Backend tests
    cd backend && pytest
-   
+
    # Frontend tests
    cd frontend && npm test
    ```
@@ -350,7 +350,7 @@ For detailed architecture information, see [ARCHITECTURE.md](ARCHITECTURE.md).
    ```bash
    # Backend
    make lint-backend
-   
+
    # Frontend
    make lint-frontend
    ```
@@ -420,7 +420,7 @@ from pydantic import BaseModel
 
 class GraphMetadata(BaseModel):
     """Graph metadata model.
-    
+
     Attributes:
         name: Graph name
         node_labels: List of node label names
@@ -429,20 +429,20 @@ class GraphMetadata(BaseModel):
     name: str
     node_labels: List[str]
     edge_types: List[str]
-    
+
 async def get_graph_metadata(
     graph_name: str,
     include_counts: bool = False
 ) -> GraphMetadata:
     """Get metadata for a graph.
-    
+
     Args:
         graph_name: Name of the graph
         include_counts: Whether to include node/edge counts
-        
+
     Returns:
         Graph metadata object
-        
+
     Raises:
         GraphNotFoundError: If graph doesn't exist
     """
@@ -501,7 +501,7 @@ const fetchGraphData = async (
     graph: graphName,
     query: query,
   });
-  
+
   return response.data;
 };
 ```
@@ -567,7 +567,7 @@ def test_parse_agtype_vertex():
     """Test parsing AGE vertex type."""
     input_data = '{"id": 1, "label": "Person", "properties": {"name": "Alice"}}'
     result = parse_agtype(input_data)
-    
+
     assert result['id'] == '1'
     assert result['label'] == 'Person'
     assert result['properties']['name'] == 'Alice'
@@ -605,7 +605,7 @@ async def test_connect_and_query(test_db):
             'password': 'postgres'
         })
         assert response.status_code == 200
-        
+
         # Execute query
         response = await client.post('/api/v1/queries/execute', json={
             'graph': 'test_graph',
@@ -649,17 +649,17 @@ describe('QueryEditor', () => {
     render(<QueryEditor onExecute={() => {}} />);
     expect(screen.getByPlaceholderText('Enter Cypher query...')).toBeInTheDocument();
   });
-  
+
   it('calls onExecute when run button clicked', () => {
     const onExecute = jest.fn();
     render(<QueryEditor onExecute={onExecute} />);
-    
+
     const textarea = screen.getByPlaceholderText('Enter Cypher query...');
     fireEvent.change(textarea, { target: { value: 'MATCH (n) RETURN n' } });
-    
+
     const runButton = screen.getByText('Run Query');
     fireEvent.click(runButton);
-    
+
     expect(onExecute).toHaveBeenCalledWith('MATCH (n) RETURN n');
   });
 });
@@ -719,30 +719,30 @@ import base64
 
 class EncryptedConnectionStorage:
     """Secure credential storage with AES-256-GCM encryption."""
-    
+
     def __init__(self, master_key: str):
         """Initialize with master encryption key.
-        
+
         Args:
             master_key: Master encryption key (must be at least 32 bytes)
-            
+
         Raises:
             ValueError: If master key is too short
         """
         if len(master_key) < 32:
             raise ValueError("Master encryption key must be at least 32 bytes")
         self.master_key = master_key.encode()
-        
+
     def encrypt_credential(self, credential: str, salt: bytes) -> str:
         """Encrypt a credential using AES-256-GCM.
-        
+
         Args:
             credential: Plaintext credential
             salt: Unique salt for key derivation (16 bytes recommended)
-            
+
         Returns:
             Base64-encoded nonce + ciphertext (includes authentication tag)
-            
+
         Note:
             The returned value contains: nonce (12 bytes) + ciphertext + tag (16 bytes)
             AESGCM.encrypt() returns ciphertext with the authentication tag appended.
@@ -755,27 +755,27 @@ class EncryptedConnectionStorage:
             iterations=100000
         )
         key = kdf.derive(self.master_key)
-        
+
         # Encrypt with AES-256-GCM
         # Optional: Add authenticated associated data (AAD) for additional context
         aesgcm = AESGCM(key)
         nonce = os.urandom(12)  # 96-bit nonce for GCM
         ciphertext = aesgcm.encrypt(nonce, credential.encode(), None)
-        
+
         # Return nonce + ciphertext (which includes tag) as base64
         # Format: [nonce: 12 bytes][ciphertext + tag: variable]
         return base64.b64encode(nonce + ciphertext).decode()
-    
+
     def decrypt_credential(self, encrypted_data: str, salt: bytes) -> str:
         """Decrypt a credential using AES-256-GCM.
-        
+
         Args:
             encrypted_data: Base64-encoded nonce + ciphertext + tag
             salt: Same salt used for encryption
-            
+
         Returns:
             Decrypted plaintext credential
-            
+
         Raises:
             InvalidTag: If authentication tag verification fails
             ValueError: If encrypted data is malformed
@@ -783,14 +783,14 @@ class EncryptedConnectionStorage:
         try:
             # Decode base64
             data = base64.b64decode(encrypted_data)
-            
+
             # Split nonce and ciphertext
             if len(data) < 13:  # Minimum: 12-byte nonce + 1 byte ciphertext
                 raise ValueError("Encrypted data is too short")
-            
+
             nonce = data[:12]
             ciphertext = data[12:]  # Includes authentication tag
-            
+
             # Derive key from master key + salt
             kdf = PBKDF2HMAC(
                 algorithm=hashes.SHA256(),
@@ -799,13 +799,13 @@ class EncryptedConnectionStorage:
                 iterations=100000
             )
             key = kdf.derive(self.master_key)
-            
+
             # Decrypt with AES-256-GCM
             aesgcm = AESGCM(key)
             plaintext = aesgcm.decrypt(nonce, ciphertext, None)
-            
+
             return plaintext.decode()
-            
+
         except InvalidTag:
             # Authentication failed - data was tampered with
             raise ValueError("Credential decryption failed: authentication tag mismatch")
@@ -866,10 +866,10 @@ import re
 
 def validate_identifier(name: str) -> bool:
     """Validate PostgreSQL/AGE identifier.
-    
+
     Args:
         name: Identifier to validate
-        
+
     Returns:
         True if valid, False otherwise
     """
@@ -889,18 +889,18 @@ from pydantic import BaseModel, Field, validator
 
 class QueryRequest(BaseModel):
     """Query execution request."""
-    
+
     graph: str = Field(..., min_length=1, max_length=63)
     query: str = Field(..., min_length=1, max_length=10000)
     parameters: dict = Field(default_factory=dict)
-    
+
     @validator('graph')
     def validate_graph_name(cls, v):
         """Validate graph name format."""
         if not validate_identifier(v):
             raise ValueError('Invalid graph name format')
         return v
-    
+
     @validator('query')
     def validate_query_length(cls, v):
         """Validate query is not too long."""
@@ -943,15 +943,15 @@ import json
 
 class RedisSessionStore:
     """Redis-backed session storage for production."""
-    
+
     def __init__(self, redis_url: str):
         self.redis = redis.from_url(redis_url)
-    
+
     async def get(self, session_id: str) -> Optional[Dict[str, Any]]:
         """Get session data."""
         data = await self.redis.get(f"session:{session_id}")
         return json.loads(data) if data else None
-    
+
     async def set(self, session_id: str, data: Dict[str, Any], ttl: int = 3600):
         """Set session data with TTL."""
         await self.redis.setex(
@@ -959,7 +959,7 @@ class RedisSessionStore:
             ttl,
             json.dumps(data)
         )
-    
+
     async def delete(self, session_id: str):
         """Delete session."""
         await self.redis.delete(f"session:{session_id}")
@@ -1077,7 +1077,7 @@ When making changes to the codebase, update the relevant documentation:
 - **Removed Endpoints**: Remove from all documentation
 
 #### Features
-- **New Features**: 
+- **New Features**:
   - Add to `README.md` Key Features section
   - Document usage in `USER_GUIDE.md`
   - Add technical details to `ARCHITECTURE.md`
@@ -1170,7 +1170,7 @@ cspell "docs/**/*.md" README.md
      data: GraphData;
      onAction: (id: string) => void;
    }
-   
+
    export const NewComponent: React.FC<NewComponentProps> = ({
      data,
      onAction
@@ -1195,7 +1195,7 @@ cspell "docs/**/*.md" README.md
 3. **Use Component**:
    ```typescript
    import { NewComponent } from './components/NewComponent';
-   
+
    // In parent component
    <NewComponent data={graphData} onAction={handleAction} />
    ```
@@ -1208,7 +1208,7 @@ Kotte doesn't use traditional migrations (AGE manages schema). For setup scripts
    ```sql
    -- Create graph
    SELECT create_graph('new_graph');
-   
+
    -- Add sample data
    SELECT * FROM cypher('new_graph', $$
      CREATE (n:NewLabel {property: 'value'})
@@ -1244,4 +1244,4 @@ Kotte doesn't use traditional migrations (AGE manages schema). For setup scripts
 
 Thank you for contributing to Kotte! Your contributions help make graph database visualization better for everyone.
 
-*Last Updated: February 2026*
+**Last Updated:** February 2026*

@@ -27,8 +27,8 @@ make dev-backend    # Terminal 1
 make dev-frontend   # Terminal 2
 ```
 
-- **Frontend:** http://localhost:5173
-- **API docs:** http://localhost:8000/api/docs
+- **Frontend:** <http://localhost:5173>
+- **API docs:** <http://localhost:8000/api/docs>
 
 See [docs/QUICKSTART.md](docs/QUICKSTART.md) for detailed setup and database preparation.
 
@@ -87,7 +87,7 @@ Configuration is done via environment variables. Create a `.env` file in the `ba
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `CORS_ORIGINS` | `http://localhost:5173,http://localhost:3000` | Allowed origins (comma-separated) |
+| `CORS_ORIGINS` | `<http://localhost:5173>,http://localhost:3000` | Allowed origins (comma-separated) |
 | `ENVIRONMENT` | `development` | `development` or `production` |
 | `DEBUG` | `false` | Enable debug mode |
 | `LOG_LEVEL` | `INFO` | Log level |
@@ -151,8 +151,8 @@ kotte/
 
 When the backend is running:
 
-- **Swagger UI:** http://localhost:8000/api/docs
-- **ReDoc:** http://localhost:8000/api/redoc
+- **Swagger UI:** <http://localhost:8000/api/docs>
+- **ReDoc:** <http://localhost:8000/api/redoc>
 
 See [Architecture documentation](docs/ARCHITECTURE.md) for detailed API reference.
 
