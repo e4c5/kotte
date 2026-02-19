@@ -137,6 +137,16 @@ def add_visualization_limit(cypher: str, max_limit: int) -> str:
     return f"{cypher.rstrip()} LIMIT {max_limit}"
 
 
+def escape_string_literal(value: str) -> str:
+    """
+    Escape a value for safe use as a SQL string literal (single-quoted).
+    Use for DDL function args (create_graph, create_label, etc.) which expect text.
+    Must be used after validation (e.g. validate_graph_name, validate_label_name).
+    """
+    escaped = value.replace("'", "''")
+    return f"'{escaped}'"
+
+
 def escape_identifier(identifier: str) -> str:
     """
     Escape PostgreSQL identifier for safe use in SQL.

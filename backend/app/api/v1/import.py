@@ -12,8 +12,8 @@ from app.services.metadata import MetadataService, property_cache
 from app.core.config import settings
 from app.core.database import DatabaseConnection
 from app.core.errors import APIException, ErrorCode, ErrorCategory
-from app.core.validation import validate_graph_name, validate_label_name, escape_identifier
-from app.models.import import (
+from app.core.validation import validate_graph_name, validate_label_name, escape_string_literal
+from app.models.import_models import (
     CSVImportResponse,
     ImportJobStatus,
 )
@@ -133,8 +133,8 @@ async def import_csv(
         # PHASE 2: All database operations in a single transaction
         validated_graph_name = validate_graph_name(graph_name)
         validated_label_name = validate_label_name(label)
-        safe_graph = escape_identifier(validated_graph_name)
-        safe_label = escape_identifier(validated_label_name)
+        graph_lit = escape_string_literal(validated_graph_name)
+        label_lit = escape_string_literal(validated_label_name)
 
         inserted = 0
         rejected = 0
@@ -151,7 +151,7 @@ async def import_csv(
 
             if not graph_id:
                 create_graph_query = f"""
-                    SELECT * FROM ag_catalog.create_graph({safe_graph})
+                    SELECT * FROM ag_catalog.create_graph({graph_lit})
                 """
                 try:
                     await db_conn.execute_query(create_graph_query)
@@ -167,7 +167,7 @@ async def import_csv(
             # Create label if needed (inside same transaction)
             if drop_if_exists:
                 drop_query = f"""
-                    SELECT * FROM ag_catalog.drop_label({safe_graph}, {safe_label}, {label_kind == 'v'})
+                    SELECT * FROM ag_catalog.drop_label({graph_lit}, {label_lit}, {label_kind == 'v'})
                 """
                 try:
                     await db_conn.execute_query(drop_query)
@@ -176,7 +176,7 @@ async def import_csv(
                     pass
 
             create_label_query = f"""
-                SELECT * FROM ag_catalog.create_label({safe_graph}, {safe_label}, {label_kind == 'v'})
+                SELECT * FROM ag_catalog.create_label({graph_lit}, {label_lit}, {label_kind == 'v'})
             """
             try:
                 await db_conn.execute_query(create_label_query)
@@ -224,8 +224,13 @@ async def import_csv(
 
                         props = {k: v for k, v in properties.items() if k not in {"source", "target"}}
                         props_json = json.dumps(props).replace("'", "''")
-                        source_id = properties["source"]
-                        target_id = properties["target"]
+                        try:
+                            source_id = int(properties["source"])
+                            target_id = int(properties["target"])
+                        except (ValueError, TypeError):
+                            rejected += 1
+                            errors.append(f"Row {line_num}: source and target must be integers")
+                            continue
                         cypher_statements.append(
                             f"MATCH (a), (b) "
                             f"WHERE id(a) = {source_id} AND id(b) = {target_id} "

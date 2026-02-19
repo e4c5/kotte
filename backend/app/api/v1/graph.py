@@ -513,7 +513,16 @@ async def find_shortest_path(
                 if isinstance(item, dict):
                     edges_list.append(item)
 
-        path_combined = nodes_list + edges_list if (nodes_list or edges_list) else None
+        # Interleave nodes and edges in traversal order: n0, e0, n1, e1, ..., n_n
+        path_combined: list[dict] | None = None
+        if nodes_list or edges_list:
+            path_combined = []
+            for i in range(len(edges_list)):
+                if i < len(nodes_list):
+                    path_combined.append(nodes_list[i])
+                path_combined.append(edges_list[i])
+            if nodes_list:
+                path_combined.append(nodes_list[-1])
         return ShortestPathResponse(
             path=path_combined,
             path_length=path_length_int,
