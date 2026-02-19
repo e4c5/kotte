@@ -156,7 +156,9 @@ cd frontend && npm test
 
 Via Makefile: `make test-backend` and `make test-frontend`
 
-## Further Documentation
+## Documentation
 
-- [QUICKSTART.md](docs/QUICKSTART.md) – Setup and database setup
-- [ARCHITECTURE.md](docs/ARCHITECTURE.md) – Architecture details
+- **[User Guide](docs/USER_GUIDE.md)** – Complete guide to using Kotte
+- **[Quick Start](docs/QUICKSTART.md)** – Installation and setup
+- **[Architecture](docs/ARCHITECTURE.md)** – Technical architecture and design
+- **[Contributing](docs/CONTRIBUTING.md)** – Development guide for contributors
