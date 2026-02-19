@@ -110,6 +110,14 @@ CREDENTIAL_STORAGE_PATH=./data/connections.json
 MASTER_ENCRYPTION_KEY=your-master-key-here  # or auto-generated in dev
 ```
 
+**⚠️ IMPORTANT SECURITY NOTES**:
+- **NEVER commit `.env` files to version control** (already in `.gitignore`)
+- **NEVER commit `.master_encryption_key` files** (already in `.gitignore`)
+- Set restrictive file permissions: `chmod 600 .env` and `chmod 600 .master_encryption_key`
+- In production, use a secrets manager (AWS Secrets Manager, HashiCorp Vault, etc.)
+- Generate strong secrets: `openssl rand -urlsafe 32` for SESSION_SECRET_KEY
+- MASTER_ENCRYPTION_KEY must be at least 32 bytes (256 bits)
+
 #### 4. Run Backend
 
 ```bash
@@ -502,13 +510,40 @@ const fetchGraphData = async (
 
 ```bash
 # Install ESLint and Prettier
-npm install --save-dev eslint prettier
+npm install --save-dev eslint prettier eslint-config-prettier eslint-plugin-react
 
 # Lint code
 npm run lint
 
 # Format code
 npm run format
+```
+
+**Recommended ESLint Configuration** (`.eslintrc.js`):
+```javascript
+module.exports = {
+  extends: [
+    'eslint:recommended',
+    'plugin:react/recommended',
+    'plugin:@typescript-eslint/recommended',
+    'prettier'
+  ],
+  rules: {
+    'quotes': ['error', 'single'],
+    'semi': ['error', 'always'],
+    'max-len': ['error', { code: 100 }]
+  }
+};
+```
+
+**Prettier Configuration** (`.prettierrc`):
+```json
+{
+  "singleQuote": true,
+  "semi": true,
+  "printWidth": 100,
+  "tabWidth": 2
+}
 ```
 
 ---
@@ -677,6 +712,8 @@ Kotte uses encrypted credential storage for saved connections.
 ```python
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+from cryptography.hazmat.primitives import hashes
+from cryptography.exceptions import InvalidTag
 import os
 import base64
 
@@ -684,7 +721,16 @@ class EncryptedConnectionStorage:
     """Secure credential storage with AES-256-GCM encryption."""
     
     def __init__(self, master_key: str):
-        """Initialize with master encryption key."""
+        """Initialize with master encryption key.
+        
+        Args:
+            master_key: Master encryption key (must be at least 32 bytes)
+            
+        Raises:
+            ValueError: If master key is too short
+        """
+        if len(master_key) < 32:
+            raise ValueError("Master encryption key must be at least 32 bytes")
         self.master_key = master_key.encode()
         
     def encrypt_credential(self, credential: str, salt: bytes) -> str:
@@ -692,46 +738,123 @@ class EncryptedConnectionStorage:
         
         Args:
             credential: Plaintext credential
-            salt: Unique salt for key derivation
+            salt: Unique salt for key derivation (16 bytes recommended)
             
         Returns:
-            Base64-encoded encrypted credential
+            Base64-encoded nonce + ciphertext (includes authentication tag)
+            
+        Note:
+            The returned value contains: nonce (12 bytes) + ciphertext + tag (16 bytes)
+            AESGCM.encrypt() returns ciphertext with the authentication tag appended.
         """
         # Derive key from master key + salt
         kdf = PBKDF2HMAC(
             algorithm=hashes.SHA256(),
-            length=32,
+            length=32,  # 256 bits for AES-256
             salt=salt,
             iterations=100000
         )
         key = kdf.derive(self.master_key)
         
         # Encrypt with AES-256-GCM
+        # Optional: Add authenticated associated data (AAD) for additional context
         aesgcm = AESGCM(key)
-        nonce = os.urandom(12)
+        nonce = os.urandom(12)  # 96-bit nonce for GCM
         ciphertext = aesgcm.encrypt(nonce, credential.encode(), None)
         
-        # Return nonce + ciphertext as base64
+        # Return nonce + ciphertext (which includes tag) as base64
+        # Format: [nonce: 12 bytes][ciphertext + tag: variable]
         return base64.b64encode(nonce + ciphertext).decode()
+    
+    def decrypt_credential(self, encrypted_data: str, salt: bytes) -> str:
+        """Decrypt a credential using AES-256-GCM.
+        
+        Args:
+            encrypted_data: Base64-encoded nonce + ciphertext + tag
+            salt: Same salt used for encryption
+            
+        Returns:
+            Decrypted plaintext credential
+            
+        Raises:
+            InvalidTag: If authentication tag verification fails
+            ValueError: If encrypted data is malformed
+        """
+        try:
+            # Decode base64
+            data = base64.b64decode(encrypted_data)
+            
+            # Split nonce and ciphertext
+            if len(data) < 13:  # Minimum: 12-byte nonce + 1 byte ciphertext
+                raise ValueError("Encrypted data is too short")
+            
+            nonce = data[:12]
+            ciphertext = data[12:]  # Includes authentication tag
+            
+            # Derive key from master key + salt
+            kdf = PBKDF2HMAC(
+                algorithm=hashes.SHA256(),
+                length=32,
+                salt=salt,
+                iterations=100000
+            )
+            key = kdf.derive(self.master_key)
+            
+            # Decrypt with AES-256-GCM
+            aesgcm = AESGCM(key)
+            plaintext = aesgcm.decrypt(nonce, ciphertext, None)
+            
+            return plaintext.decode()
+            
+        except InvalidTag:
+            # Authentication failed - data was tampered with
+            raise ValueError("Credential decryption failed: authentication tag mismatch")
+        except Exception as e:
+            raise ValueError(f"Credential decryption failed: {e}")
 ```
+
+**Important Security Notes**:
+- The master encryption key must be at least 32 bytes (256 bits)
+- Never commit `.master_encryption_key` to version control (already in `.gitignore`)
+- Set file permissions to 600: `chmod 600 .master_encryption_key`
+- In production, retrieve the key from a secret manager, not a file
+- GCM provides authenticated encryption - tampering is detected automatically
+- Consider adding AAD (authenticated associated data) for additional context binding
 
 ### SQL Injection Prevention
 
 #### Parameterized Queries
 
-**Always use parameterized queries** for user input:
+**Always use parameterized queries** for user input.
+
+**Important**: This project uses **psycopg 3** (async driver). The async signature is:
+```python
+await conn.execute(query, params)  # NOT execute(query, *params)
+```
+
+**Correct examples**:
 
 ```python
-# ✅ CORRECT
+# ✅ CORRECT - psycopg3 async with dict parameters
+query = """
+    SELECT * FROM cypher(%(graph)s, %(cypher)s) AS (result agtype)
+"""
+params = {"graph": graph_name, "cypher": cypher_query}
+await conn.execute(query, params)
+
+# ✅ CORRECT - psycopg3 async with positional parameters
 query = """
     SELECT * FROM cypher($1, $2) AS (result agtype)
 """
-params = [graph_name, cypher_query]
-await conn.execute(query, *params)
+params = (graph_name, cypher_query)
+await conn.execute(query, params)
 
 # ❌ WRONG - SQL injection risk
 query = f"SELECT * FROM cypher('{graph_name}', '{cypher_query}')"
 await conn.execute(query)
+
+# ❌ WRONG - Incorrect psycopg3 async signature
+await conn.execute(query, *params)  # Don't unpack params
 ```
 
 #### Identifier Validation
@@ -804,6 +927,57 @@ async def execute_query(request: Request):
     pass
 ```
 
+### Session Storage (Production)
+
+**Development**: The default in-memory session storage is fine for development with a single backend instance.
+
+**Production**: For multi-instance deployments, configure a shared session store:
+
+#### Redis Session Store (Recommended)
+
+```python
+# backend/app/core/session_store.py
+import redis.asyncio as redis
+from typing import Optional, Dict, Any
+import json
+
+class RedisSessionStore:
+    """Redis-backed session storage for production."""
+    
+    def __init__(self, redis_url: str):
+        self.redis = redis.from_url(redis_url)
+    
+    async def get(self, session_id: str) -> Optional[Dict[str, Any]]:
+        """Get session data."""
+        data = await self.redis.get(f"session:{session_id}")
+        return json.loads(data) if data else None
+    
+    async def set(self, session_id: str, data: Dict[str, Any], ttl: int = 3600):
+        """Set session data with TTL."""
+        await self.redis.setex(
+            f"session:{session_id}",
+            ttl,
+            json.dumps(data)
+        )
+    
+    async def delete(self, session_id: str):
+        """Delete session."""
+        await self.redis.delete(f"session:{session_id}")
+```
+
+**Configuration** (add to `.env`):
+```env
+# Session storage
+SESSION_STORAGE_TYPE=redis  # or "memory" for development
+REDIS_URL=redis://localhost:6379/0
+```
+
+**Benefits**:
+- Shared state across multiple backend instances
+- Automatic session expiration via Redis TTL
+- Persistence across backend restarts
+- High performance and scalability
+
 ---
 
 ## Pull Request Process
@@ -854,15 +1028,107 @@ Brief description of changes
 - [ ] Tests pass locally
 - [ ] Documentation updated
 - [ ] No security issues introduced
+- [ ] CI checks pass (linting, tests, docs)
 ```
 
 ### Review Process
 
-1. **Automated Checks**: CI runs tests and linting
+1. **Automated Checks**: CI runs tests, linting, and documentation checks (see `.github/workflows/`)
 2. **Code Review**: Maintainer reviews code
 3. **Feedback**: Address any requested changes
 4. **Approval**: Maintainer approves PR
 5. **Merge**: PR is merged to main branch
+
+### CI Workflows
+
+The project uses GitHub Actions for automated checks:
+
+- **Backend Tests** (`.github/workflows/backend.yml`): Runs pytest, type checking, linting
+- **Frontend Tests** (`.github/workflows/frontend.yml`): Runs npm test, ESLint, type checking
+- **Documentation Checks** (`.github/workflows/docs.yml`): Markdown linting, link checking, spell checking
+
+To run checks locally before pushing:
+
+```bash
+# Backend
+make lint-backend
+make test-backend
+
+# Frontend
+make lint-frontend
+make test-frontend
+
+# Documentation
+markdownlint docs/*.md README.md
+markdown-link-check docs/*.md README.md
+```
+
+---
+
+## Documentation Maintenance
+
+### Keeping Documentation In Sync
+
+When making changes to the codebase, update the relevant documentation:
+
+#### API Changes
+- **New Endpoints**: Add to `ARCHITECTURE.md` API Reference section with request/response examples
+- **Changed Endpoints**: Update examples in `ARCHITECTURE.md` and `USER_GUIDE.md`
+- **Removed Endpoints**: Remove from all documentation
+
+#### Features
+- **New Features**: 
+  - Add to `README.md` Key Features section
+  - Document usage in `USER_GUIDE.md`
+  - Add technical details to `ARCHITECTURE.md`
+- **Configuration Changes**: Update `.env` examples in `CONTRIBUTING.md`
+- **Security Changes**: Document in `CONTRIBUTING.md` Security Considerations
+
+#### Architecture Changes
+- **New Components**: Add to `ARCHITECTURE.md` directory structure and component descriptions
+- **New Dependencies**: Update technology stack in `CONTRIBUTING.md`
+- **Deployment Changes**: Update `ARCHITECTURE.md` Deployment Architecture section
+
+### Documentation Structure
+
+```
+docs/
+├── USER_GUIDE.md         # End-user documentation
+│   └── Update when: Adding user-facing features, UI changes, troubleshooting
+├── QUICKSTART.md         # Quick setup guide
+│   └── Update when: Changing installation steps, prerequisites
+├── ARCHITECTURE.md       # Technical architecture
+│   └── Update when: API changes, architecture changes, deployment patterns
+└── CONTRIBUTING.md       # Developer guide
+    └── Update when: Development workflow changes, coding standards, security practices
+```
+
+### Documentation Review Checklist
+
+Before submitting a PR:
+
+- [ ] All code examples tested and working
+- [ ] Links checked (internal and external)
+- [ ] Markdown formatting consistent
+- [ ] Screenshots updated if UI changed
+- [ ] Version numbers current
+- [ ] No TODO or placeholder content
+
+### Running Documentation Checks
+
+```bash
+# Check for broken links
+npm install -g markdown-link-check
+find docs -name "*.md" -exec markdown-link-check {} \;
+
+# Lint markdown files
+npm install -g markdownlint-cli
+markdownlint docs/*.md README.md
+
+# Spell check (optional)
+npm install -g cspell
+cspell "docs/**/*.md" README.md
+```
 
 ---
 

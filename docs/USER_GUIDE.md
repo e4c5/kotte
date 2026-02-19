@@ -535,6 +535,48 @@ Use cases:
 
 ---
 
+## Accessibility
+
+Kotte aims to be accessible to all users. Here are the current accessibility features and limitations:
+
+### Keyboard Navigation
+
+- **Tab Navigation**: Use `Tab` and `Shift+Tab` to navigate through interactive elements
+- **Keyboard Shortcuts**: All major actions have keyboard shortcuts (see above)
+- **Focus Indicators**: Visual indicators show which element has focus
+- **Skip to Content**: Use keyboard shortcuts to jump to main content areas
+
+### Screen Reader Support
+
+**Current Limitations**:
+- Graph visualizations are primarily visual and have limited screen reader support
+- Use **Table View** for better screen reader accessibility
+- Node and edge properties are available as text in table view
+- Query results include descriptive labels and ARIA attributes where possible
+
+**Recommendations for Screen Reader Users**:
+1. Use Table View instead of Graph View for exploring results
+2. Query editor has proper labels and can be used with screen readers
+3. Export data as CSV for analysis in accessible tools like spreadsheets
+4. Metadata sidebar provides text-based navigation of graph structure
+
+### Visual Accessibility
+
+- **High Contrast**: Interface uses sufficient color contrast ratios
+- **Text Sizing**: Text can be resized using browser zoom (Ctrl/Cmd + +/-)
+- **Color Coding**: Node colors in graph view use distinct hues
+- **Focus Indicators**: Clear visual focus indicators for keyboard navigation
+
+### Known Limitations
+
+- Interactive graph visualization requires mouse for optimal use
+- Some complex graph layouts may be difficult to navigate with keyboard alone
+- Real-time force-directed animations may cause motion sensitivity issues
+
+**Accessibility Feedback**: If you encounter accessibility barriers, please report them via GitHub Issues.
+
+---
+
 ## Support and Resources
 
 ### Documentation

@@ -95,6 +95,14 @@ Handles user sessions with secure cookies:
 - **Session Timeout**: 1 hour maximum, 30 minutes idle timeout
 - **Session Security**: HttpOnly, SameSite=Lax, Secure (in production)
 
+**⚠️ Production Warning**: In-memory session storage is **not suitable for production** when running multiple backend instances. For production deployments:
+- Use Redis, Memcached, or database-backed session storage
+- Configure session store in `app/core/auth.py`
+- Ensure session store is accessible by all backend instances
+- Consider session replication for high availability
+
+See [Contributing Guide](CONTRIBUTING.md#session-storage-production) for Redis configuration examples.
+
 #### Database Connection (`app/core/database.py`)
 
 Manages PostgreSQL connections per session:
@@ -587,13 +595,77 @@ Execute Cypher query.
 
 #### POST /queries/{request_id}/cancel
 
-Cancel running query.
+Cancel running query (implemented).
 
-**Response:**
+Uses PostgreSQL `pg_cancel_backend()` to terminate the query at the database level.
+
+**Response (Success):**
 ```json
 {
-  "message": "Query cancelled",
+  "cancelled": true,
   "request_id": "uuid"
+}
+```
+
+**Error Responses:**
+
+**400 Bad Request** - Invalid request:
+```json
+{
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "category": "validation",
+    "message": "Invalid request ID format",
+    "details": {},
+    "request_id": "uuid",
+    "timestamp": "2026-02-19T01:00:00Z",
+    "retryable": false
+  }
+}
+```
+
+**401 Unauthorized** - Not authenticated:
+```json
+{
+  "error": {
+    "code": "AUTH_REQUIRED",
+    "category": "authentication",
+    "message": "Authentication required",
+    "details": {},
+    "request_id": "uuid",
+    "timestamp": "2026-02-19T01:00:00Z",
+    "retryable": false
+  }
+}
+```
+
+**429 Too Many Requests** - Rate limit exceeded:
+```json
+{
+  "error": {
+    "code": "RATE_LIMIT_EXCEEDED",
+    "category": "rate_limit",
+    "message": "Rate limit exceeded. Please try again later.",
+    "details": {"retry_after": 60},
+    "request_id": "uuid",
+    "timestamp": "2026-02-19T01:00:00Z",
+    "retryable": true
+  }
+}
+```
+
+**500 Internal Server Error** - Server error:
+```json
+{
+  "error": {
+    "code": "INTERNAL_ERROR",
+    "category": "server",
+    "message": "An unexpected error occurred",
+    "details": {},
+    "request_id": "uuid",
+    "timestamp": "2026-02-19T01:00:00Z",
+    "retryable": true
+  }
 }
 ```
 
