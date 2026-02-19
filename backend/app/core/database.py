@@ -144,6 +144,37 @@ class DatabaseConnection:
                     retryable=True,
                 ) from None
 
+    async def execute_command(
+        self, query: str, params: Optional[dict] = None, timeout: Optional[int] = None
+    ) -> None:
+        """
+        Execute a command that returns no result set (e.g. ANALYZE, DDL).
+        Do not use for SELECT or commands with RETURNING.
+        """
+        timeout = timeout or settings.query_timeout
+        start_time = time.time()
+        async with self.connection.cursor() as cur:
+            try:
+                await cur.execute("LOAD 'age'")
+                await cur.execute('SET search_path = ag_catalog, "$user", public')
+                await asyncio.wait_for(
+                    cur.execute(query, params),
+                    timeout=timeout,
+                )
+                duration = time.time() - start_time
+                metrics.record_db_query(duration)
+            except asyncio.TimeoutError:
+                duration = time.time() - start_time
+                metrics.record_db_query(duration)
+                logger.warning(f"Command timeout after {timeout} seconds")
+                raise APIException(
+                    code=ErrorCode.QUERY_TIMEOUT,
+                    message=f"Command execution timed out after {timeout} seconds",
+                    category=ErrorCategory.UPSTREAM,
+                    status_code=504,
+                    retryable=True,
+                ) from None
+
     async def get_backend_pid(self) -> Optional[int]:
         """
         Get the backend PID for this connection.

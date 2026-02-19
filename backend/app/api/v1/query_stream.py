@@ -187,15 +187,7 @@ async def stream_query_results(
         message = api_exc.message if api_exc else f"Failed to stream results: {str(e)}"
         error_chunk = {"error": {"code": code, "message": message}}
         yield json.dumps(error_chunk) + "\n"
-        if api_exc:
-            raise api_exc from e
-        raise APIException(
-            code=ErrorCode.QUERY_EXECUTION_ERROR,
-            message=f"Failed to stream results: {str(e)}",
-            category=ErrorCategory.UPSTREAM,
-            status_code=500,
-            details={"graph": graph_name, "query": cypher_query[:200]},
-        ) from e
+        # End generator cleanly; client has received the error in the stream
 
 
 @router.post("/stream")

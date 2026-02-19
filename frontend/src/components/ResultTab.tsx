@@ -45,8 +45,7 @@ export default function ResultTab({
 
   const hasGraphData = !!(
     result.graph_elements?.nodes?.length ||
-    result.graph_elements?.edges?.length ||
-    result.graph_elements?.paths?.length
+    result.graph_elements?.edges?.length
   )
 
   const pathHighlights = useMemo((): PathHighlights | undefined => {

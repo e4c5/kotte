@@ -252,7 +252,7 @@ class MetadataService:
                     CREATE INDEX IF NOT EXISTS {escape_identifier(index_name)}
                     ON {table_name} ({column})
                 """
-                await db_conn.execute_query(create_index_sql)
+                await db_conn.execute_command(create_index_sql)
 
             logger.info(
                 f"Ensured indices on {table_name} for columns: {', '.join(columns)}"
@@ -274,7 +274,7 @@ class MetadataService:
             validated_label_name = validate_label_name(label_name)
             safe_graph = escape_identifier(validated_graph_name)
             safe_label = escape_identifier(validated_label_name)
-            await db_conn.execute_query(f"ANALYZE {safe_graph}.{safe_label}")
+            await db_conn.execute_command(f"ANALYZE {safe_graph}.{safe_label}")
             logger.info("Updated statistics for %s.%s", validated_graph_name, validated_label_name)
         except Exception as e:
             logger.warning("Failed to analyze table %s.%s: %s", graph_name, label_name, e)

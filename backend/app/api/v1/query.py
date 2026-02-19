@@ -300,7 +300,7 @@ async def execute_query(
             metrics.record_query_execution(
                 graph=validated_graph_name, status="error", duration=query_duration
             )
-            metrics.record_error(ErrorCode.QUERY_SYNTAX_ERROR, ErrorCategory.VALIDATION)
+            metrics.record_error(ErrorCode.CYPHER_SYNTAX_ERROR, ErrorCategory.VALIDATION)
             raise GraphCypherSyntaxError(cypher_to_execute, error_msg) from e
 
         metrics.record_query_execution(
