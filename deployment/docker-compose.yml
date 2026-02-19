@@ -32,7 +32,7 @@ services:
       DB_NAME: postgres
       DB_USER: postgres
       DB_PASSWORD: postgres
-      SESSION_SECRET_KEY: ${SESSION_SECRET_KEY:-dev-secret-change-in-production}
+      SESSION_SECRET_KEY: ${SESSION_SECRET_KEY}
       CORS_ORIGINS: http://localhost:5173,http://localhost:3000,http://frontend:5173
       ENVIRONMENT: development
       CREDENTIAL_STORAGE_PATH: /app/data/connections.json
