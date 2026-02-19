@@ -20,6 +20,13 @@ frontend/tests
 *.md
 !deployment/README.md
 
+# Environment and secrets (avoid leaking into build context)
+.env
+.env.*
+.env.local
+backend/.env
+frontend/.env
+
 # Local data
 backend/data/connections.json
 .master_encryption_key

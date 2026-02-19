@@ -16,11 +16,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy backend application
 COPY backend/ ./
 
-# Create data directory for credential storage
-RUN mkdir -p /app/data
+# Create non-root user and data directory
+RUN groupadd -r kotte && useradd -r -g kotte kotte \
+    && mkdir -p /app/data && chown -R kotte:kotte /app
 
-WORKDIR /app
+USER kotte
 
 EXPOSE 8000
-
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

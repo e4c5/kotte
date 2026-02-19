@@ -6,15 +6,19 @@ WORKDIR /app
 COPY frontend/package.json frontend/package-lock.json* ./
 
 # Install dependencies
-RUN npm ci || npm install
+RUN npm ci
 
 # Copy frontend source
 COPY frontend/ .
 
-# Build arg for Vite proxy target (used at runtime for dev server)
+# Create non-root user
+RUN addgroup -g 1000 -S nodejs && adduser -u 1000 -S nodejs -G nodejs \
+    && chown -R nodejs:nodejs /app
+
 ARG VITE_PROXY_TARGET=http://backend:8000
 ENV VITE_PROXY_TARGET=${VITE_PROXY_TARGET}
 
-EXPOSE 5173
+USER nodejs
 
+EXPOSE 5173
 CMD ["npm", "run", "dev"]
