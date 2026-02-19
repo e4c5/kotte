@@ -1,9 +1,9 @@
 """Tests for metadata service."""
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock
 
-from app.services.metadata import MetadataService
+from app.services.metadata import MetadataService, property_cache
 
 
 class TestMetadataService:
@@ -11,19 +11,20 @@ class TestMetadataService:
 
     @pytest.mark.asyncio
     async def test_discover_properties_node_label(self, mock_db_connection):
-        """Test discovering properties for a node label."""
-        # Mock database query result
+        """Test discovering properties for a node label (jsonb_object_keys format)."""
+        property_cache.invalidate("test_graph", "Person")
+        # Mock jsonb_object_keys query result: one row per distinct property key
         mock_result = [
-            {"properties": {"name": "Alice", "age": 30}},
-            {"properties": {"name": "Bob", "age": 25, "city": "NYC"}},
+            {"prop_key": "age"},
+            {"prop_key": "city"},
+            {"prop_key": "name"},
         ]
         mock_db_connection.execute_query = AsyncMock(return_value=mock_result)
-        
+
         properties = await MetadataService.discover_properties(
             mock_db_connection, "test_graph", "Person", "v"
         )
-        
-        # Should return all unique property keys
+
         assert isinstance(properties, list)
         assert "name" in properties
         assert "age" in properties
@@ -31,17 +32,18 @@ class TestMetadataService:
 
     @pytest.mark.asyncio
     async def test_discover_properties_edge_label(self, mock_db_connection):
-        """Test discovering properties for an edge label."""
+        """Test discovering properties for an edge label (jsonb_object_keys format)."""
+        property_cache.invalidate("test_graph", "KNOWS")
         mock_result = [
-            {"properties": {"since": 2020}},
-            {"properties": {"since": 2021, "weight": 0.8}},
+            {"prop_key": "since"},
+            {"prop_key": "weight"},
         ]
         mock_db_connection.execute_query = AsyncMock(return_value=mock_result)
-        
+
         properties = await MetadataService.discover_properties(
             mock_db_connection, "test_graph", "KNOWS", "e"
         )
-        
+
         assert isinstance(properties, list)
         assert "since" in properties
         assert "weight" in properties
@@ -49,6 +51,7 @@ class TestMetadataService:
     @pytest.mark.asyncio
     async def test_discover_properties_empty_result(self, mock_db_connection):
         """Test discovering properties when no data exists."""
+        property_cache.invalidate("test_graph", "EmptyLabel")
         mock_db_connection.execute_query = AsyncMock(return_value=[])
         
         properties = await MetadataService.discover_properties(
@@ -61,18 +64,15 @@ class TestMetadataService:
     @pytest.mark.asyncio
     async def test_discover_properties_no_properties(self, mock_db_connection):
         """Test discovering properties when nodes have no properties."""
-        mock_result = [
-            {"properties": {}},
-            {"properties": None},
-        ]
-        mock_db_connection.execute_query = AsyncMock(return_value=mock_result)
-        
+        property_cache.invalidate("test_graph", "NoPropsLabel")  # avoid cache from other tests
+        # jsonb_object_keys returns no rows for empty/null properties
+        mock_db_connection.execute_query = AsyncMock(return_value=[])
+
         properties = await MetadataService.discover_properties(
-            mock_db_connection, "test_graph", "Person", "v"
+            mock_db_connection, "test_graph", "NoPropsLabel", "v"
         )
-        
+
         assert isinstance(properties, list)
-        # Should handle None/empty properties gracefully
         assert len(properties) == 0
 
 

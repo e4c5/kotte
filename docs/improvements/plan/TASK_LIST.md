@@ -136,13 +136,7 @@ Before implementing tasks, review these analysis documents for context and detai
   - **Expected improvement:** 125x faster node lookups (250ms → 2ms)
   - **Reference:** Performance Optimization, Gap #1 - Recommended Indices
   
-- [x] Add auto-index on metadata request
-  - **File:** `backend/app/api/v1/graph.py:120-144,157-168`
-  - **Issue:** Manual index creation required
-  - **Fix:** Call create_label_indices() automatically in get_graph_metadata()
-  - **Reference:** Performance Optimization, Gap #1 - Auto-Index Creation
-  
-- [ ] Create migration script for existing graphs
+- [x] Create migration script for existing graphs
   - **File:** `backend/scripts/migrate_add_indices.py`
   - **Issue:** Existing graphs have no indices
   - **Fix:** Script to enumerate graphs and create indices
@@ -153,8 +147,8 @@ Before implementing tasks, review these analysis documents for context and detai
   - **Tests:** Benchmark before/after on 10k+ nodes
   - **Reference:** Performance Optimization, Success Metrics
   
-- [ ] Document indexing strategy
-  - **File:** `docs/`
+- [x] Document indexing strategy
+  - **File:** `docs/PERFORMANCE.md`
   - **Action:** Document which indices are created and why
   - **Reference:** Performance Optimization, Implementation Checklist
 
@@ -162,27 +156,27 @@ Before implementing tasks, review these analysis documents for context and detai
 
 **Detailed guidance:** [02_PERFORMANCE_OPTIMIZATION.md - Gap #2, #3, #4](../analysis/02_PERFORMANCE_OPTIMIZATION.md)
 
-- [ ] Rewrite meta-graph discovery (single query)
-  - **File:** `backend/app/api/v1/graph.py:209-323`
+- [x] Rewrite meta-graph discovery (single query)
+  - **File:** `backend/app/api/v1/graph.py`
   - **Issue:** N+1 query pattern (3N+1 queries for N edge labels)
   - **Fix:** Single Cypher aggregation query
   - **Expected improvement:** 116x faster with 100 edge labels
   - **Reference:** Performance Optimization, Gap #2 - Optimized Implementation
   
-- [ ] Property discovery with jsonb_object_keys()
+- [x] Property discovery with jsonb_object_keys()
   - **File:** `backend/app/services/metadata.py:15-79`
   - **Issue:** Samples only first N records, misses rare properties
   - **Fix:** Use PostgreSQL's jsonb_object_keys() to find ALL properties
   - **Expected improvement:** 5-10x faster, finds all properties
   - **Reference:** Performance Optimization, Gap #3 - Option 1
   
-- [ ] Implement property caching
+- [x] Implement property caching
   - **File:** `backend/app/services/metadata.py`
   - **Issue:** Repeated property discovery on every request
   - **Fix:** PropertyCache class with 60-minute TTL
   - **Reference:** Performance Optimization, Gap #3 - Option 2
   
-- [ ] Add ANALYZE after imports
+- [x] Add ANALYZE after imports
   - **File:** `backend/app/api/v1/import.py`
   - **Issue:** Count estimates inaccurate without statistics
   - **Fix:** Call ANALYZE on table after import completes
@@ -203,7 +197,7 @@ Before implementing tasks, review these analysis documents for context and detai
 
 **Detailed guidance:** [04_ERROR_HANDLING_IMPROVEMENTS.md](../analysis/04_ERROR_HANDLING_IMPROVEMENTS.md)
 
-- [ ] Create graph-specific exception classes
+- [x] Create graph-specific exception classes
   - **File:** `backend/app/core/errors.py`
   - **Issue:** All errors treated as generic DB_UNAVAILABLE
   - **Fix:** Add GraphConstraintViolation, GraphNodeNotFound, GraphCypherSyntaxError
@@ -241,7 +235,7 @@ Before implementing tasks, review these analysis documents for context and detai
 
 **Detailed guidance:** [06_VISUALIZATION_QUERY_OPTIMIZATION.md](../analysis/06_VISUALIZATION_QUERY_OPTIMIZATION.md)
 
-- [ ] Add query-time LIMIT for visualization
+- [x] Add query-time LIMIT for visualization
   - **File:** `backend/app/api/v1/query.py`
   - **Issue:** Fetches all results, then warns if too many
   - **Fix:** Add LIMIT clause to Cypher if not present

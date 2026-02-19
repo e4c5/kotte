@@ -1,6 +1,5 @@
 """Graph metadata endpoints."""
 
-import asyncio
 import logging
 
 from fastapi import APIRouter, Depends
@@ -74,7 +73,6 @@ async def list_graphs(
 @router.get("/{graph_name}/metadata", response_model=GraphMetadata)
 async def get_graph_metadata(
     graph_name: str,
-    create_indices: bool = True,
     db_conn: DatabaseConnection = Depends(get_db_connection),
 ) -> GraphMetadata:
     """Get metadata for a specific graph."""
@@ -115,14 +113,6 @@ async def get_graph_metadata(
             # Validate label name
             validated_label_name = validate_label_name(label_name)
 
-            # Optionally create indices for this vertex label in the background
-            if create_indices:
-                asyncio.create_task(
-                    MetadataService.create_label_indices(
-                        db_conn, validated_graph_name, validated_label_name, "v"
-                    )
-                )
-            
             # Get count (using ANALYZE estimates for performance)
             # Use parameterized query with validated names
             table_name = f"{validated_graph_name}_{validated_label_name}"
@@ -160,14 +150,6 @@ async def get_graph_metadata(
             # Validate label name
             validated_label_name = validate_label_name(label_name)
 
-            # Optionally create indices for this edge label in the background
-            if create_indices:
-                asyncio.create_task(
-                    MetadataService.create_label_indices(
-                        db_conn, validated_graph_name, validated_label_name, "e"
-                    )
-                )
-            
             # Get count estimate (using parameterized query)
             table_name = f"{validated_graph_name}_{validated_label_name}"
             count_query = """
@@ -233,7 +215,6 @@ async def get_meta_graph(
     try:
         # Validate graph name format (prevents SQL injection)
         validated_graph_name = validate_graph_name(graph_name)
-        safe_graph = escape_identifier(validated_graph_name)
 
         # Verify graph exists
         graph_check = """
@@ -250,92 +231,45 @@ async def get_meta_graph(
                 status_code=404,
             )
 
-        # Query to discover label-to-label patterns via edges
-        # This queries the edge tables to find which node labels connect via which edge labels
-        meta_query = f"""
-            WITH edge_labels AS (
-                SELECT DISTINCT label.name as edge_label
-                FROM ag_catalog.ag_label label
-                JOIN ag_catalog.ag_graph graph ON label.graph = graph.graphid
-                WHERE graph.name = %(graph_name)s AND label.kind = 'e'
+        # Single Cypher query to discover label-to-label patterns (optimized: 1 query vs 3N+1)
+        meta_cypher = """
+            MATCH (src)-[rel]->(dst)
+            WITH labels(src)[0] as src_label,
+                 type(rel) as rel_type,
+                 labels(dst)[0] as dst_label
+            RETURN src_label, rel_type, dst_label, COUNT(*) as edge_count
+            ORDER BY edge_count DESC
+            LIMIT 1000
+        """
+        sql_query = """
+            SELECT * FROM ag_catalog.cypher(%(graph_name)s::text, %(cypher)s::text)
+            AS (src_label agtype, rel_type agtype, dst_label agtype, edge_count agtype)
+        """
+        try:
+            raw_rows = await db_conn.execute_query(
+                sql_query,
+                {"graph_name": validated_graph_name, "cypher": meta_cypher.strip()},
             )
-            SELECT 
-                e.edge_label,
-                COUNT(*) as count
-            FROM edge_labels e
-            CROSS JOIN LATERAL (
-                SELECT start_id, end_id
-                FROM {graph_name}.{e.edge_label}
-                LIMIT 1000
-            ) edge_sample
-            GROUP BY e.edge_label
-        """
-
-        # Simplified approach: query each edge label to find source/target patterns
-        # Get all edge labels
-        edge_query = """
-            SELECT DISTINCT label.name as edge_label
-            FROM ag_catalog.ag_label label
-            JOIN ag_catalog.ag_graph graph ON label.graph = graph.graphid
-            WHERE graph.name = %(graph_name)s AND label.kind = 'e'
-            ORDER BY edge_label
-        """
-        edge_rows = await db_conn.execute_query(
-            edge_query, {"graph_name": validated_graph_name}
-        )
+        except Exception as e:
+            logger.warning(
+                "Meta-graph Cypher query failed, falling back to empty: %s", e
+            )
+            raw_rows = []
 
         relationships = []
-        for edge_row in edge_rows:
-            edge_label = edge_row["edge_label"]
-            try:
-                # Validate edge label name
-                validated_edge_label = validate_label_name(edge_label)
-                safe_edge = escape_identifier(validated_edge_label)
-                
-                # Sample edges to discover source/target label patterns
-                # Use validated names (already validated for SQL injection)
-                sample_query = f"""
-                    SELECT 
-                        start_id,
-                        end_id
-                    FROM {safe_graph}.{safe_edge}
-                    LIMIT 100
-                """
-                samples = await db_conn.execute_query(sample_query)
-
-                # For each sample, find the labels of start and end nodes
-                # This is a simplified approach - in production, you'd want to
-                # query the vertex tables more efficiently
-                for sample in samples[:10]:  # Limit to avoid too many queries
-                    start_id = sample.get("start_id")
-                    end_id = sample.get("end_id")
-
-                    # Find source label (using validated graph name)
-                    source_query = """
-                        SELECT label.name as label_name
-                        FROM ag_catalog.ag_label label
-                        JOIN ag_catalog.ag_graph graph ON label.graph = graph.graphid
-                        WHERE graph.name = %(graph_name)s AND label.kind = 'v'
-                        LIMIT 1
-                    """
-                    # Note: This query uses parameterization, but the actual implementation
-                    # is simplified and doesn't use this query result
-                    # Simplified: we'd need to check which vertex table contains the ID
-                    # For now, use a pattern-based approach
-
-                # For simplicity, create a relationship entry
-                # In a full implementation, we'd aggregate these properly
-                relationships.append(
-                    MetaGraphEdge(
-                        source_label="*",  # Would be discovered from actual data
-                        target_label="*",
-                        edge_label=edge_label,
-                        count=len(samples),
-                    )
+        for row in raw_rows:
+            src_label = AgTypeParser.parse(row.get("src_label"))
+            rel_type = AgTypeParser.parse(row.get("rel_type"))
+            dst_label = AgTypeParser.parse(row.get("dst_label"))
+            count = AgTypeParser.parse(row.get("edge_count"))
+            relationships.append(
+                MetaGraphEdge(
+                    source_label=str(src_label) if src_label is not None else "*",
+                    target_label=str(dst_label) if dst_label is not None else "*",
+                    edge_label=str(rel_type) if rel_type is not None else "?",
+                    count=int(count) if count is not None else 0,
                 )
-            except Exception as e:
-                logger.warning(f"Failed to analyze edge label {edge_label}: {e}")
-                continue
+            )
 
         return MetaGraphResponse(
             graph_name=validated_graph_name,

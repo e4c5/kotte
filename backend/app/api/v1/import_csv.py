@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, UploadFile, File, Form
 from fastapi.responses import JSONResponse
 
 from app.core.auth import get_session
+from app.services.metadata import MetadataService, property_cache
 from app.core.database import DatabaseConnection
 from app.core.errors import APIException, ErrorCode, ErrorCategory
 from app.core.validation import validate_graph_name, validate_label_name, escape_identifier
@@ -231,6 +232,12 @@ async def import_csv(
         job_status.errors = errors[:100]  # Limit errors
         job_status.completed_at = datetime.now(timezone.utc).isoformat()
         job_status.progress = 1.0
+
+        # Invalidate property cache so new properties are discovered
+        property_cache.invalidate(validated_graph_name, validated_label)
+
+        # Update table statistics for accurate count estimates
+        await MetadataService.analyze_table(db_conn, validated_graph_name, validated_label)
 
         return CSVImportResponse(
             job_id=job_id,
