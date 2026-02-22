@@ -61,35 +61,49 @@ export default function ResultTab({
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-      {/* View mode toggle */}
+      {/* Results view: Graph View (visualization) | Table View (rows) - clearly visible tabs */}
       <div
         style={{
           padding: '0.5rem 1rem',
-          borderBottom: '1px solid #ccc',
+          borderBottom: '2px solid #dee2e6',
           display: 'flex',
-          gap: '0.5rem',
-          backgroundColor: '#f9f9f9',
+          gap: '0.25rem',
+          backgroundColor: '#e9ecef',
           alignItems: 'center',
+          flexWrap: 'wrap',
         }}
       >
+        <span style={{ marginRight: '0.75rem', fontWeight: 600, color: '#495057', fontSize: '0.9rem' }}>
+          Results view:
+        </span>
         <button
           onClick={() => onViewModeChange('graph')}
           disabled={!hasGraphData || !!result.visualization_warning}
           aria-label="Switch to graph view"
           aria-pressed={tab.viewMode === 'graph'}
+          title={
+            !hasGraphData
+              ? 'Return nodes and/or edges in your query (e.g. RETURN n, r, m) to see the graph.'
+              : result.visualization_warning
+                ? result.visualization_warning
+                : undefined
+          }
           style={{
             padding: '0.5rem 1rem',
             cursor: hasGraphData && !result.visualization_warning ? 'pointer' : 'not-allowed',
-            border: '1px solid #ccc',
-            borderRadius: '4px',
-            backgroundColor: tab.viewMode === 'graph' ? '#007bff' : 'white',
-            color: tab.viewMode === 'graph' ? 'white' : 'black',
-            opacity: hasGraphData && !result.visualization_warning ? 1 : 0.5,
+            border: '1px solid #adb5bd',
+            borderBottom: tab.viewMode === 'graph' ? '2px solid transparent' : '1px solid #adb5bd',
+            borderRadius: '6px 6px 0 0',
+            marginBottom: tab.viewMode === 'graph' ? '-2px' : 0,
+            backgroundColor: tab.viewMode === 'graph' ? '#fff' : 'transparent',
+            color: tab.viewMode === 'graph' ? '#007bff' : (hasGraphData ? '#495057' : '#868e96'),
+            fontWeight: tab.viewMode === 'graph' ? 600 : 500,
+            opacity: hasGraphData && !result.visualization_warning ? 1 : 0.7,
           }}
         >
           Graph View
           {result.graph_elements && (
-            <span style={{ marginLeft: '0.5rem', fontSize: '0.8rem' }}>
+            <span style={{ marginLeft: '0.5rem', fontSize: '0.8rem', fontWeight: 400 }}>
               ({String(result.stats?.nodes_extracted || 0)} nodes, {String(result.stats?.edges_extracted || 0)} edges)
             </span>
           )}
@@ -101,10 +115,13 @@ export default function ResultTab({
           style={{
             padding: '0.5rem 1rem',
             cursor: 'pointer',
-            border: '1px solid #ccc',
-            borderRadius: '4px',
-            backgroundColor: tab.viewMode === 'table' ? '#007bff' : 'white',
-            color: tab.viewMode === 'table' ? 'white' : 'black',
+            border: '1px solid #adb5bd',
+            borderBottom: tab.viewMode === 'table' ? '2px solid transparent' : '1px solid #adb5bd',
+            borderRadius: '6px 6px 0 0',
+            marginBottom: tab.viewMode === 'table' ? '-2px' : 0,
+            backgroundColor: tab.viewMode === 'table' ? '#fff' : 'transparent',
+            color: tab.viewMode === 'table' ? '#007bff' : '#495057',
+            fontWeight: tab.viewMode === 'table' ? 600 : 500,
           }}
         >
           Table View ({result.row_count} rows)

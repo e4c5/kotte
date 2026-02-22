@@ -114,6 +114,7 @@ export default function MetadataSidebar({
                   border: '1px solid #ddd',
                   cursor: 'pointer',
                   outline: 'none',
+                  color: '#1a1a1a',
                 }}
                 onClick={() => onQueryTemplate(generateQuery('node', label.label))}
                 onKeyDown={(e) => {
@@ -124,10 +125,14 @@ export default function MetadataSidebar({
                 }}
                 title="Click to generate query"
               >
-                <div style={{ fontWeight: 'bold' }}>{label.label}</div>
-                <div style={{ fontSize: '0.85rem', color: '#666' }}>
-                  {label.count.toLocaleString()} nodes
+                <div style={{ fontWeight: 'bold', marginBottom: '0.25rem' }}>
+                  {label.label || '(no label)'}
                 </div>
+                {label.count > 0 && (
+                  <div style={{ fontSize: '0.85rem', color: '#555' }}>
+                    {label.count.toLocaleString()} nodes
+                  </div>
+                )}
                 {label.properties.length > 0 && (
                   <div style={{ fontSize: '0.75rem', color: '#999', marginTop: '0.25rem' }}>
                     Properties: {label.properties.slice(0, 3).join(', ')}
@@ -150,14 +155,19 @@ export default function MetadataSidebar({
                   borderRadius: '4px',
                   border: '1px solid #ddd',
                   cursor: 'pointer',
+                  color: '#1a1a1a',
                 }}
                 onClick={() => onQueryTemplate(generateQuery('edge', label.label))}
                 title="Click to generate query"
               >
-                <div style={{ fontWeight: 'bold' }}>{label.label}</div>
-                <div style={{ fontSize: '0.85rem', color: '#666' }}>
-                  {label.count.toLocaleString()} edges
+                <div style={{ fontWeight: 'bold', marginBottom: '0.25rem' }}>
+                  {label.label || '(no label)'}
                 </div>
+                {label.count > 0 && (
+                  <div style={{ fontSize: '0.85rem', color: '#555' }}>
+                    {label.count.toLocaleString()} edges
+                  </div>
+                )}
                 {label.properties.length > 0 && (
                   <div style={{ fontSize: '0.75rem', color: '#999', marginTop: '0.25rem' }}>
                     Properties: {label.properties.slice(0, 3).join(', ')}

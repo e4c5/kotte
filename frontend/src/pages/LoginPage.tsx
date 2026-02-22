@@ -52,10 +52,11 @@ export default function LoginPage() {
         </h2>
         <form onSubmit={handleSubmit}>
           <div style={{ marginBottom: '1rem' }}>
-            <label style={{ display: 'block', marginBottom: '0.5rem' }}>
+            <label htmlFor="login-username" style={{ display: 'block', marginBottom: '0.5rem' }}>
               Username:
             </label>
             <input
+              id="login-username"
               type="text"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
@@ -71,10 +72,11 @@ export default function LoginPage() {
             />
           </div>
           <div style={{ marginBottom: '1.5rem' }}>
-            <label style={{ display: 'block', marginBottom: '0.5rem' }}>
+            <label htmlFor="login-password" style={{ display: 'block', marginBottom: '0.5rem' }}>
               Password:
             </label>
             <input
+              id="login-password"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -133,5 +135,3 @@ export default function LoginPage() {
     </div>
   )
 }
-
-

@@ -222,10 +222,16 @@ export default function GraphView({
     // Initialize positions based on layout
     const nodesWithPositions = initializeLayout(filteredNodes, layout, width, height)
 
-    // Create force simulation
+    // When there are no edges, force-directed layout has nothing to optimize (no links);
+    // repulsion alone pushes nodes to the boundaries. Use static layout only (no simulation).
+    const hasEdges = filteredEdges.length > 0
+
+    // Create force simulation (or static "simulation" for rendering only)
     let simulation: d3.Simulation<GraphNode, GraphEdge>
 
-    if (layout === 'force') {
+    if (layout === 'force' && hasEdges) {
+      // Run real force simulation: default alpha (1) and alphaDecay (~0.028) so it runs
+      // enough ticks to reach equilibrium (D3 default ~300 iterations).
       simulation = d3
         .forceSimulation<GraphNode>(nodesWithPositions)
         .force(
@@ -235,14 +241,13 @@ export default function GraphView({
             .id((d) => d.id)
             .distance(100)
         )
-        .force('charge', d3.forceManyBody().strength(-300))
+        .force('charge', d3.forceManyBody().strength(-200))
         .force('center', d3.forceCenter(width / 2, height / 2))
-        .force('collision', d3.forceCollide().radius(30))
+        .force('collision', d3.forceCollide().radius(28))
     } else {
-      // For non-force layouts, create a minimal simulation just for updates
+      // Static layout: grid/circle/radial already set in initializeLayout; no forces, no run.
       simulation = d3
         .forceSimulation<GraphNode>(nodesWithPositions)
-        .force('center', d3.forceCenter(width / 2, height / 2))
         .alpha(0)
         .stop()
     }
@@ -352,30 +357,48 @@ export default function GraphView({
       .style('pointer-events', 'none')
       .style('fill', '#333')
 
-    // Update positions on simulation tick
-    simulation.on('tick', () => {
+    // Bounds for force-directed layout (only applied when simulation is running)
+    const padding = 60
+    const xMin = padding
+    const xMax = width - padding
+    const yMin = padding
+    const yMax = height - padding
+
+    const centerX = width / 2
+    const centerY = height / 2
+
+    // Resolve link endpoint to node (source/target may be string ID when no link force is used)
+    const nodeById = new Map(nodesWithPositions.map((n) => [n.id, n]))
+    const getNode = (endpoint: string | GraphNode): GraphNode | undefined =>
+      typeof endpoint === 'string' ? nodeById.get(endpoint) : endpoint
+
+    // Update positions on simulation tick (and initial render for static layout)
+    function applyPositions() {
+      if (layout === 'force' && hasEdges) {
+        nodesWithPositions.forEach((n) => {
+          if (n.fx != null && n.fy != null) return // pinned
+          n.x = Math.max(xMin, Math.min(xMax, n.x ?? centerX))
+          n.y = Math.max(yMin, Math.min(yMax, n.y ?? centerY))
+        })
+      }
+
       link
-        .attr('x1', (d) => {
-          const source = d.source as GraphNode
-          return source.x || 0
-        })
-        .attr('y1', (d) => {
-          const source = d.source as GraphNode
-          return source.y || 0
-        })
-        .attr('x2', (d) => {
-          const target = d.target as GraphNode
-          return target.x || 0
-        })
-        .attr('y2', (d) => {
-          const target = d.target as GraphNode
-          return target.y || 0
-        })
+        .attr('x1', (d) => getNode(d.source)?.x ?? centerX)
+        .attr('y1', (d) => getNode(d.source)?.y ?? centerY)
+        .attr('x2', (d) => getNode(d.target)?.x ?? centerX)
+        .attr('y2', (d) => getNode(d.target)?.y ?? centerY)
 
-      node.attr('cx', (d) => d.x || 0).attr('cy', (d) => d.y || 0)
+      node.attr('cx', (d) => d.x ?? centerX).attr('cy', (d) => d.y ?? centerY)
+      labels.attr('x', (d) => d.x ?? centerX).attr('y', (d) => d.y ?? centerY)
+    }
 
-      labels.attr('x', (d) => d.x || 0).attr('y', (d) => d.y || 0)
-    })
+    simulation.on('tick', applyPositions)
+
+    // Static layout: apply initial positions immediately so graph is visible without waiting for tick
+    if (layout !== 'force' || !hasEdges) {
+      applyPositions()
+      simulation.tick()
+    }
 
     // Cleanup
     return () => {
@@ -582,11 +605,29 @@ function initializeLayout(
 
     case 'force':
     default: {
-      // Force layout will be handled by simulation
-      nodes.forEach((node) => {
-        if (!node.x) node.x = centerX + (Math.random() - 0.5) * 100
-        if (!node.y) node.y = centerY + (Math.random() - 0.5) * 100
-      })
+      // Spread nodes in a grid over the full viewport so the graph uses available space from the start
+      const padding = 60
+      const xMin = padding
+      const xMax = width - padding
+      const yMin = padding
+      const yMax = height - padding
+      const usableWidth = Math.max(1, xMax - xMin)
+      const usableHeight = Math.max(1, yMax - yMin)
+      const n = nodes.length
+      if (n > 0) {
+        const cols = Math.ceil(Math.sqrt(n))
+        const rows = Math.ceil(n / cols)
+        const cellW = usableWidth / (cols + 1)
+        const cellH = usableHeight / (rows + 1)
+        nodes.forEach((node, idx) => {
+          if (node.x == null && node.y == null) {
+            const col = idx % cols
+            const row = Math.floor(idx / cols)
+            node.x = xMin + (col + 1) * cellW
+            node.y = yMin + (row + 1) * cellH
+          }
+        })
+      }
       break
     }
   }

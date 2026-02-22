@@ -120,14 +120,20 @@ async def get_graph_metadata(
             validated_label_name = validate_label_name(label_name)
 
             # Get count (using ANALYZE estimates for performance)
-            # Use parameterized query with validated names
-            table_name = f"{validated_graph_name}_{validated_label_name}"
             count_query = """
-                SELECT reltuples::bigint as estimate
-                FROM pg_class
-                WHERE relname = %(table_name)s
+                SELECT c.reltuples::bigint as estimate
+                FROM pg_class c
+                JOIN pg_namespace n ON n.oid = c.relnamespace
+                WHERE n.nspname = %(schema_name)s AND c.relname = %(rel_name)s
             """
-            count = await db_conn.execute_scalar(count_query, {"table_name": table_name}) or 0
+            count = await db_conn.execute_scalar(
+                count_query,
+                {"schema_name": validated_graph_name, "rel_name": validated_label_name},
+            ) or 0
+            if not count or count <= 0:
+                count = await MetadataService.get_exact_counts(
+                    db_conn, validated_graph_name, validated_label_name, "v"
+                )
 
             # Discover properties by sampling
             properties = await MetadataService.discover_properties(
@@ -157,13 +163,20 @@ async def get_graph_metadata(
             validated_label_name = validate_label_name(label_name)
 
             # Get count estimate (using parameterized query)
-            table_name = f"{validated_graph_name}_{validated_label_name}"
             count_query = """
-                SELECT reltuples::bigint as estimate
-                FROM pg_class
-                WHERE relname = %(table_name)s
+                SELECT c.reltuples::bigint as estimate
+                FROM pg_class c
+                JOIN pg_namespace n ON n.oid = c.relnamespace
+                WHERE n.nspname = %(schema_name)s AND c.relname = %(rel_name)s
             """
-            count = await db_conn.execute_scalar(count_query, {"table_name": table_name}) or 0
+            count = await db_conn.execute_scalar(
+                count_query,
+                {"schema_name": validated_graph_name, "rel_name": validated_label_name},
+            ) or 0
+            if not count or count <= 0:
+                count = await MetadataService.get_exact_counts(
+                    db_conn, validated_graph_name, validated_label_name, "e"
+                )
 
             # Discover properties by sampling
             properties = await MetadataService.discover_properties(
@@ -359,18 +372,14 @@ async def expand_node_neighborhood(
             RETURN DISTINCT m, rel
         """
         
-        # Execute query using AGE cypher (::text and ::agtype for correct overload)
-        import json
+        # Execute via execute_cypher (literal SQL) to avoid cypher() overload issues
         params = {
             "node_id": node_id_int,
             "limit": limit,
         }
-        params_json = json.dumps(params)
-        sql_query = """
-            SELECT * FROM ag_catalog.cypher(%(graph_name)s::text, %(cypher)s::text, %(params)s::agtype) AS (result agtype)
-        """
-        sql_params = {"graph_name": validated_graph_name, "cypher": cypher_query, "params": params_json}
-        raw_rows = await db_conn.execute_query(sql_query, sql_params)
+        raw_rows = await db_conn.execute_cypher(
+            validated_graph_name, cypher_query, params=params
+        )
         
         # Parse results and extract nodes/edges
         all_nodes = {}

@@ -131,15 +131,6 @@ async def execute_query(
             status_code=404,
         )
 
-    # Build parameterized SQL for AGE.
-    # AGE cypher(): (graph_name text, query_string text [, params agtype]).
-    # Use 2-arg form when no params (third arg defaults to NULL); use 3-arg with ::agtype otherwise.
-    # Explicit ::text casts ensure the correct overload is chosen (avoids "function ... does not exist").
-    import json
-    cypher_params = request.params or {}
-    params_json = json.dumps(cypher_params)
-    has_params = bool(cypher_params)
-
     # Safe mode: reject mutating queries if enabled
     if settings.query_safe_mode:
         cypher_upper = request.cypher.upper()
@@ -152,22 +143,24 @@ async def execute_query(
                 status_code=422,
             )
 
-    if has_params:
-        sql_query = """
-            SELECT * FROM ag_catalog.cypher(%(graph_name)s::text, %(cypher)s::text, %(params)s::agtype) AS (result agtype)
-        """
-        sql_params = {"graph_name": validated_graph_name, "cypher": cypher_to_execute, "params": params_json}
-    else:
-        sql_query = """
-            SELECT * FROM ag_catalog.cypher(%(graph_name)s::text, %(cypher)s::text) AS (result agtype)
-        """
-        sql_params = {"graph_name": validated_graph_name, "cypher": cypher_to_execute}
+    # Log what the user submitted verbatim (for debugging query execution)
+    logger.info(
+        "Query execute: graph=%s, cypher_len=%s, params=%s",
+        validated_graph_name,
+        len(request.cypher),
+        request.params,
+    )
+    logger.info("Query execute: user cypher verbatim: %s", request.cypher)
 
+    # Execute via literal SQL (graph + query as literals) so AGE cypher() is called without
+    # parameter overload issues; params when present are passed as a single bind.
     query_start_time = time.time()
     try:
-        # Execute query with parameters and timeout
-        raw_rows = await db_conn.execute_query(
-            sql_query, sql_params, timeout=settings.query_timeout
+        raw_rows = await db_conn.execute_cypher(
+            validated_graph_name,
+            request.cypher,
+            params=request.params or None,
+            timeout=settings.query_timeout,
         )
         
         # Parse agtype results

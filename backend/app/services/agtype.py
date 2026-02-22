@@ -32,9 +32,14 @@ class AgTypeParser:
         elif isinstance(agtype_value, list):
             return [AgTypeParser.parse(item) for item in agtype_value]
         elif isinstance(agtype_value, str):
-            # Try to parse as JSON if it's a string
+            # AGE may return agtype as JSON string with type suffix (e.g. "{}::edge", "{}::vertex")
+            s = agtype_value.strip()
+            for suffix in ("::edge", "::vertex", "::path", "::agtype"):
+                if s.endswith(suffix):
+                    s = s[: -len(suffix)].strip()
+                    break
             try:
-                parsed = json.loads(agtype_value)
+                parsed = json.loads(s)
                 return AgTypeParser.parse(parsed)
             except (json.JSONDecodeError, TypeError):
                 return agtype_value
@@ -296,6 +301,50 @@ class AgTypeParser:
                             other.append({"column": col_name, "value": parsed})
                 else:
                     other.append({"column": col_name, "value": parsed})
+
+        # If we have edges but no nodes (e.g. query was RETURN r), synthesize placeholder nodes
+        # from edge endpoints so the graph view can render
+        if edges and not nodes:
+            for e in edges:
+                sid = e.get("source")
+                tid = e.get("target")
+                if sid is not None and sid not in node_ids:
+                    nodes.append({
+                        "id": sid,
+                        "label": "",
+                        "properties": {},
+                        "type": "node",
+                    })
+                    node_ids.add(sid)
+                if tid is not None and tid not in node_ids:
+                    nodes.append({
+                        "id": tid,
+                        "label": "",
+                        "properties": {},
+                        "type": "node",
+                    })
+                    node_ids.add(tid)
+        elif edges:
+            # Ensure every edge source/target has a node (placeholder if missing)
+            for e in edges:
+                sid = e.get("source")
+                tid = e.get("target")
+                if sid is not None and sid not in node_ids:
+                    nodes.append({
+                        "id": sid,
+                        "label": "",
+                        "properties": {},
+                        "type": "node",
+                    })
+                    node_ids.add(sid)
+                if tid is not None and tid not in node_ids:
+                    nodes.append({
+                        "id": tid,
+                        "label": "",
+                        "properties": {},
+                        "type": "node",
+                    })
+                    node_ids.add(tid)
 
         return {
             "nodes": nodes,
