@@ -114,6 +114,7 @@ export default function MetadataSidebar({
                   border: '1px solid #ddd',
                   cursor: 'pointer',
                   outline: 'none',
+                  color: '#1a1a1a',
                 }}
                 onClick={() => onQueryTemplate(generateQuery('node', label.label))}
                 onKeyDown={(e) => {
@@ -124,9 +125,11 @@ export default function MetadataSidebar({
                 }}
                 title="Click to generate query"
               >
-                <div style={{ fontWeight: 'bold' }}>{label.label}</div>
+                <div style={{ fontWeight: 'bold', marginBottom: '0.25rem' }}>
+                  {label.label || '(no label)'}
+                </div>
                 {label.count > 0 && (
-                  <div style={{ fontSize: '0.85rem', color: '#666' }}>
+                  <div style={{ fontSize: '0.85rem', color: '#555' }}>
                     {label.count.toLocaleString()} nodes
                   </div>
                 )}
@@ -152,13 +155,16 @@ export default function MetadataSidebar({
                   borderRadius: '4px',
                   border: '1px solid #ddd',
                   cursor: 'pointer',
+                  color: '#1a1a1a',
                 }}
                 onClick={() => onQueryTemplate(generateQuery('edge', label.label))}
                 title="Click to generate query"
               >
-                <div style={{ fontWeight: 'bold' }}>{label.label}</div>
+                <div style={{ fontWeight: 'bold', marginBottom: '0.25rem' }}>
+                  {label.label || '(no label)'}
+                </div>
                 {label.count > 0 && (
-                  <div style={{ fontSize: '0.85rem', color: '#666' }}>
+                  <div style={{ fontSize: '0.85rem', color: '#555' }}>
                     {label.count.toLocaleString()} edges
                   </div>
                 )}
