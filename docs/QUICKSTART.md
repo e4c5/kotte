@@ -52,6 +52,8 @@ Create a test graph:
 SELECT * FROM ag_catalog.create_graph('test_graph');
 ```
 
+For a **sample graph with nodes and edges** that work with Graph View, run [docs/sample-graph-test_graph.sql](sample-graph-test_graph.sql) against your database (e.g. `psql -h localhost -p 5455 -U postgresUser -d postgresDB -f docs/sample-graph-test_graph.sql`). Then in Kotte, select graph `test_graph` and run: `MATCH (n)-[r]-(m) RETURN n, r, m LIMIT 50`.
+
 ## Docker Compose (Simplest)
 
 Run everything—Apache AGE, backend, and frontend—with one command:
