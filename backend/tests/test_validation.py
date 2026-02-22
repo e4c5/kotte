@@ -4,11 +4,13 @@ import pytest
 
 from app.core.errors import APIException, ErrorCode, ErrorCategory
 from app.core.validation import (
+    add_result_limit_if_missing,
     add_visualization_limit,
     escape_identifier,
     validate_graph_name,
     validate_label_name,
     validate_query_length,
+    validate_variable_length_traversal,
 )
 
 
@@ -123,6 +125,54 @@ class TestAddVisualizationLimit:
         assert result2 == "MATCH (n) RETURN n Limit 5"
 
 
+class TestAddResultLimitIfMissing:
+    """Tests for add_result_limit_if_missing."""
+
+    def test_adds_limit_and_reports_applied(self):
+        query, applied = add_result_limit_if_missing("MATCH (n) RETURN n", 100)
+        assert applied is True
+        assert query.endswith(" LIMIT 100")
+
+    def test_preserves_existing_limit_and_reports_not_applied(self):
+        original = "MATCH (n) RETURN n LIMIT 10"
+        query, applied = add_result_limit_if_missing(original, 100)
+        assert applied is False
+        assert query == original
+
+
+class TestVariableLengthTraversalValidation:
+    """Tests for variable-length traversal guardrails."""
+
+    def test_allows_bounded_traversal_within_max(self):
+        validate_variable_length_traversal(
+            "MATCH p=(a)-[*1..5]->(b) RETURN p", max_variable_hops=20
+        )
+
+    def test_rejects_unbounded_star(self):
+        with pytest.raises(APIException) as exc_info:
+            validate_variable_length_traversal(
+                "MATCH p=(a)-[*]->(b) RETURN p", max_variable_hops=20
+            )
+        assert exc_info.value.code == ErrorCode.QUERY_VALIDATION_ERROR
+        assert exc_info.value.status_code == 422
+
+    def test_rejects_unbounded_range(self):
+        with pytest.raises(APIException) as exc_info:
+            validate_variable_length_traversal(
+                "MATCH p=(a)-[*1..]->(b) RETURN p", max_variable_hops=20
+            )
+        assert exc_info.value.code == ErrorCode.QUERY_VALIDATION_ERROR
+        assert exc_info.value.status_code == 422
+
+    def test_rejects_excessive_hops(self):
+        with pytest.raises(APIException) as exc_info:
+            validate_variable_length_traversal(
+                "MATCH p=(a)-[*1..50]->(b) RETURN p", max_variable_hops=20
+            )
+        assert exc_info.value.code == ErrorCode.QUERY_VALIDATION_ERROR
+        assert exc_info.value.status_code == 422
+
+
 class TestEscapeIdentifier:
     """Tests for PostgreSQL identifier escaping."""
 
@@ -142,6 +192,5 @@ class TestEscapeIdentifier:
         escaped = escape_identifier(malicious)
         # Should be a single quoted identifier; no characters removed
         assert escaped == '"test; DROP TABLE users; --"'
-
 
 

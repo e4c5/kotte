@@ -106,6 +106,45 @@ class MetadataService:
             return []
 
     @staticmethod
+    async def get_label_count_estimates(
+        db_conn: DatabaseConnection,
+        graph_name: str,
+        label_kind: str,  # 'v' for vertex, 'e' for edge
+    ) -> Dict[str, int]:
+        """
+        Get approximate counts for all labels of a given kind in one query.
+        """
+        try:
+            validated_graph_name = validate_graph_name(graph_name)
+            query = """
+                SELECT label.name as label_name,
+                       COALESCE(c.reltuples::bigint, 0) as estimate
+                FROM ag_catalog.ag_label label
+                JOIN ag_catalog.ag_graph graph ON label.graph = graph.graphid
+                LEFT JOIN pg_namespace n ON n.nspname = %(graph_name)s
+                LEFT JOIN pg_class c ON c.relnamespace = n.oid AND c.relname = label.name
+                WHERE graph.name = %(graph_name)s
+                  AND label.kind = %(label_kind)s
+            """
+            rows = await db_conn.execute_query(
+                query,
+                {"graph_name": validated_graph_name, "label_kind": label_kind},
+            )
+            return {
+                row["label_name"]: int(row.get("estimate") or 0)
+                for row in rows
+                if row.get("label_name")
+            }
+        except Exception as e:
+            logger.warning(
+                "Failed to get count estimates for graph %s kind %s: %s",
+                graph_name,
+                label_kind,
+                e,
+            )
+            return {}
+
+    @staticmethod
     async def get_exact_counts(
         db_conn: DatabaseConnection,
         graph_name: str,
@@ -229,6 +268,51 @@ class MetadataService:
             return {"min": None, "max": None}
 
     @staticmethod
+    async def get_numeric_property_statistics_for_label(
+        db_conn: DatabaseConnection,
+        graph_name: str,
+        label_name: str,
+    ) -> Dict[str, Dict[str, Optional[float]]]:
+        """
+        Get min/max statistics for all numeric properties of a label in one query.
+        """
+        try:
+            validated_graph_name = validate_graph_name(graph_name)
+            validated_label_name = validate_label_name(label_name)
+
+            safe_graph = escape_identifier(validated_graph_name)
+            safe_label = escape_identifier(validated_label_name)
+
+            query = f"""
+                SELECT kv.key as property,
+                       MIN((kv.value)::double precision) as min,
+                       MAX((kv.value)::double precision) as max
+                FROM {safe_graph}.{safe_label} t
+                CROSS JOIN LATERAL jsonb_each_text(t.properties) kv
+                WHERE kv.value ~ '^-?[0-9]+(\\.[0-9]+)?$'
+                GROUP BY kv.key
+            """
+            rows = await db_conn.execute_query(query)
+            return {
+                row["property"]: {
+                    "min": float(row["min"]) if row.get("min") is not None else None,
+                    "max": float(row["max"]) if row.get("max") is not None else None,
+                }
+                for row in rows
+                if row.get("property")
+            }
+        except Exception as e:
+            msg = (
+                f"Failed to get numeric property statistics for "
+                f"{graph_name}.{label_name}: {e}"
+            )
+            if "does not exist" in str(e):
+                logger.debug(msg)
+            else:
+                logger.warning(msg)
+            return {}
+
+    @staticmethod
     async def create_label_indices(
         db_conn: DatabaseConnection,
         graph_name: str,
@@ -286,4 +370,3 @@ class MetadataService:
             logger.info("Updated statistics for %s.%s", validated_graph_name, validated_label_name)
         except Exception as e:
             logger.warning("Failed to analyze table %s.%s: %s", graph_name, label_name, e)
-

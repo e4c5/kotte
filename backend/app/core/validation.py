@@ -132,9 +132,76 @@ def add_visualization_limit(cypher: str, max_limit: int) -> str:
     Returns:
         Cypher with LIMIT appended if absent, otherwise unchanged
     """
+    query_with_limit, _ = add_result_limit_if_missing(cypher, max_limit)
+    return query_with_limit
+
+
+def add_result_limit_if_missing(cypher: str, max_limit: int) -> tuple[str, bool]:
+    """
+    Add LIMIT to a Cypher query if absent.
+
+    Returns:
+        (cypher_query, limit_was_added)
+    """
     if "LIMIT" in cypher.upper():
-        return cypher
-    return f"{cypher.rstrip()} LIMIT {max_limit}"
+        return cypher, False
+    return f"{cypher.rstrip()} LIMIT {max_limit}", True
+
+
+def validate_variable_length_traversal(
+    cypher_query: str, max_variable_hops: int
+) -> str:
+    """
+    Validate variable-length traversals to avoid unbounded/high-cost queries.
+
+    Rules:
+    - Reject unbounded patterns: [*], [*1..], [*..]
+    - Reject upper bounds greater than max_variable_hops: [*1..999]
+    """
+    pattern = re.compile(r"\[\s*\*\s*(?:(\d+)?\s*\.\.\s*(\d+)?)?\s*\]")
+    for match in pattern.finditer(cypher_query):
+        token = match.group(0)
+        lower_bound = match.group(1)
+        upper_bound = match.group(2)
+        has_range = ".." in token
+
+        if not has_range:
+            # [*] is unbounded
+            raise APIException(
+                code=ErrorCode.QUERY_VALIDATION_ERROR,
+                message=(
+                    f"Unbounded variable-length traversal '{token}' is not allowed. "
+                    f"Use an explicit upper bound like [*1..{max_variable_hops}]."
+                ),
+                category=ErrorCategory.VALIDATION,
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            )
+
+        if upper_bound is None:
+            # [*1..] or [*..] is unbounded
+            raise APIException(
+                code=ErrorCode.QUERY_VALIDATION_ERROR,
+                message=(
+                    f"Unbounded variable-length traversal '{token}' is not allowed. "
+                    f"Use an explicit upper bound <= {max_variable_hops}."
+                ),
+                category=ErrorCategory.VALIDATION,
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            )
+
+        upper = int(upper_bound)
+        if upper > max_variable_hops:
+            raise APIException(
+                code=ErrorCode.QUERY_VALIDATION_ERROR,
+                message=(
+                    f"Variable-length traversal '{token}' exceeds maximum allowed depth "
+                    f"of {max_variable_hops}."
+                ),
+                category=ErrorCategory.VALIDATION,
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            )
+
+    return cypher_query
 
 
 def escape_string_literal(value: str) -> str:
@@ -163,4 +230,3 @@ def escape_identifier(identifier: str) -> str:
     # Replace double quotes with double double quotes
     escaped = identifier.replace('"', '""')
     return f'"{escaped}"'
-

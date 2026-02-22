@@ -3,6 +3,7 @@
 import pytest
 import httpx
 from unittest.mock import AsyncMock, MagicMock, patch
+from app.core.config import settings
 
 
 class TestQueryTemplates:
@@ -247,6 +248,44 @@ class TestQueryExecution:
         assert "visualization_warning" in data
         assert data["visualization_warning"] is not None
         assert "too large" in data["visualization_warning"].lower()
+
+    @pytest.mark.asyncio
+    async def test_execute_query_applies_default_result_cap(self, connected_client: httpx.AsyncClient):
+        """Test that non-visualization queries without LIMIT are capped by default guardrail."""
+        mock_db = connected_client._mock_db
+        mock_db.execute_scalar = AsyncMock(return_value=1)  # Graph exists
+        mock_db.get_backend_pid = AsyncMock(return_value=12345)
+        mock_db.execute_cypher = AsyncMock(return_value=[])
+
+        response = await connected_client.post(
+            "/api/v1/queries/execute",
+            json={
+                "graph": "test_graph",
+                "cypher": "MATCH (n) RETURN n",
+            },
+        )
+
+        assert response.status_code == 200
+        call_args = mock_db.execute_cypher.call_args
+        assert call_args is not None
+        executed_cypher = call_args.args[1]
+        assert f"LIMIT {settings.query_max_result_rows}" in executed_cypher.upper()
+
+    @pytest.mark.asyncio
+    async def test_execute_query_rejects_unbounded_variable_length(self, connected_client: httpx.AsyncClient):
+        """Test that unbounded variable-length traversals are rejected by guardrails."""
+        response = await connected_client.post(
+            "/api/v1/queries/execute",
+            json={
+                "graph": "test_graph",
+                "cypher": "MATCH p=(a)-[*]->(b) RETURN p",
+            },
+        )
+
+        assert response.status_code == 422
+        data = response.json()
+        assert "error" in data
+        assert data["error"]["code"] == "QUERY_VALIDATION_ERROR"
 
 class TestQueryCancellation:
     """Integration tests for query cancellation."""

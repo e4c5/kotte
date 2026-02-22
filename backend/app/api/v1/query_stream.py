@@ -1,6 +1,5 @@
 """Query streaming endpoints for large result sets."""
 
-import asyncio
 import json
 import logging
 import uuid
@@ -13,7 +12,11 @@ from app.core.auth import get_session
 from app.core.config import settings
 from app.core.database import DatabaseConnection
 from app.core.errors import APIException, ErrorCode, ErrorCategory, translate_db_error
-from app.core.validation import validate_graph_name, validate_query_length
+from app.core.validation import (
+    validate_graph_name,
+    validate_query_length,
+    validate_variable_length_traversal,
+)
 from app.models.query import QueryStreamChunk, QueryResultRow, QueryStreamRequest
 from app.services.agtype import AgTypeParser
 from app.services.query_tracker import query_tracker
@@ -57,6 +60,9 @@ async def stream_query_results(
         
         # Validate query length
         validate_query_length(cypher_query)
+        validate_variable_length_traversal(
+            cypher_query, settings.query_max_variable_hops
+        )
         
         # Verify graph exists
         graph_check = """
@@ -88,24 +94,64 @@ async def stream_query_results(
         has_limit = "LIMIT" in cypher_upper
         has_skip = "SKIP" in cypher_upper or "OFFSET" in cypher_upper
         
-        # If query doesn't have LIMIT, we'll add it
-        # We'll stream by fetching chunks with LIMIT and SKIP
+        # We'll stream by fetching chunks with LIMIT/SKIP and enforce a max result cap.
         current_offset = offset
         all_columns = None
-        total_rows_estimated = None
+        max_rows = settings.query_max_result_rows
+        emitted_rows = 0
+
+        if has_limit or has_skip:
+            # Query already controls result window; execute once and stream in-memory chunks.
+            raw_rows = await db_conn.execute_cypher(
+                validated_graph_name,
+                cypher_query,
+                params=cypher_params if has_params else None,
+                timeout=settings.query_timeout,
+            )
+
+            parsed_rows = []
+            columns = set()
+            for raw_row in raw_rows:
+                parsed_row = {}
+                for col_name, agtype_value in raw_row.items():
+                    columns.add(col_name)
+                    parsed_row[col_name] = AgTypeParser.parse(agtype_value)
+                parsed_rows.append(parsed_row)
+
+            all_columns = sorted(list(columns))
+            capped_rows = parsed_rows[offset : offset + max_rows]
+            for start in range(0, len(capped_rows), chunk_size):
+                chunk_rows = capped_rows[start : start + chunk_size]
+                result_rows = [QueryResultRow(data=row) for row in chunk_rows]
+                has_more = start + chunk_size < len(capped_rows)
+                chunk = QueryStreamChunk(
+                    columns=all_columns,
+                    rows=result_rows,
+                    chunk_size=len(result_rows),
+                    offset=offset + start,
+                    has_more=has_more,
+                    total_rows=None,
+                )
+                yield json.dumps(chunk.model_dump(), default=str) + "\n"
+
+            if len(parsed_rows) - offset > max_rows:
+                error_chunk = {
+                    "error": {
+                        "code": ErrorCode.QUERY_VALIDATION_ERROR,
+                        "message": (
+                            f"Stream result cap reached ({max_rows} rows). "
+                            "Refine query with WHERE/LIMIT."
+                        ),
+                    }
+                }
+                yield json.dumps(error_chunk) + "\n"
+            return
         
         while True:
-            # Build Cypher query with LIMIT and SKIP
-            if has_limit or has_skip:
-                # If query already has LIMIT/SKIP, we can't easily paginate
-                # For now, execute as-is and return all results in one chunk
-                modified_cypher = cypher_query
-                is_final_chunk = True
-            else:
-                # Add SKIP and LIMIT to the query
-                # Simple approach: append to the end (works for most queries)
-                modified_cypher = f"{cypher_query.rstrip(';')} SKIP {current_offset} LIMIT {chunk_size}"
-                is_final_chunk = False
+            # Add SKIP and LIMIT to the query
+            modified_cypher = (
+                f"{cypher_query.rstrip(';')} SKIP {current_offset} LIMIT {chunk_size}"
+            )
             
             # Execute via literal SQL (execute_cypher) to avoid cypher() overload issues
             raw_rows = await db_conn.execute_cypher(
@@ -137,7 +183,7 @@ async def stream_query_results(
             ]
             
             # Determine if there are more rows
-            has_more = len(parsed_rows) == chunk_size and not is_final_chunk
+            has_more = len(parsed_rows) == chunk_size
             
             # Create chunk response
             chunk = QueryStreamChunk(
@@ -151,17 +197,32 @@ async def stream_query_results(
             
             # Yield chunk as JSON line
             yield json.dumps(chunk.model_dump(), default=str) + "\n"
+            emitted_rows += len(result_rows)
             
             # If this was the last chunk or we got fewer rows than requested, we're done
             if not has_more or len(parsed_rows) < chunk_size:
+                break
+            if emitted_rows >= max_rows:
+                error_chunk = {
+                    "error": {
+                        "code": ErrorCode.QUERY_VALIDATION_ERROR,
+                        "message": (
+                            f"Stream result cap reached ({max_rows} rows). "
+                            "Refine query with WHERE/LIMIT."
+                        ),
+                    }
+                }
+                yield json.dumps(error_chunk) + "\n"
                 break
             
             # Move to next chunk
             current_offset += chunk_size
             
-            # Safety limit: don't stream more than 1M rows total
+            # Safety fallback
             if current_offset >= 1_000_000:
-                logger.warning(f"Streaming stopped at {current_offset} rows (safety limit)")
+                logger.warning(
+                    f"Streaming stopped at {current_offset} rows (safety limit)"
+                )
                 break
     
     except APIException:

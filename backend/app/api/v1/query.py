@@ -18,9 +18,10 @@ from app.core.errors import (
     translate_db_error,
 )
 from app.core.validation import (
-    add_visualization_limit,
+    add_result_limit_if_missing,
     validate_graph_name,
     validate_query_length,
+    validate_variable_length_traversal,
 )
 from app.models.query import (
     QueryExecuteRequest,
@@ -78,13 +79,21 @@ async def execute_query(
     
     # Validate query length
     validate_query_length(request.cypher)
-
-    # Add query-time LIMIT for visualization to avoid fetching huge result sets
-    cypher_to_execute = (
-        add_visualization_limit(request.cypher, settings.max_nodes_for_graph)
-        if request.for_visualization
-        else request.cypher
+    validate_variable_length_traversal(
+        request.cypher, settings.query_max_variable_hops
     )
+
+    # Apply result caps (visualization cap is stricter than generic query cap)
+    if request.for_visualization:
+        cypher_to_execute, limit_added = add_result_limit_if_missing(
+            request.cypher, settings.max_nodes_for_graph
+        )
+        applied_limit = settings.max_nodes_for_graph if limit_added else None
+    else:
+        cypher_to_execute, limit_added = add_result_limit_if_missing(
+            request.cypher, settings.query_max_result_rows
+        )
+        applied_limit = settings.query_max_result_rows if limit_added else None
     
     # Register query for cancellation tracking
     query_tracker.register_query(
@@ -195,6 +204,9 @@ async def execute_query(
             "paths_extracted": len(paths_list),
             "other_results": len(graph_elements["other"]),
         }
+        if limit_added and applied_limit is not None:
+            stats["guardrail_limit_applied"] = True
+            stats["guardrail_limit"] = applied_limit
 
         # Check visualization limits
         visualization_warning = None

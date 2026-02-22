@@ -75,4 +75,39 @@ class TestMetadataService:
         assert isinstance(properties, list)
         assert len(properties) == 0
 
+    @pytest.mark.asyncio
+    async def test_get_label_count_estimates(self, mock_db_connection):
+        """Test fetching label count estimates in one query."""
+        mock_db_connection.execute_query = AsyncMock(
+            return_value=[
+                {"label_name": "Person", "estimate": 123},
+                {"label_name": "Company", "estimate": 45},
+            ]
+        )
+
+        estimates = await MetadataService.get_label_count_estimates(
+            mock_db_connection, "test_graph", "v"
+        )
+
+        assert estimates["Person"] == 123
+        assert estimates["Company"] == 45
+
+    @pytest.mark.asyncio
+    async def test_get_numeric_property_statistics_for_label(self, mock_db_connection):
+        """Test fetching numeric property stats for an edge/vertex label."""
+        mock_db_connection.execute_query = AsyncMock(
+            return_value=[
+                {"property": "weight", "min": 0.1, "max": 0.9},
+                {"property": "cost", "min": 1, "max": 10},
+            ]
+        )
+
+        stats = await MetadataService.get_numeric_property_statistics_for_label(
+            mock_db_connection, "test_graph", "REL"
+        )
+
+        assert stats["weight"]["min"] == 0.1
+        assert stats["weight"]["max"] == 0.9
+        assert stats["cost"]["min"] == 1.0
+        assert stats["cost"]["max"] == 10.0
 
