@@ -277,9 +277,10 @@ class TestNodeDeletion:
         """Test successful node deletion with mocked DB."""
         mock_db = connected_client._mock_db
         mock_db.execute_scalar = AsyncMock(return_value=1)  # Graph exists
-        # When detach=false: node check, then delete (both via execute_cypher)
+        # When detach=false: node check, edge count, then delete (three execute_cypher calls)
         mock_db.execute_cypher = AsyncMock(side_effect=[
             [{"result": {"id": 1, "label": "Person", "properties": {}}}],  # Node exists
+            [{"result": {"edge_count": 0}}],  # No edges (so delete without detach is allowed)
             [{"result": {"deleted_count": 1}}],  # Delete succeeded
         ])
         
@@ -297,9 +298,10 @@ class TestNodeDeletion:
         """Test that DB errors during delete propagate (simulates rollback scenario)."""
         mock_db = connected_client._mock_db
         mock_db.execute_scalar = AsyncMock(return_value=1)  # Graph exists
-        # First call succeeds (node check), second raises
+        # First call succeeds (node check), second (edge count) succeeds, third raises
         mock_db.execute_cypher = AsyncMock(side_effect=[
             [{"result": {"id": 1, "label": "Person", "properties": {}}}],  # Node exists
+            [{"result": {"edge_count": 0}}],  # Edge count
             Exception("Database connection lost"),  # Simulate failure during delete
         ])
         
