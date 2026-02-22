@@ -12,8 +12,15 @@ CREATE EXTENSION IF NOT EXISTS age;
 LOAD 'age';
 SET search_path = ag_catalog, "$user", public;
 
--- 2. Create the graph (ignore error if it already exists)
-SELECT * FROM ag_catalog.create_graph('test_graph');
+-- 2. Create the graph (idempotent: no-op if it already exists)
+DO $$
+BEGIN
+  PERFORM * FROM ag_catalog.create_graph('test_graph');
+EXCEPTION
+  WHEN duplicate_schema OR duplicate_object THEN
+    NULL;
+END
+$$;
 
 -- 3. Create sample vertices (nodes)
 SELECT * FROM cypher('test_graph', $$
