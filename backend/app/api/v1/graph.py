@@ -130,7 +130,7 @@ async def get_graph_metadata(
                 count_query,
                 {"schema_name": validated_graph_name, "rel_name": validated_label_name},
             ) or 0
-            if count == 0:
+            if not count or count <= 0:
                 count = await MetadataService.get_exact_counts(
                     db_conn, validated_graph_name, validated_label_name, "v"
                 )
@@ -173,7 +173,7 @@ async def get_graph_metadata(
                 count_query,
                 {"schema_name": validated_graph_name, "rel_name": validated_label_name},
             ) or 0
-            if count == 0:
+            if not count or count <= 0:
                 count = await MetadataService.get_exact_counts(
                     db_conn, validated_graph_name, validated_label_name, "e"
                 )

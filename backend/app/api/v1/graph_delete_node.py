@@ -101,6 +101,10 @@ async def delete_node(
                 parsed = AgTypeParser.parse(edge_count_result[0].get("result", {}))
                 if isinstance(parsed, dict) and "edge_count" in parsed:
                     edges_deleted = int(parsed["edge_count"]) or 0
+                elif isinstance(parsed, (int, float)):
+                    edges_deleted = int(parsed)
+                elif isinstance(parsed, str) and parsed.strip().isdigit():
+                    edges_deleted = int(parsed)
             if not detach and edges_deleted > 0:
                 raise APIException(
                     code=ErrorCode.QUERY_VALIDATION_ERROR,
@@ -127,9 +131,14 @@ async def delete_node(
                 )
 
             parsed_result = AgTypeParser.parse(delete_result[0].get("result", {}))
-            deleted_count = 0
             if isinstance(parsed_result, dict) and "deleted_count" in parsed_result:
                 deleted_count = int(parsed_result["deleted_count"]) or 0
+            elif isinstance(parsed_result, (int, float)):
+                deleted_count = int(parsed_result)
+            elif isinstance(parsed_result, str) and parsed_result.strip().isdigit():
+                deleted_count = int(parsed_result)
+            else:
+                deleted_count = 0
 
             if deleted_count == 0:
                 raise APIException(
