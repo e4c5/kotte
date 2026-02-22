@@ -21,7 +21,6 @@
     "d3-force": "^3.0.0",
     "d3-zoom": "^3.0.0",
     "zustand": "^4.4.7",
-    "axios": "^1.6.2",
     "zod": "^3.22.4"
   },
   "devDependencies": {
