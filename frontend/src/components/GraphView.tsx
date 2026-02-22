@@ -33,6 +33,7 @@ interface GraphViewProps {
   pathHighlights?: PathHighlights
   onNodeClick?: (node: GraphNode) => void
   onNodeRightClick?: (node: GraphNode, event: MouseEvent) => void
+  onEdgeClick?: (edge: GraphEdge) => void
   onExportReady?: (exportFn: () => Promise<void>) => void
 }
 
@@ -44,6 +45,7 @@ export default function GraphView({
   pathHighlights,
   onNodeClick,
   onNodeRightClick,
+  onEdgeClick,
   onExportReady,
 }: GraphViewProps) {
   const svgRef = useRef<SVGSVGElement>(null)
@@ -278,6 +280,15 @@ export default function GraphView({
         pathEdgeIds.has(String(d.id)) ? Math.max(3, getEdgeStyle(d).size) : getEdgeStyle(d).size
       )
 
+    if (onEdgeClick) {
+      link
+        .style('cursor', 'pointer')
+        .on('click', (event: MouseEvent, d: GraphEdge) => {
+          event.stopPropagation()
+          onEdgeClick(d)
+        })
+    }
+
     // Draw nodes
     const node = container
       .append('g')
@@ -355,7 +366,7 @@ export default function GraphView({
       .attr('dx', (d) => getNodeStyle(d).size + 5)
       .attr('dy', 4)
       .style('pointer-events', 'none')
-      .style('fill', '#333')
+      .style('fill', '#e4e4e7')
 
     // Bounds for force-directed layout (only applied when simulation is running)
     const padding = 60
@@ -418,6 +429,7 @@ export default function GraphView({
     pinnedNodes,
     onNodeClick,
     onNodeRightClick,
+    onEdgeClick,
   ])
 
   // Export to PNG function
@@ -521,8 +533,8 @@ export default function GraphView({
   }, [onExportReady, filteredNodes, filteredEdges, width, height])
 
   return (
-    <div style={{ width: '100%', height: '100%', border: '1px solid #ccc' }}>
-      <svg ref={svgRef} width={width} height={height} style={{ display: 'block' }} />
+    <div className="w-full h-full bg-zinc-950">
+      <svg ref={svgRef} width={width} height={height} className="block" />
     </div>
   )
 }

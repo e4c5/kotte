@@ -7,10 +7,12 @@ import { useAuthStore } from '../stores/authStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import QueryEditor, { getQueryParams } from '../components/QueryEditor'
 import MetadataSidebar from '../components/MetadataSidebar'
+import InspectorPanel from '../components/InspectorPanel'
 import SettingsModal from '../components/SettingsModal'
 import TabBar from '../components/TabBar'
 import ResultTab from '../components/ResultTab'
 import { graphAPI } from '../services/graph'
+import { getNodeLabelColor } from '../utils/nodeColors'
 
 export default function WorkspacePage() {
   const navigate = useNavigate()
@@ -21,9 +23,7 @@ export default function WorkspacePage() {
     activeTabId,
     query,
     params,
-    currentGraph,
-    loading,
-    error,
+    setParams,
     setQuery,
     setCurrentGraph,
     createTab,
@@ -38,27 +38,31 @@ export default function WorkspacePage() {
     history,
     mergeGraphElements,
     updateResult,
+    currentGraph,
+    loading,
+    error,
   } = useQueryStore()
 
-  const {
-    tablePageSize,
-    defaultLayout,
-  } = useSettingsStore()
-  
+  const { tablePageSize, defaultLayout } = useSettingsStore()
   const [showSettings, setShowSettings] = useState(false)
   const [expanding, setExpanding] = useState(false)
-  const { setSelectedNode, layout, setLayout } = useGraphStore()
-  
-  // Initialize with a default tab if none exists
+  const {
+    setSelectedNode,
+    setSelectedEdge,
+    selectedNode,
+    selectedEdge,
+    layout,
+    setLayout,
+  } = useGraphStore()
+
   useEffect(() => {
     if (tabs.length === 0) {
       createTab('Query 1')
     } else if (!activeTabId) {
       setActiveTab(tabs[0].id)
     }
-  }, []) // Only run on mount
-  
-  // Apply default layout from settings on mount
+  }, [])
+
   useEffect(() => {
     if (defaultLayout && layout !== defaultLayout) {
       setLayout(defaultLayout)
@@ -96,9 +100,8 @@ export default function WorkspacePage() {
     try {
       const queryParams = getQueryParams(params)
       await executeQuery(activeTabId, currentGraph, query, queryParams)
-      
-      // Auto-switch view based on result and visualization limits
-      const tab = tabs.find(t => t.id === activeTabId)
+
+      const tab = tabs.find((t) => t.id === activeTabId)
       if (tab?.result) {
         const result = tab.result
         if (result.graph_elements && !result.visualization_warning) {
@@ -134,7 +137,6 @@ export default function WorkspacePage() {
   const handleTabClose = (tabId: string, e: React.MouseEvent) => {
     e.stopPropagation()
     if (tabs.length <= 1) {
-      // Don't close the last tab, just clear it
       updateTab(tabId, { query: '', result: null, error: null })
       return
     }
@@ -147,18 +149,13 @@ export default function WorkspacePage() {
   }
 
   const handleExpandNode = async (nodeId: string) => {
-    if (!activeTabId || !currentGraph || expanding) {
-      return
-    }
-
+    if (!activeTabId || !currentGraph || expanding) return
     setExpanding(true)
     try {
       const expandResult = await graphAPI.expandNode(currentGraph, nodeId, {
         depth: 1,
         limit: 100,
       })
-      
-      // Merge expanded nodes and edges into existing result
       mergeGraphElements(activeTabId, expandResult.nodes, expandResult.edges)
     } catch (err) {
       console.error('Failed to expand node:', err)
@@ -168,118 +165,91 @@ export default function WorkspacePage() {
   }
 
   const handleDeleteNode = async (nodeId: string) => {
-    if (!activeTabId || !currentGraph) {
-      return
-    }
-
-    // Show confirmation dialog
-    const confirmMessage = 
+    if (!activeTabId || !currentGraph) return
+    const confirmMessage =
       'Are you sure you want to delete this node?\n\n' +
       'This will delete the node and all its relationships.\n' +
       'This action cannot be undone.'
-    
-    if (!confirm(confirmMessage)) {
-      return
-    }
+    if (!confirm(confirmMessage)) return
 
     try {
-      // Delete the node with detach=true to remove relationships
       await graphAPI.deleteNode(currentGraph, nodeId, { detach: true })
-      
-      // Remove the node from the current result
-      const tab = tabs.find(t => t.id === activeTabId)
+      const tab = tabs.find((t) => t.id === activeTabId)
       if (tab?.result?.graph_elements) {
-        // Remove node from nodes array
-        const updatedNodes = tab.result.graph_elements.nodes?.filter((n) => n.id !== nodeId) || []
-        
-        // Remove edges connected to this node
-        const updatedEdges = tab.result.graph_elements.edges?.filter(
-          (e) => e.source !== nodeId && e.target !== nodeId
-        ) || []
-        
-        // Update result in the store
+        const updatedNodes =
+          tab.result.graph_elements.nodes?.filter((n) => n.id !== nodeId) || []
+        const updatedEdges =
+          tab.result.graph_elements.edges?.filter(
+            (e) => e.source !== nodeId && e.target !== nodeId
+          ) || []
         updateResult(activeTabId, (currentResult) => {
           if (!currentResult) return null
           return {
             ...currentResult,
-            graph_elements: {
-              nodes: updatedNodes,
-              edges: updatedEdges,
-            },
+            graph_elements: { nodes: updatedNodes, edges: updatedEdges },
           }
         })
-        
-        console.log(`Node ${nodeId} deleted successfully`)
       }
-      
-      // Clear selection
       setSelectedNode(null)
     } catch (err) {
       console.error('Failed to delete node:', err)
       alert('Failed to delete node. Please try again.')
     }
   }
-  
+
   const handleTabViewModeChange = (tabId: string, mode: 'graph' | 'table') => {
     updateTab(tabId, { viewMode: mode })
   }
-  
-  const handleTabExportReady = (_tabId: string, _exportFn: () => Promise<void>) => {
-    // Store export function for the tab if needed
+
+  const handleTabExportReady = (_tabId: string, _exportFn: () => Promise<void>) => {}
+
+  const closeInspector = () => {
+    setSelectedNode(null)
+    setSelectedEdge(null)
   }
 
   if (!status || !status.connected) {
     return (
-      <div style={{ padding: '2rem', textAlign: 'center' }}>Loading...</div>
+      <div className="min-h-screen bg-zinc-950 flex items-center justify-center text-zinc-400">
+        Loading...
+      </div>
     )
   }
 
-  const activeTab = tabs.find(t => t.id === activeTabId)
+  const activeTab = tabs.find((t) => t.id === activeTabId)
+  const graphNodes = activeTab?.result?.graph_elements?.nodes ?? []
+  const graphEdges = activeTab?.result?.graph_elements?.edges ?? []
+  const inspectorOpen = !!selectedNode || !!selectedEdge
 
   return (
-    <div style={{ display: 'flex', height: '100vh', flexDirection: 'column' }}>
-      {/* Header */}
-      <div
-        style={{
-          padding: '1rem',
-          borderBottom: '1px solid #ccc',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          backgroundColor: '#f5f5f5',
-        }}
-      >
-        <div>
-          <strong>Kotte</strong> - Connected to {status.database} on{' '}
-          {status.host}:{status.port}
-        </div>
-        <button
-          onClick={handleDisconnect}
-          aria-label="Disconnect from database"
-          style={{
-            padding: '0.5rem 1rem',
-            cursor: 'pointer',
-            border: '1px solid #ccc',
-            borderRadius: '4px',
-            backgroundColor: 'white',
-          }}
-        >
-          Disconnect
-        </button>
+    <div className="relative min-h-screen w-screen bg-zinc-950 text-zinc-100 overflow-hidden">
+      {/* Canvas layer: full-size result area (graph / table) */}
+      <div className="absolute inset-0 pt-12">
+        {activeTab ? (
+          <ResultTab
+            tab={activeTab}
+            tablePageSize={tablePageSize}
+            onViewModeChange={(mode) => handleTabViewModeChange(activeTab.id, mode)}
+            onNodeExpand={handleExpandNode}
+            onNodeDelete={handleDeleteNode}
+            onNodeSelect={(node) => setSelectedNode(node.id)}
+            onEdgeSelect={(edge) => setSelectedEdge(edge.id)}
+            onExportReady={(exportFn) => handleTabExportReady(activeTab.id, exportFn)}
+          />
+        ) : (
+          <div className="h-full flex items-center justify-center text-zinc-500">
+            No active tab. Create a new tab to start querying.
+          </div>
+        )}
       </div>
 
-      {/* Main content */}
-      <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
-        {/* Metadata Sidebar */}
-        <MetadataSidebar
-          currentGraph={currentGraph || undefined}
-          onGraphSelect={handleGraphSelect}
-          onQueryTemplate={handleQueryTemplate}
-        />
-
-        {/* Editor and Results */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-          {/* Tab Bar */}
+      {/* Header: slim, fixed */}
+      <header className="fixed top-0 left-0 right-0 h-12 flex items-center justify-between px-4 bg-zinc-900/95 border-b border-zinc-800 z-10 shrink-0">
+        <div className="flex items-center gap-4 min-w-0">
+          <span className="font-semibold text-zinc-100 shrink-0">Kotte</span>
+          <span className="text-zinc-500 text-sm truncate">
+            {status.database} @ {status.host}:{status.port}
+          </span>
           {tabs.length > 0 && (
             <TabBar
               tabs={tabs}
@@ -291,85 +261,64 @@ export default function WorkspacePage() {
               onTabUnpin={unpinTab}
             />
           )}
-
-          {/* Query Editor */}
-          <div
-            style={{
-              borderBottom: '1px solid #ccc',
-              padding: '1rem',
-              minHeight: '300px',
-              maxHeight: '400px',
-            }}
-          >
-            <QueryEditor
-              value={query}
-              onChange={setQuery}
-              onExecute={handleExecute}
-              onCancel={() => activeTabId && cancelQuery(activeTabId)}
-              loading={loading}
-              history={history}
-            />
-            {error && (
-              <div
-                style={{
-                  marginTop: '1rem',
-                  padding: '0.75rem',
-                  backgroundColor: '#fee',
-                  border: '1px solid #fcc',
-                  borderRadius: '4px',
-                  color: '#c00',
-                  userSelect: 'text',
-                  cursor: 'text',
-                }}
-              >
-                <strong>Error:</strong> <span style={{ userSelect: 'text' }}>{error}</span>
-                <button
-                  onClick={() => activeTabId && clearError(activeTabId)}
-                  style={{
-                    float: 'right',
-                    padding: '0.25rem 0.5rem',
-                    fontSize: '0.8rem',
-                    cursor: 'pointer',
-                  }}
-                >
-                  ×
-                </button>
-              </div>
-            )}
-            {loading && (
-              <div style={{ marginTop: '1rem', padding: '0.75rem' }}>
-                Executing query...
-              </div>
-            )}
-          </div>
-
-          {/* Results - Show active tab's result */}
-          {activeTab && (
-            <ResultTab
-              tab={activeTab}
-              tablePageSize={tablePageSize}
-              onViewModeChange={(mode) => handleTabViewModeChange(activeTab.id, mode)}
-              onNodeExpand={handleExpandNode}
-              onNodeDelete={handleDeleteNode}
-              onExportReady={(exportFn) => handleTabExportReady(activeTab.id, exportFn)}
-            />
-          )}
-
-          {!activeTab && (
-            <div
-              style={{
-                flex: 1,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: '#999',
-              }}
-            >
-              No active tab. Create a new tab to start querying.
-            </div>
-          )}
         </div>
-      </div>
+        <button
+          type="button"
+          onClick={handleDisconnect}
+          className="shrink-0 px-3 py-1.5 text-sm rounded-lg border border-zinc-600 text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 transition-colors"
+          aria-label="Disconnect from database"
+        >
+          Disconnect
+        </button>
+      </header>
+
+      {/* Floating query bar */}
+      <QueryEditor
+        value={query}
+        onChange={setQuery}
+        params={params}
+        onParamsChange={setParams}
+        onExecute={handleExecute}
+        onCancel={() => activeTabId && cancelQuery(activeTabId)}
+        loading={loading}
+        history={history}
+      />
+
+      {/* Error toast */}
+      {error && (
+        <div className="absolute left-1/2 top-24 -translate-x-1/2 z-30 max-w-xl w-[90%] px-4 py-3 rounded-lg bg-red-900/90 border border-red-700 text-red-100 text-sm flex items-center gap-3">
+          <span className="flex-1 break-all">
+            <strong>Error:</strong> {error}
+          </span>
+          <button
+            type="button"
+            onClick={() => activeTabId && clearError(activeTabId)}
+            className="shrink-0 p-1 rounded hover:bg-red-800"
+            aria-label="Dismiss error"
+          >
+            ×
+          </button>
+        </div>
+      )}
+
+      {/* Left schema sidebar */}
+      <MetadataSidebar
+        currentGraph={currentGraph ?? undefined}
+        onGraphSelect={handleGraphSelect}
+        onQueryTemplate={handleQueryTemplate}
+      />
+
+      {/* Right inspector panel */}
+      <InspectorPanel
+        isOpen={inspectorOpen}
+        onClose={closeInspector}
+        nodes={graphNodes}
+        edges={graphEdges}
+        selectedNodeId={selectedNode}
+        selectedEdgeId={selectedEdge}
+        nodeLabelColor={getNodeLabelColor}
+      />
+
       {showSettings && (
         <SettingsModal
           isOpen={showSettings}
@@ -379,4 +328,3 @@ export default function WorkspacePage() {
     </div>
   )
 }
-

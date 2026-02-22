@@ -3,6 +3,8 @@ import { useState, useRef, useEffect } from 'react'
 interface QueryEditorProps {
   value: string
   onChange: (value: string) => void
+  params?: string
+  onParamsChange?: (value: string) => void
   onExecute: () => void
   onCancel?: () => void
   loading?: boolean
@@ -12,18 +14,24 @@ interface QueryEditorProps {
 export default function QueryEditor({
   value,
   onChange,
+  params: controlledParams = '{}',
+  onParamsChange,
   onExecute,
   onCancel,
   loading = false,
   history = [],
 }: QueryEditorProps) {
+  const containerRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const [expanded, setExpanded] = useState(false)
+  const [showParams, setShowParams] = useState(false)
   const [historyIndex, setHistoryIndex] = useState(-1)
-  const [params, setParams] = useState('{}')
+
+  const params = controlledParams
+  const setParams = onParamsChange ?? (() => {})
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Execute on Shift+Enter or Ctrl+Enter
       if (
         (e.shiftKey || e.ctrlKey || e.metaKey) &&
         e.key === 'Enter' &&
@@ -31,9 +39,9 @@ export default function QueryEditor({
       ) {
         e.preventDefault()
         onExecute()
+        setExpanded(false)
       }
 
-      // History navigation with Ctrl+Up/Down
       if (e.ctrlKey || e.metaKey) {
         if (e.key === 'ArrowUp' && history.length > 0) {
           e.preventDefault()
@@ -59,136 +67,119 @@ export default function QueryEditor({
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [history, historyIndex, onChange, onExecute])
 
+  useEffect(() => {
+    if (!expanded) return
+    const handleClickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setExpanded(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [expanded])
+
   const handleParamsChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setParams(e.target.value)
-    try {
-      JSON.parse(e.target.value)
-    } catch {
-      // Invalid JSON, but allow editing
-    }
   }
 
-  // const getParams = (): Record<string, unknown> => {
-  //   try {
-  //     return JSON.parse(params)
-  //   } catch {
-  //     return {}
-  //   }
-  // } // Reserved for future use
-
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      <div style={{ display: 'flex', gap: '1rem', flex: 1, minHeight: 0 }}>
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-          <label htmlFor="cypher-query" style={{ marginBottom: '0.5rem', fontWeight: 'bold' }}>
-            Cypher Query
-          </label>
+    <div ref={containerRef} className="absolute left-1/2 top-6 -translate-x-1/2 w-[55%] max-w-2xl z-20">
+      <div
+        className={`bg-zinc-800 border border-zinc-600 rounded-lg shadow-xl overflow-hidden transition-all duration-300 ease-out ${
+          expanded ? 'ring-2 ring-blue-500/50' : ''
+        }`}
+      >
+        <div className="flex items-center gap-2 px-4 py-2 border-b border-zinc-700">
+          <span className="text-zinc-500" aria-hidden="true">⌕</span>
+          <label htmlFor="cypher-query" className="sr-only">Cypher query</label>
           <textarea
             id="cypher-query"
             ref={textareaRef}
             value={value}
             onChange={(e) => onChange(e.target.value)}
-            placeholder="MATCH (n) RETURN n LIMIT 10"
+            onFocus={() => setExpanded(true)}
+            placeholder="Enter Cypher Query... (Shift+Enter to run)"
             aria-label="Cypher query editor"
-            aria-describedby="query-help"
-            role="textbox"
-            style={{
-              flex: 1,
-              fontFamily: 'monospace',
-              padding: '0.75rem',
-              fontSize: '14px',
-              border: '1px solid #ccc',
-              borderRadius: '4px',
-              resize: 'none',
-            }}
-          />
-          <div id="query-help" style={{ marginTop: '0.5rem', fontSize: '12px', color: '#666' }} role="note">
-            Shift+Enter or Ctrl+Enter to execute • Ctrl+Up/Down for history
-          </div>
-        </div>
-        <div style={{ width: '300px', display: 'flex', flexDirection: 'column' }}>
-          <label htmlFor="query-params" style={{ marginBottom: '0.5rem', fontWeight: 'bold' }}>
-            Parameters (JSON)
-          </label>
-          <textarea
-            id="query-params"
-            value={params}
-            onChange={handleParamsChange}
-            placeholder='{"name": "Alice"}'
-            aria-label="Query parameters in JSON format"
-            role="textbox"
-            style={{
-              flex: 1,
-              fontFamily: 'monospace',
-              padding: '0.75rem',
-              fontSize: '12px',
-              border: '1px solid #ccc',
-              borderRadius: '4px',
-              resize: 'none',
-            }}
+            rows={expanded ? 6 : 1}
+            className="flex-1 min-w-0 bg-transparent text-zinc-100 placeholder-zinc-500 font-mono text-sm resize-none focus:outline-none py-1"
           />
         </div>
-      </div>
-      <div style={{ marginTop: '1rem', display: 'flex', gap: '0.5rem' }}>
-        {loading && onCancel ? (
-          <button
-            onClick={onCancel}
-            aria-label="Cancel running query"
-            style={{
-              padding: '0.5rem 1.5rem',
-              fontSize: '1rem',
-              cursor: 'pointer',
-              backgroundColor: '#dc3545',
-              color: 'white',
-              border: 'none',
-              borderRadius: '4px',
-            }}
-          >
-            Cancel Query
-          </button>
-        ) : (
-          <button
-            onClick={onExecute}
-            disabled={loading}
-            aria-label={loading ? 'Query is executing' : 'Execute the Cypher query'}
-            aria-busy={loading}
-            style={{
-              padding: '0.5rem 1.5rem',
-              fontSize: '1rem',
-              cursor: loading ? 'not-allowed' : 'pointer',
-              backgroundColor: loading ? '#6c757d' : '#007bff',
-              color: 'white',
-              border: 'none',
-              borderRadius: '4px',
-              opacity: loading ? 0.6 : 1,
-            }}
-          >
-            {loading ? 'Executing...' : 'Execute Query'}
-          </button>
+
+        {expanded && (
+          <>
+            {showParams && (
+              <div className="border-t border-zinc-700 p-3">
+                <label htmlFor="query-params" className="block text-xs font-medium text-zinc-400 mb-1">
+                  Parameters (JSON)
+                </label>
+                <textarea
+                  id="query-params"
+                  value={params}
+                  onChange={handleParamsChange}
+                  placeholder='{"name": "Alice"}'
+                  aria-label="Query parameters"
+                  rows={3}
+                  className="w-full px-3 py-2 bg-zinc-900 border border-zinc-600 rounded text-zinc-100 font-mono text-xs resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            )}
+
+            <div className="flex items-center gap-2 px-3 py-2 border-t border-zinc-700 bg-zinc-800/80">
+              {loading && onCancel ? (
+                <button
+                  type="button"
+                  onClick={onCancel}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white text-sm font-medium transition-colors"
+                  aria-label="Cancel running query"
+                >
+                  Cancel
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onExecute()
+                    setExpanded(false)
+                  }}
+                  disabled={loading}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium transition-colors"
+                  aria-label={loading ? 'Query is executing' : 'Execute query'}
+                  aria-busy={loading}
+                >
+                  <span aria-hidden="true">▶</span>
+                  {loading ? 'Executing...' : 'Execute'}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => onChange('')}
+                disabled={loading}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-zinc-600 hover:bg-zinc-500 text-zinc-200 text-sm font-medium transition-colors"
+                aria-label="Clear query"
+              >
+                Clear
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowParams(!showParams)}
+                className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  showParams
+                    ? 'bg-zinc-600 text-zinc-100'
+                    : 'bg-zinc-700 hover:bg-zinc-600 text-zinc-400'
+                }`}
+                aria-label={showParams ? 'Hide parameters' : 'Show parameters'}
+                aria-pressed={showParams}
+              >
+                Parameters {showParams ? '▼' : '{ }'}
+              </button>
+            </div>
+          </>
         )}
-        <button
-          onClick={() => onChange('')}
-          disabled={loading}
-          aria-label="Clear query editor"
-          style={{
-            padding: '0.5rem 1.5rem',
-            fontSize: '1rem',
-            cursor: loading ? 'not-allowed' : 'pointer',
-            backgroundColor: '#6c757d',
-            color: 'white',
-            border: 'none',
-            borderRadius: '4px',
-            opacity: loading ? 0.6 : 1,
-          }}
-        >
-          Clear
-        </button>
       </div>
     </div>
   )
 }
 
-// Export helper to get params
 export function getQueryParams(paramsString: string): Record<string, unknown> {
   try {
     return JSON.parse(paramsString)
@@ -196,4 +187,3 @@ export function getQueryParams(paramsString: string): Record<string, unknown> {
     return {}
   }
 }
-
