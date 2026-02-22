@@ -26,9 +26,10 @@ export default function QueryEditor({
   const [expanded, setExpanded] = useState(false)
   const [showParams, setShowParams] = useState(false)
   const [historyIndex, setHistoryIndex] = useState(-1)
+  const [localParams, setLocalParams] = useState(() => controlledParams)
 
-  const params = controlledParams
-  const setParams = onParamsChange ?? (() => {})
+  const params = onParamsChange !== undefined ? controlledParams : localParams
+  const setParams = onParamsChange ?? setLocalParams
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {

@@ -101,7 +101,8 @@ export default function WorkspacePage() {
       const queryParams = getQueryParams(params)
       await executeQuery(activeTabId, currentGraph, query, queryParams)
 
-      const tab = tabs.find((t) => t.id === activeTabId)
+      const { tabs: latestTabs } = useQueryStore.getState()
+      const tab = latestTabs.find((t) => t.id === activeTabId)
       if (tab?.result) {
         const result = tab.result
         if (result.graph_elements && !result.visualization_warning) {

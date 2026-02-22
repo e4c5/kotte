@@ -49,9 +49,9 @@ export default function InspectorPanel({
         title: 'Node Details',
         label: node.label,
         data: {
+          ...node.properties,
           Id: node.id,
           label: node.label,
-          ...node.properties,
         },
       }
     }
@@ -65,11 +65,11 @@ export default function InspectorPanel({
         title: 'Edge Details',
         label: edge.label,
         data: {
+          ...edge.properties,
           Id: edge.id,
           type: edge.label,
           source: sourceId,
           target: targetId,
-          ...edge.properties,
         },
       }
     }
