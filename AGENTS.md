@@ -5,7 +5,7 @@
 ## Stack
 
 - **Backend:** Python 3.11+, FastAPI, Pydantic v2, psycopg (async), uvicorn
-- **Frontend:** React 18, TypeScript, Vite, Zustand, React Router, D3.js (graph viz), Axios, Zod
+- **Frontend:** React 18, TypeScript, Vite, Tailwind CSS, Zustand, React Router, D3.js (graph viz), Zod
 - **DB:** PostgreSQL 14+ with Apache AGE; Cypher via `cypher(graph_name, $$...$$)` and `agtype`
 
 ## Repo layout
