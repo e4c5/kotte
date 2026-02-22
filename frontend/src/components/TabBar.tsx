@@ -19,7 +19,6 @@ export default function TabBar({
   onTabPin,
   onTabUnpin,
 }: TabBarProps) {
-  // Sort tabs: pinned first, then by last activity
   const sortedTabs = [...tabs].sort((a, b) => {
     if (a.pinned && !b.pinned) return -1
     if (!a.pinned && b.pinned) return 1
@@ -30,13 +29,7 @@ export default function TabBar({
     <div
       role="tablist"
       aria-label="Query result tabs"
-      style={{
-        display: 'flex',
-        borderBottom: '1px solid #ccc',
-        backgroundColor: '#f5f5f5',
-        overflowX: 'auto',
-        alignItems: 'flex-end',
-      }}
+      className="flex overflow-x-auto items-center gap-0.5 min-w-0"
     >
       {sortedTabs.map((tab, index) => (
         <div
@@ -65,64 +58,34 @@ export default function TabBar({
               onTabClick(sortedTabs[sortedTabs.length - 1].id)
             }
           }}
-          style={{
-            padding: '0.5rem 1rem',
-            borderRight: '1px solid #ccc',
-            borderTop: '1px solid #ccc',
-            borderTopLeftRadius: '4px',
-            borderTopRightRadius: '4px',
-            backgroundColor: activeTabId === tab.id ? 'white' : '#e9e9e9',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.5rem',
-            minWidth: '150px',
-            maxWidth: '250px',
-            position: 'relative',
-            marginRight: '2px',
-            borderBottom: activeTabId === tab.id ? 'none' : '1px solid #ccc',
-            outline: 'none',
-          }}
+          className={`
+            flex items-center gap-1.5 px-2.5 py-1.5 rounded-t text-sm cursor-pointer outline-none
+            min-w-0 max-w-[180px] shrink-0
+            transition-colors
+            ${activeTabId === tab.id
+              ? 'bg-zinc-700 text-zinc-100'
+              : 'text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200'
+            }
+          `}
           title={tab.name}
         >
           {tab.pinned && (
-            <span style={{ fontSize: '0.8rem' }} aria-label="Pinned tab" role="img">📌</span>
+            <span className="text-xs shrink-0" aria-label="Pinned tab" role="img">📌</span>
           )}
-          <span
-            style={{
-              flex: 1,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-              fontSize: '0.9rem',
-            }}
-          >
-            {tab.name}
-          </span>
+          <span className="flex-1 truncate">{tab.name}</span>
           {tab.loading && (
-            <span style={{ fontSize: '0.8rem' }} aria-label="Query running" role="status">⏳</span>
+            <span className="text-xs shrink-0" aria-label="Query running" role="status">⏳</span>
           )}
           {tab.error && (
-            <span style={{ fontSize: '0.8rem', color: '#dc3545' }} aria-label="Error in query" role="alert">⚠️</span>
+            <span className="text-xs shrink-0 text-red-400" aria-label="Error in query" role="alert">⚠️</span>
           )}
-          <div
-            style={{
-              display: 'flex',
-              gap: '0.25rem',
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
+          <div className="flex items-center gap-0.5 shrink-0" onClick={(e) => e.stopPropagation()}>
             {!tab.pinned && (
               <button
+                type="button"
                 onClick={() => onTabPin(tab.id)}
                 aria-label={`Pin tab: ${tab.name}`}
-                style={{
-                  padding: '0.125rem 0.25rem',
-                  border: 'none',
-                  background: 'transparent',
-                  cursor: 'pointer',
-                  fontSize: '0.8rem',
-                }}
+                className="p-0.5 rounded hover:bg-zinc-600 text-zinc-400 hover:text-zinc-200 text-xs"
                 title="Pin tab"
               >
                 📌
@@ -130,38 +93,21 @@ export default function TabBar({
             )}
             {tab.pinned && (
               <button
+                type="button"
                 onClick={() => onTabUnpin(tab.id)}
                 aria-label={`Unpin tab: ${tab.name}`}
-                style={{
-                  padding: '0.125rem 0.25rem',
-                  border: 'none',
-                  background: 'transparent',
-                  cursor: 'pointer',
-                  fontSize: '0.8rem',
-                }}
+                className="p-0.5 rounded hover:bg-zinc-600 text-zinc-400 hover:text-zinc-200 text-xs"
                 title="Unpin tab"
               >
                 📍
               </button>
             )}
             <button
+              type="button"
               onClick={(e) => onTabClose(tab.id, e)}
               aria-label={`Close tab: ${tab.name}`}
-              style={{
-                padding: '0.125rem 0.25rem',
-                border: 'none',
-                background: 'transparent',
-                cursor: 'pointer',
-                fontSize: '0.9rem',
-                borderRadius: '2px',
-              }}
+              className="p-0.5 rounded hover:bg-red-900/50 text-zinc-400 hover:text-red-300 text-sm leading-none"
               title="Close tab"
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = '#ffcccc'
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = 'transparent'
-              }}
             >
               ×
             </button>
@@ -169,17 +115,10 @@ export default function TabBar({
         </div>
       ))}
       <button
+        type="button"
         onClick={onNewTab}
         aria-label="Create new query tab"
-        style={{
-          padding: '0.5rem 1rem',
-          border: 'none',
-          borderBottom: '1px solid #ccc',
-          backgroundColor: 'transparent',
-          cursor: 'pointer',
-          fontSize: '1.2rem',
-          marginLeft: 'auto',
-        }}
+        className="shrink-0 px-2 py-1.5 rounded text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200 text-lg leading-none transition-colors"
         title="New tab"
       >
         +
@@ -187,4 +126,3 @@ export default function TabBar({
     </div>
   )
 }
-

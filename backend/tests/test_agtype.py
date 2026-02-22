@@ -192,7 +192,8 @@ class TestGraphElementExtraction:
         assert len(result["other"]) == 0
 
     def test_extract_edges_only(self):
-        """Test extracting edges from results."""
+        """Test extracting edges from results. Placeholder nodes are synthesized from edge
+        endpoints so the graph view can render (edges-only query like RETURN r)."""
         rows = [
             {
                 "result": {
@@ -207,7 +208,7 @@ class TestGraphElementExtraction:
         
         result = AgTypeParser.extract_graph_elements(rows)
         
-        assert len(result["nodes"]) == 0
+        assert len(result["nodes"]) == 2  # Placeholders for start_id and end_id
         assert len(result["edges"]) == 1
         assert len(result["other"]) == 0
 
@@ -288,7 +289,8 @@ class TestGraphElementExtraction:
         assert len(result["other"]) == 2  # Scalar and regular dict
 
     def test_extract_from_multiple_columns(self):
-        """Test extracting from multiple columns."""
+        """Test extracting from multiple columns. Placeholder node for edge end_id is added
+        when not present in results."""
         rows = [
             {
                 "node": {"id": 1, "label": "Person", "properties": {}},
@@ -304,7 +306,7 @@ class TestGraphElementExtraction:
         
         result = AgTypeParser.extract_graph_elements(rows)
         
-        assert len(result["nodes"]) == 1
+        assert len(result["nodes"]) == 2  # Node 1 + placeholder for end_id 2
         assert len(result["edges"]) == 1
 
     def test_extract_empty_rows(self):
@@ -317,7 +319,8 @@ class TestGraphElementExtraction:
         assert len(result["other"]) == 0
 
     def test_extract_complex_nested(self):
-        """Test extracting from complex nested structures."""
+        """Test extracting from complex nested structures. Placeholder node for edge end_id
+        is added when not present."""
         rows = [
             {
                 "result": [
@@ -333,7 +336,7 @@ class TestGraphElementExtraction:
             }
         ]
         result = AgTypeParser.extract_graph_elements(rows)
-        assert len(result["nodes"]) == 1
+        assert len(result["nodes"]) == 2  # Node 1 + placeholder for end_id 2
         assert len(result["edges"]) == 1
 
     def test_extract_preserves_path_structure(self):

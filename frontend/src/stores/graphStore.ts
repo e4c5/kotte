@@ -59,6 +59,8 @@ interface GraphState {
   // Graph state
   selectedNode: string | null
   setSelectedNode: (nodeId: string | null) => void
+  selectedEdge: string | null
+  setSelectedEdge: (edgeId: string | null) => void
   pinnedNodes: Set<string>
   togglePinNode: (nodeId: string) => void
   hiddenNodes: Set<string>
@@ -95,6 +97,7 @@ export const useGraphStore = create<GraphState>()(
         propertyFilters: [],
       },
       selectedNode: null,
+      selectedEdge: null,
       pinnedNodes: new Set(),
       hiddenNodes: new Set(),
 
@@ -197,7 +200,9 @@ export const useGraphStore = create<GraphState>()(
           },
         }),
 
-      setSelectedNode: (nodeId) => set({ selectedNode: nodeId }),
+      setSelectedNode: (nodeId) => set({ selectedNode: nodeId, selectedEdge: null }),
+
+      setSelectedEdge: (edgeId) => set({ selectedEdge: edgeId, selectedNode: null }),
 
       togglePinNode: (nodeId) =>
         set((state) => {
