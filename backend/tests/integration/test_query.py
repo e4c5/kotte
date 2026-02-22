@@ -54,7 +54,7 @@ class TestQueryExecution:
         # Mock graph exists
         DatabaseConnection.return_value.execute_scalar = AsyncMock(return_value=1)  # Graph ID = 1
         
-        # Mock query result with graph elements
+        # Mock query result with graph elements (execute_cypher returns rows with "result" key)
         mock_result = [
             {
                 "result": {
@@ -74,7 +74,7 @@ class TestQueryExecution:
             },
         ]
         
-        DatabaseConnection.return_value.execute_query = AsyncMock(return_value=mock_result)
+        DatabaseConnection.return_value.execute_cypher = AsyncMock(return_value=mock_result)
         DatabaseConnection.return_value.get_backend_pid = AsyncMock(return_value=12345)
         
         response = await connected_client.post(
@@ -97,7 +97,7 @@ class TestQueryExecution:
         """Test query execution with parameters."""
         mock_db = connected_client._mock_db
         mock_db.execute_scalar = AsyncMock(return_value=1)  # Graph exists
-        mock_db.execute_query = AsyncMock(return_value=[])
+        mock_db.execute_cypher = AsyncMock(return_value=[])
         mock_db.get_backend_pid = AsyncMock(return_value=12345)
         
         response = await connected_client.post(
@@ -110,8 +110,8 @@ class TestQueryExecution:
         )
         
         assert response.status_code == 200
-        # Verify params were passed to query
-        call_args = mock_db.execute_query.call_args
+        # Verify execute_cypher was called (params passed via execute_cypher)
+        call_args = mock_db.execute_cypher.call_args
         assert call_args is not None
 
     @pytest.mark.asyncio
@@ -177,7 +177,7 @@ class TestQueryExecution:
         mock_db.execute_scalar = AsyncMock(return_value=1)  # Graph exists
         mock_db.get_backend_pid = AsyncMock(return_value=12345)
         
-        # Mock result with nodes and edges
+        # Mock result with nodes and edges (execute_cypher returns rows with "result" key)
         mock_result = [
             {
                 "result": {
@@ -197,7 +197,7 @@ class TestQueryExecution:
             },
         ]
         
-        mock_db.execute_query = AsyncMock(return_value=mock_result)
+        mock_db.execute_cypher = AsyncMock(return_value=mock_result)
         
         response = await connected_client.post(
             "/api/v1/queries/execute",
@@ -232,7 +232,7 @@ class TestQueryExecution:
                 }
             })
         
-        mock_db.execute_query = AsyncMock(return_value=many_nodes)
+        mock_db.execute_cypher = AsyncMock(return_value=many_nodes)
         
         response = await connected_client.post(
             "/api/v1/queries/execute",
@@ -261,7 +261,7 @@ class TestQueryCancellation:
         mock_db.cancel_backend = AsyncMock(return_value=True)
         
         # Execute a query first to get request_id
-        mock_db.execute_query = AsyncMock(return_value=[])
+        mock_db.execute_cypher = AsyncMock(return_value=[])
         
         execute_response = await connected_client.post(
             "/api/v1/queries/execute",

@@ -169,7 +169,7 @@ class TestNeighborhoodExpansion:
             }
         ]
         
-        mock_db.execute_query = AsyncMock(return_value=mock_result)
+        mock_db.execute_cypher = AsyncMock(return_value=mock_result)
         
         response = await connected_client.post(
             "/api/v1/graphs/test_graph/nodes/1/expand",
@@ -255,7 +255,7 @@ class TestNeighborhoodExpansion:
         """Test expanding node with default parameters."""
         mock_db = connected_client._mock_db
         mock_db.execute_scalar = AsyncMock(return_value=1)  # Graph exists
-        mock_db.execute_query = AsyncMock(return_value=[])
+        mock_db.execute_cypher = AsyncMock(return_value=[])
         
         response = await connected_client.post(
             "/api/v1/graphs/test_graph/nodes/1/expand",
@@ -277,8 +277,8 @@ class TestNodeDeletion:
         """Test successful node deletion with mocked DB."""
         mock_db = connected_client._mock_db
         mock_db.execute_scalar = AsyncMock(return_value=1)  # Graph exists
-        # When detach=false: node check, then delete
-        mock_db.execute_query = AsyncMock(side_effect=[
+        # When detach=false: node check, then delete (both via execute_cypher)
+        mock_db.execute_cypher = AsyncMock(side_effect=[
             [{"result": {"id": 1, "label": "Person", "properties": {}}}],  # Node exists
             [{"result": {"deleted_count": 1}}],  # Delete succeeded
         ])
@@ -297,8 +297,8 @@ class TestNodeDeletion:
         """Test that DB errors during delete propagate (simulates rollback scenario)."""
         mock_db = connected_client._mock_db
         mock_db.execute_scalar = AsyncMock(return_value=1)  # Graph exists
-        # First query succeeds (node check), second raises
-        mock_db.execute_query = AsyncMock(side_effect=[
+        # First call succeeds (node check), second raises
+        mock_db.execute_cypher = AsyncMock(side_effect=[
             [{"result": {"id": 1, "label": "Person", "properties": {}}}],  # Node exists
             Exception("Database connection lost"),  # Simulate failure during delete
         ])
@@ -317,7 +317,7 @@ class TestNodeDeletion:
         """Test delete when node does not exist."""
         mock_db = connected_client._mock_db
         mock_db.execute_scalar = AsyncMock(return_value=1)  # Graph exists
-        mock_db.execute_query = AsyncMock(return_value=[])  # Node not found
+        mock_db.execute_cypher = AsyncMock(return_value=[])  # Node not found
         
         response = await connected_client.delete(
             "/api/v1/graphs/test_graph/nodes/999?detach=false",
