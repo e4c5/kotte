@@ -136,6 +136,7 @@ class DatabaseConnection:
                 duration = time.time() - start_time
                 metrics.record_db_query(duration)
                 logger.warning(f"Query timeout after {timeout} seconds")
+                await self._conn.rollback()
                 raise APIException(
                     code=ErrorCode.QUERY_TIMEOUT,
                     message=f"Query execution timed out after {timeout} seconds",
@@ -143,6 +144,9 @@ class DatabaseConnection:
                     status_code=504,
                     retryable=True,
                 ) from None
+            except Exception:
+                await self._conn.rollback()
+                raise
 
     async def get_backend_pid(self) -> Optional[int]:
         """
@@ -248,10 +252,57 @@ class DatabaseConnection:
         self, query: str, params: Optional[dict] = None
     ) -> Optional[any]:
         """Execute a query and return a single scalar value."""
-        async with self.connection.cursor() as cur:
-            await cur.execute(query, params)
-            result = await cur.fetchone()
-            return self._first_value(result)
+        try:
+            async with self.connection.cursor() as cur:
+                await cur.execute(query, params)
+                result = await cur.fetchone()
+                return self._first_value(result)
+        except Exception:
+            if self._conn:
+                await self._conn.rollback()
+            raise
+
+    def _dollar_quote_tag(self, cypher_query: str) -> str:
+        """Pick a dollar-quote tag that does not appear in the query (for safe literal embedding)."""
+        for tag in ("$cypher$", "$q$", "$body$", "$x$"):
+            if tag not in cypher_query:
+                return tag
+        # Fallback: use a tag with random suffix so it's unlikely to appear
+        import secrets
+        return "$c" + secrets.token_hex(4) + "$"
+
+    async def execute_cypher(
+        self,
+        graph_name: str,
+        cypher_query: str,
+        params: Optional[dict] = None,
+        timeout: Optional[int] = None,
+    ) -> list[dict]:
+        """
+        Execute a Cypher query via Apache AGE using literal SQL (graph and query as literals).
+        This matches the AGE docs pattern and avoids overload resolution issues with
+        parameterized cypher(...) calls across different AGE versions.
+        """
+        tag = self._dollar_quote_tag(cypher_query)
+        # Graph name is already validated (identifier-safe); escape for SQL literal
+        graph_literal = graph_name.replace("'", "''")
+        cypher_literal = tag + cypher_query + tag
+        # AGE requires the third argument to be a *parameter* (bind), not a literal like NULL::agtype.
+        json_mod = __import__("json")
+        params_json = json_mod.dumps(params) if params else "null"
+        sql = (
+            f"SELECT * FROM ag_catalog.cypher("
+            f"'{graph_literal}', {cypher_literal}, %(params)s::agtype"
+            f") AS (result agtype)"
+        )
+        run_params: Optional[dict] = {"params": params_json}
+
+        # Log verbatim: user cypher and full generated SQL (so we can copy-paste into psql)
+        logger.info("execute_cypher: user cypher (graph=%s) verbatim: %s", graph_name, cypher_query)
+        logger.info("execute_cypher: generated SQL verbatim: %s", sql)
+        logger.info("execute_cypher: bind params (params)=%s", params_json)
+
+        return await self.execute_query(sql, run_params, timeout=timeout)
 
     @asynccontextmanager
     async def transaction(self):

@@ -72,13 +72,13 @@ async def delete_node(
                 status_code=404,
             )
         
+        node_id_param = {"node_id": node_id_int}
+
         # Check if node exists
-        check_node_query = """
-            SELECT * FROM ag_catalog.cypher(%(graph_name)s::text, %(cypher)s::text, json_build_object('node_id', %(node_id)s)::agtype) AS (result agtype)
-        """
-        node_check = await db_conn.execute_query(
-            check_node_query,
-            {"graph_name": validated_graph_name, "cypher": "MATCH (n) WHERE id(n) = $node_id RETURN n", "node_id": node_id_int},
+        node_check = await db_conn.execute_cypher(
+            validated_graph_name,
+            "MATCH (n) WHERE id(n) = $node_id RETURN n",
+            params=node_id_param,
         )
         if not node_check:
             raise APIException(
@@ -87,35 +87,28 @@ async def delete_node(
                 category=ErrorCategory.NOT_FOUND,
                 status_code=404,
             )
-        
+
         # Count edges before deletion (if detach)
         edges_deleted = 0
         if detach:
-            count_edges_query = """
-                SELECT * FROM ag_catalog.cypher(%(graph_name)s::text, %(cypher)s::text, json_build_object('node_id', %(node_id)s)::agtype) AS (result agtype)
-            """
-            edge_count_result = await db_conn.execute_query(
-                count_edges_query,
-                {"graph_name": validated_graph_name, "cypher": "MATCH (n)-[r]-() WHERE id(n) = $node_id RETURN count(r) as edge_count", "node_id": node_id_int},
+            edge_count_result = await db_conn.execute_cypher(
+                validated_graph_name,
+                "MATCH (n)-[r]-() WHERE id(n) = $node_id RETURN count(r) as edge_count",
+                params=node_id_param,
             )
             if edge_count_result:
                 parsed = AgTypeParser.parse(edge_count_result[0].get("result", {}))
                 if isinstance(parsed, dict) and "edge_count" in parsed:
                     edges_deleted = int(parsed["edge_count"]) or 0
-        
+
         # Delete the node
         if detach:
-            delete_query = """
-                SELECT * FROM ag_catalog.cypher(%(graph_name)s::text, %(cypher)s::text, json_build_object('node_id', %(node_id)s)::agtype) AS (result agtype)
-            """
-            delete_params = {"graph_name": validated_graph_name, "cypher": "MATCH (n) WHERE id(n) = $node_id DETACH DELETE n RETURN count(n) as deleted_count", "node_id": node_id_int}
+            delete_cypher = "MATCH (n) WHERE id(n) = $node_id DETACH DELETE n RETURN count(n) as deleted_count"
         else:
-            delete_query = """
-                SELECT * FROM ag_catalog.cypher(%(graph_name)s::text, %(cypher)s::text, json_build_object('node_id', %(node_id)s)::agtype) AS (result agtype)
-            """
-            delete_params = {"graph_name": validated_graph_name, "cypher": "MATCH (n) WHERE id(n) = $node_id DELETE n RETURN count(n) as deleted_count", "node_id": node_id_int}
-        
-        delete_result = await db_conn.execute_query(delete_query, delete_params)
+            delete_cypher = "MATCH (n) WHERE id(n) = $node_id DELETE n RETURN count(n) as deleted_count"
+        delete_result = await db_conn.execute_cypher(
+            validated_graph_name, delete_cypher, params=node_id_param
+        )
         
         if not delete_result:
             raise APIException(
