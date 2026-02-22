@@ -177,6 +177,8 @@ async def stream_query_results(
         error_chunk = {"error": {"code": code, "message": message}}
         yield json.dumps(error_chunk) + "\n"
         # End generator cleanly; client has received the error in the stream
+    finally:
+        query_tracker.unregister_query(request_id)
 
 
 @router.post("/stream")
@@ -233,4 +235,3 @@ async def stream_query(
             "Connection": "keep-alive",
         },
     )
-

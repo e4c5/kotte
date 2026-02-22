@@ -248,7 +248,6 @@ class TestQueryExecution:
         assert data["visualization_warning"] is not None
         assert "too large" in data["visualization_warning"].lower()
 
-
 class TestQueryCancellation:
     """Integration tests for query cancellation."""
 
@@ -310,4 +309,3 @@ class TestQueryCancellation:
         data = response.json()
         assert "error" in data
         assert "code" in data["error"]
-

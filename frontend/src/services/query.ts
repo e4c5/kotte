@@ -9,6 +9,7 @@ export interface QueryExecuteRequest {
   cypher: string
   params?: Record<string, unknown>
   options?: Record<string, unknown>
+  for_visualization?: boolean
 }
 
 export interface QueryResultRow {
@@ -148,4 +149,3 @@ export const queryAPI = {
     }
   },
 }
-

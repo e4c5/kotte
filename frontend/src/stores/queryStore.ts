@@ -50,7 +50,13 @@ interface QueryState {
   unpinTab: (tabId: string) => void
   
   // Query execution (per tab)
-  executeQuery: (tabId: string, graph: string, query: string, params?: Record<string, unknown>) => Promise<void>
+  executeQuery: (
+    tabId: string,
+    graph: string,
+    query: string,
+    params?: Record<string, unknown>,
+    forVisualization?: boolean
+  ) => Promise<void>
   cancelQuery: (tabId: string) => Promise<void>
   
   // History
@@ -227,7 +233,13 @@ export const useQueryStore = create<QueryState>()(
           get().updateTab(tabId, { pinned: false })
         },
         
-        executeQuery: async (tabId: string, graph: string, query: string, params?: Record<string, unknown>) => {
+        executeQuery: async (
+          tabId: string,
+          graph: string,
+          query: string,
+          params?: Record<string, unknown>,
+          forVisualization: boolean = false
+        ) => {
           get().updateTab(tabId, { loading: true, error: null, requestId: null, graph })
           
           try {
@@ -235,6 +247,7 @@ export const useQueryStore = create<QueryState>()(
               graph,
               cypher: query,
               params: params || {},
+              for_visualization: forVisualization,
             }
             const result = await queryAPI.execute(request)
             

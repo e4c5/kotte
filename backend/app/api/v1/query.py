@@ -158,7 +158,7 @@ async def execute_query(
     try:
         raw_rows = await db_conn.execute_cypher(
             validated_graph_name,
-            request.cypher,
+            cypher_to_execute,
             params=request.params or None,
             timeout=settings.query_timeout,
         )
@@ -363,4 +363,3 @@ async def cancel_query(
     )
 
     return QueryCancelResponse(cancelled=True, request_id=request_id)
-
