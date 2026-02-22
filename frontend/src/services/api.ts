@@ -81,9 +81,19 @@ apiClient.interceptors.response.use(
     return response
   },
   async (error: AxiosError<APIError>) => {
+    const status = error.response?.status
     const apiError = error.response?.data?.error
+
+    // 401: session expired or not logged in (e.g. after backend restart) – clear state and redirect to login
+    if (status === 401) {
+      sessionStorage.removeItem('csrf_token')
+      if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
+        window.location.href = '/login'
+      }
+    }
+
     const isCsrfFailure =
-      error.response?.status === 403 &&
+      status === 403 &&
       apiError?.message === 'CSRF token validation failed'
 
     if (isCsrfFailure && error.config && !(error.config as { _csrfRetry?: boolean })._csrfRetry) {

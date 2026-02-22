@@ -38,6 +38,17 @@ npm run dev
 
 The frontend will be available at `http://localhost:5173`
 
+**Automated quick start (Playwright):** To avoid typing login and connection details every time, use the Playwright script. With the backend and frontend running:
+
+```bash
+cd frontend
+npm install
+npx playwright install chromium
+npm run quick-start:headed
+```
+
+The script logs in as admin/admin, fills the connection form (host, port, database, user, password), tests the connection, and opens the workspace. Default connection: `localhost:5455`, database `postgresDB`, user `postgresUser`, password `postgresPW`. Override with env vars: `KOTTE_DB_HOST`, `KOTTE_DB_PORT`, `KOTTE_DB_NAME`, `KOTTE_DB_USER`, `KOTTE_DB_PASSWORD`. To leave the browser open after reaching the workspace: `KEEP_BROWSER_OPEN=1 npm run quick-start:headed`.
+
 ### 3. Database Setup
 
 Ensure PostgreSQL is running with Apache AGE extension:

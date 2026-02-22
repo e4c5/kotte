@@ -9,7 +9,9 @@
     "preview": "vite preview",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "test": "vitest",
-    "test:ui": "vitest --ui"
+    "test:ui": "vitest --ui",
+    "quick-start": "playwright test e2e/quick-to-workspace.spec.ts --project=chromium",
+    "quick-start:headed": "playwright test e2e/quick-to-workspace.spec.ts --project=chromium --headed"
   },
   "dependencies": {
     "react": "^18.2.0",
@@ -37,7 +39,7 @@
     "vitest": "^1.0.4",
     "@testing-library/react": "^14.1.2",
     "@testing-library/jest-dom": "^6.1.5",
-    "@testing-library/user-event": "^14.5.1"
+    "@testing-library/user-event": "^14.5.1",
+    "@playwright/test": "^1.49.0"
   }
 }
-
