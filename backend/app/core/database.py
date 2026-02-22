@@ -138,13 +138,7 @@ class DatabaseConnection:
                 metrics.record_db_query(duration)
                 logger.warning(f"Query timeout after {timeout} seconds")
                 await self._conn.rollback()
-                raise APIException(
-                    code=ErrorCode.QUERY_TIMEOUT,
-                    message=f"Query execution timed out after {timeout} seconds",
-                    category=ErrorCategory.UPSTREAM,
-                    status_code=504,
-                    retryable=True,
-                ) from None
+                raise
             except Exception:
                 await self._conn.rollback()
                 raise
@@ -173,13 +167,7 @@ class DatabaseConnection:
                 duration = time.time() - start_time
                 metrics.record_db_query(duration)
                 logger.warning(f"Command timeout after {timeout} seconds")
-                raise APIException(
-                    code=ErrorCode.QUERY_TIMEOUT,
-                    message=f"Command execution timed out after {timeout} seconds",
-                    category=ErrorCategory.UPSTREAM,
-                    status_code=504,
-                    retryable=True,
-                ) from None
+                raise
 
     async def get_backend_pid(self) -> Optional[int]:
         """

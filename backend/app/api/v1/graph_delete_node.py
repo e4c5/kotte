@@ -90,18 +90,24 @@ async def delete_node(
                     status_code=404,
                 )
 
-            # Count edges before deletion (if detach)
+            # Count edges: required when !detach (to return 4xx), and when detach (for edges_deleted)
+            edge_count_result = await db_conn.execute_cypher(
+                validated_graph_name,
+                "MATCH (n)-[r]-() WHERE id(n) = $node_id RETURN count(r) as edge_count",
+                params=node_id_param,
+            )
             edges_deleted = 0
-            if detach:
-                edge_count_result = await db_conn.execute_cypher(
-                    validated_graph_name,
-                    "MATCH (n)-[r]-() WHERE id(n) = $node_id RETURN count(r) as edge_count",
-                    params=node_id_param,
+            if edge_count_result:
+                parsed = AgTypeParser.parse(edge_count_result[0].get("result", {}))
+                if isinstance(parsed, dict) and "edge_count" in parsed:
+                    edges_deleted = int(parsed["edge_count"]) or 0
+            if not detach and edges_deleted > 0:
+                raise APIException(
+                    code=ErrorCode.QUERY_VALIDATION_ERROR,
+                    message="Node has relationships; use detach=true to delete with relationships",
+                    category=ErrorCategory.VALIDATION,
+                    status_code=422,
                 )
-                if edge_count_result:
-                    parsed = AgTypeParser.parse(edge_count_result[0].get("result", {}))
-                    if isinstance(parsed, dict) and "edge_count" in parsed:
-                        edges_deleted = int(parsed["edge_count"]) or 0
 
             # Delete the node
             if detach:
