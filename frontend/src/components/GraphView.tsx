@@ -367,6 +367,11 @@ export default function GraphView({
     const centerX = width / 2
     const centerY = height / 2
 
+    // Resolve link endpoint to node (source/target may be string ID when no link force is used)
+    const nodeById = new Map(nodesWithPositions.map((n) => [n.id, n]))
+    const getNode = (endpoint: string | GraphNode): GraphNode | undefined =>
+      typeof endpoint === 'string' ? nodeById.get(endpoint) : endpoint
+
     // Update positions on simulation tick (and initial render for static layout)
     function applyPositions() {
       if (layout === 'force' && hasEdges) {
@@ -378,22 +383,10 @@ export default function GraphView({
       }
 
       link
-        .attr('x1', (d) => {
-          const source = d.source as GraphNode
-          return source.x ?? centerX
-        })
-        .attr('y1', (d) => {
-          const source = d.source as GraphNode
-          return source.y ?? centerY
-        })
-        .attr('x2', (d) => {
-          const target = d.target as GraphNode
-          return target.x ?? centerX
-        })
-        .attr('y2', (d) => {
-          const target = d.target as GraphNode
-          return target.y ?? centerY
-        })
+        .attr('x1', (d) => getNode(d.source)?.x ?? centerX)
+        .attr('y1', (d) => getNode(d.source)?.y ?? centerY)
+        .attr('x2', (d) => getNode(d.target)?.x ?? centerX)
+        .attr('y2', (d) => getNode(d.target)?.y ?? centerY)
 
       node.attr('cx', (d) => d.x ?? centerX).attr('cy', (d) => d.y ?? centerY)
       labels.attr('x', (d) => d.x ?? centerX).attr('y', (d) => d.y ?? centerY)
