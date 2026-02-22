@@ -1,16 +1,41 @@
 """Pytest configuration and fixtures."""
 
+import sys
+
 import pytest
 from fastapi.testclient import TestClient
 from unittest.mock import Mock, AsyncMock
 
-from app.main import app
+
+@pytest.fixture
+def test_app(monkeypatch):
+    """
+    Create FastAPI app with middleware suitable for testing.
+    CSRF and rate limiting disabled so auth/session tests can run.
+    """
+    monkeypatch.setenv("CSRF_ENABLED", "false")
+    monkeypatch.setenv("RATE_LIMIT_ENABLED", "false")
+    monkeypatch.setenv("SESSION_SECRET_KEY", "test-secret-key-for-unit-tests")
+    monkeypatch.setenv("ENVIRONMENT", "test")
+    for mod in ("app.core.config", "app.main"):
+        if mod in sys.modules:
+            del sys.modules[mod]
+    from app.main import create_app
+    return create_app()
 
 
 @pytest.fixture
-def client():
-    """Test client for FastAPI app."""
-    return TestClient(app)
+def client(test_app):
+    """Test client for FastAPI app (uses test_app with session support)."""
+    return TestClient(test_app, base_url="http://testserver")
+
+
+@pytest.fixture(autouse=True)
+def cleanup_sessions():
+    """Clean up sessions after each test to avoid state leakage."""
+    yield
+    from app.core.auth import session_manager
+    session_manager._sessions.clear()
 
 
 @pytest.fixture

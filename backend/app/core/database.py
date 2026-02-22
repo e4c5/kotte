@@ -114,7 +114,8 @@ class DatabaseConnection:
             params: Query parameters
             timeout: Query timeout in seconds (uses settings.query_timeout if None)
         """
-        timeout = timeout or settings.query_timeout
+        if timeout is None:
+            timeout = settings.query_timeout
         start_time = time.time()
         async with self.connection.cursor() as cur:
             try:
@@ -147,6 +148,38 @@ class DatabaseConnection:
             except Exception:
                 await self._conn.rollback()
                 raise
+
+    async def execute_command(
+        self, query: str, params: Optional[dict] = None, timeout: Optional[int] = None
+    ) -> None:
+        """
+        Execute a command that returns no result set (e.g. ANALYZE, DDL).
+        Do not use for SELECT or commands with RETURNING.
+        """
+        if timeout is None:
+            timeout = settings.query_timeout
+        start_time = time.time()
+        async with self.connection.cursor() as cur:
+            try:
+                await cur.execute("LOAD 'age'")
+                await cur.execute('SET search_path = ag_catalog, "$user", public')
+                await asyncio.wait_for(
+                    cur.execute(query, params),
+                    timeout=timeout,
+                )
+                duration = time.time() - start_time
+                metrics.record_db_query(duration)
+            except asyncio.TimeoutError:
+                duration = time.time() - start_time
+                metrics.record_db_query(duration)
+                logger.warning(f"Command timeout after {timeout} seconds")
+                raise APIException(
+                    code=ErrorCode.QUERY_TIMEOUT,
+                    message=f"Command execution timed out after {timeout} seconds",
+                    category=ErrorCategory.UPSTREAM,
+                    status_code=504,
+                    retryable=True,
+                ) from None
 
     async def get_backend_pid(self) -> Optional[int]:
         """
@@ -305,9 +338,28 @@ class DatabaseConnection:
         return await self.execute_query(sql, run_params, timeout=timeout)
 
     @asynccontextmanager
-    async def transaction(self):
-        """Context manager for database transactions."""
+    async def transaction(self, timeout: Optional[int] = None):
+        """
+        Context manager for database transactions.
+
+        Args:
+            timeout: Optional transaction timeout in seconds. If not provided,
+                     a sensible default is used to prevent long-running transactions.
+        """
+        # Default to 60s for transaction-scoped timeout to avoid long locks
+        if timeout is None:
+            effective_timeout = 60
+        else:
+            effective_timeout = timeout
         async with self.connection.transaction():
+            try:
+                # Apply a statement timeout for all statements in this transaction
+                async with self.connection.cursor() as cur:
+                    await cur.execute(
+                        f"SET LOCAL statement_timeout = {effective_timeout * 1000}"
+                    )
+            except Exception as e:
+                logger.warning(f"Failed to set transaction statement_timeout: {e}")
             yield
 
 

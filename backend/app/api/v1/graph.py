@@ -6,8 +6,8 @@ from fastapi import APIRouter, Depends
 
 from app.core.auth import get_session
 from app.core.database import DatabaseConnection
-from app.core.errors import APIException, ErrorCode, ErrorCategory
-from app.core.validation import validate_graph_name, validate_label_name
+from app.core.errors import APIException, ErrorCode, ErrorCategory, translate_db_error
+from app.core.validation import validate_graph_name, validate_label_name, escape_identifier
 from app.models.graph import (
     GraphInfo,
     GraphMetadata,
@@ -19,6 +19,8 @@ from app.models.graph import (
     NodeExpandResponse,
     NodeDeleteRequest,
     NodeDeleteResponse,
+    ShortestPathRequest,
+    ShortestPathResponse,
 )
 from app.services.metadata import MetadataService
 from app.services.agtype import AgTypeParser
@@ -61,12 +63,16 @@ async def list_graphs(
         ]
     except Exception as e:
         logger.exception("Error listing graphs")
+        api_exc = translate_db_error(e)
+        if api_exc:
+            raise api_exc from e
         raise APIException(
             code=ErrorCode.DB_UNAVAILABLE,
             message=f"Failed to list graphs: {str(e)}",
             category=ErrorCategory.UPSTREAM,
             status_code=500,
             retryable=True,
+            details={"operation": "list_graphs"},
         ) from e
 
 
@@ -112,8 +118,8 @@ async def get_graph_metadata(
             label_name = row["label_name"]
             # Validate label name
             validated_label_name = validate_label_name(label_name)
-            
-            # Get count: AGE stores each label in schema (graph name) with table name = label name
+
+            # Get count (using ANALYZE estimates for performance)
             count_query = """
                 SELECT c.reltuples::bigint as estimate
                 FROM pg_class c
@@ -155,8 +161,8 @@ async def get_graph_metadata(
             label_name = row["label_name"]
             # Validate label name
             validated_label_name = validate_label_name(label_name)
-            
-            # Get count: AGE stores each label in schema (graph name) with table name = label name
+
+            # Get count estimate (using parameterized query)
             count_query = """
                 SELECT c.reltuples::bigint as estimate
                 FROM pg_class c
@@ -210,12 +216,16 @@ async def get_graph_metadata(
         raise
     except Exception as e:
         logger.exception(f"Error getting metadata for graph {graph_name}")
+        api_exc = translate_db_error(e, context={"graph": graph_name})
+        if api_exc:
+            raise api_exc from e
         raise APIException(
             code=ErrorCode.DB_UNAVAILABLE,
             message=f"Failed to get graph metadata: {str(e)}",
             category=ErrorCategory.UPSTREAM,
             status_code=500,
             retryable=True,
+            details={"graph": graph_name, "operation": "get_graph_metadata"},
         ) from e
 
 
@@ -226,106 +236,64 @@ async def get_meta_graph(
 ) -> MetaGraphResponse:
     """Get meta-graph view showing label-to-label relationship patterns."""
     try:
+        # Validate graph name format (prevents SQL injection)
+        validated_graph_name = validate_graph_name(graph_name)
+
         # Verify graph exists
         graph_check = """
             SELECT graphid FROM ag_catalog.ag_graph WHERE name = %(graph_name)s
         """
         graph_id = await db_conn.execute_scalar(
-            graph_check, {"graph_name": graph_name}
+            graph_check, {"graph_name": validated_graph_name}
         )
         if not graph_id:
             raise APIException(
                 code=ErrorCode.GRAPH_NOT_FOUND,
-                message=f"Graph '{graph_name}' not found",
+                message=f"Graph '{validated_graph_name}' not found",
                 category=ErrorCategory.NOT_FOUND,
                 status_code=404,
             )
 
-        # Query to discover label-to-label patterns via edges
-        # This queries the edge tables to find which node labels connect via which edge labels
-        meta_query = f"""
-            WITH edge_labels AS (
-                SELECT DISTINCT label.name as edge_label
-                FROM ag_catalog.ag_label label
-                JOIN ag_catalog.ag_graph graph ON label.graph = graph.graphid
-                WHERE graph.name = %(graph_name)s AND label.kind = 'e'
+        # Single Cypher query to discover label-to-label patterns (optimized: 1 query vs 3N+1)
+        meta_cypher = """
+            MATCH (src)-[rel]->(dst)
+            WITH labels(src)[0] as src_label,
+                 type(rel) as rel_type,
+                 labels(dst)[0] as dst_label
+            RETURN src_label, rel_type, dst_label, COUNT(*) as edge_count
+            ORDER BY edge_count DESC
+            LIMIT 1000
+        """
+        sql_query = """
+            SELECT * FROM ag_catalog.cypher(%(graph_name)s::text, %(cypher)s::text)
+            AS (src_label agtype, rel_type agtype, dst_label agtype, edge_count agtype)
+        """
+        try:
+            raw_rows = await db_conn.execute_query(
+                sql_query,
+                {"graph_name": validated_graph_name, "cypher": meta_cypher.strip()},
             )
-            SELECT 
-                e.edge_label,
-                COUNT(*) as count
-            FROM edge_labels e
-            CROSS JOIN LATERAL (
-                SELECT start_id, end_id
-                FROM {graph_name}.{e.edge_label}
-                LIMIT 1000
-            ) edge_sample
-            GROUP BY e.edge_label
-        """
-
-        # Simplified approach: query each edge label to find source/target patterns
-        # Get all edge labels
-        edge_query = """
-            SELECT DISTINCT label.name as edge_label
-            FROM ag_catalog.ag_label label
-            JOIN ag_catalog.ag_graph graph ON label.graph = graph.graphid
-            WHERE graph.name = %(graph_name)s AND label.kind = 'e'
-            ORDER BY edge_label
-        """
-        edge_rows = await db_conn.execute_query(edge_query, {"graph_name": validated_graph_name})
+        except Exception as e:
+            logger.warning(
+                "Meta-graph Cypher query failed, falling back to empty: %s", e
+            )
+            raw_rows = []
 
         relationships = []
-        for edge_row in edge_rows:
-            edge_label = edge_row["edge_label"]
-            try:
-                # Validate edge label name
-                validated_edge_label = validate_label_name(edge_label)
-                
-                # Sample edges to discover source/target label patterns
-                # Use validated names (already validated for SQL injection)
-                sample_query = f"""
-                    SELECT 
-                        start_id,
-                        end_id
-                    FROM {validated_graph_name}.{validated_edge_label}
-                    LIMIT 100
-                """
-                samples = await db_conn.execute_query(sample_query)
-
-                # For each sample, find the labels of start and end nodes
-                # This is a simplified approach - in production, you'd want to
-                # query the vertex tables more efficiently
-                for sample in samples[:10]:  # Limit to avoid too many queries
-                    start_id = sample.get("start_id")
-                    end_id = sample.get("end_id")
-
-                    # Find source label (using validated graph name)
-                    source_query = """
-                        SELECT label.name as label_name
-                        FROM ag_catalog.ag_label label
-                        JOIN ag_catalog.ag_graph graph ON label.graph = graph.graphid
-                        WHERE graph.name = %(graph_name)s AND label.kind = 'v'
-                        LIMIT 1
-                    """
-                    # Note: This query uses parameterization, but the actual implementation
-                    # is simplified and doesn't use this query result
-                    # Simplified: we'd need to check which vertex table contains the ID
-                    # For now, use a pattern-based approach
-
-                # For simplicity, create a relationship entry
-                # In a full implementation, we'd aggregate these properly
-                relationships.append(
-                    MetaGraphEdge(
-                        source_label="*",  # Would be discovered from actual data
-                        target_label="*",
-                        edge_label=edge_label,
-                        count=len(samples),
-                    )
+        for row in raw_rows:
+            src_label = AgTypeParser.parse(row.get("src_label"))
+            rel_type = AgTypeParser.parse(row.get("rel_type"))
+            dst_label = AgTypeParser.parse(row.get("dst_label"))
+            count = AgTypeParser.parse(row.get("edge_count"))
+            relationships.append(
+                MetaGraphEdge(
+                    source_label=str(src_label) if src_label is not None else "*",
+                    target_label=str(dst_label) if dst_label is not None else "*",
+                    edge_label=str(rel_type) if rel_type is not None else "?",
+                    count=int(count) if count is not None else 0,
                 )
-            except Exception as e:
-                logger.warning(f"Failed to analyze edge label {edge_label}: {e}")
-                continue
+            )
 
-        validated_graph_name = validate_graph_name(graph_name)
         return MetaGraphResponse(
             graph_name=validated_graph_name,
             relationships=relationships,
@@ -335,12 +303,16 @@ async def get_meta_graph(
         raise
     except Exception as e:
         logger.exception(f"Error getting meta-graph for {graph_name}")
+        api_exc = translate_db_error(e, context={"graph": graph_name})
+        if api_exc:
+            raise api_exc from e
         raise APIException(
             code=ErrorCode.DB_UNAVAILABLE,
             message=f"Failed to get meta-graph: {str(e)}",
             category=ErrorCategory.UPSTREAM,
             status_code=500,
             retryable=True,
+            details={"graph": graph_name, "operation": "get_meta_graph"},
         ) from e
 
 
@@ -457,11 +429,142 @@ async def expand_node_neighborhood(
         raise
     except Exception as e:
         logger.exception(f"Error expanding neighborhood for node {node_id} in graph {graph_name}")
+        api_exc = translate_db_error(
+            e, context={"graph": graph_name, "node_id": node_id}
+        )
+        if api_exc:
+            raise api_exc from e
         raise APIException(
             code=ErrorCode.DB_UNAVAILABLE,
             message=f"Failed to expand node neighborhood: {str(e)}",
             category=ErrorCategory.UPSTREAM,
             status_code=500,
             retryable=True,
+            details={"graph": graph_name, "node_id": node_id, "operation": "expand_node"},
+        ) from e
+
+
+@router.post(
+    "/{graph_name}/shortest-path",
+    response_model=ShortestPathResponse,
+)
+async def find_shortest_path(
+    graph_name: str,
+    request: ShortestPathRequest,
+    db_conn: DatabaseConnection = Depends(get_db_connection),
+) -> ShortestPathResponse:
+    """Find shortest path between two nodes using variable-length path matching."""
+    try:
+        validated_graph_name = validate_graph_name(graph_name)
+
+        # Verify graph exists
+        graph_check = """
+            SELECT graphid FROM ag_catalog.ag_graph WHERE name = %(graph_name)s
+        """
+        graph_id = await db_conn.execute_scalar(
+            graph_check, {"graph_name": validated_graph_name}
+        )
+        if not graph_id:
+            raise APIException(
+                code=ErrorCode.GRAPH_NOT_FOUND,
+                message=f"Graph '{validated_graph_name}' not found",
+                category=ErrorCategory.NOT_FOUND,
+                status_code=404,
+            )
+
+        max_depth = request.max_depth
+        cypher_query = f"""
+            MATCH path = (src)-[*1..{max_depth}]-(dst)
+            WHERE id(src) = $source_id AND id(dst) = $target_id
+            WITH path, size(relationships(path)) as path_length
+            ORDER BY path_length
+            LIMIT 1
+            RETURN nodes(path) as path_nodes, relationships(path) as path_edges, path_length
+        """
+        import json
+
+        params = {
+            "source_id": request.source_id,
+            "target_id": request.target_id,
+        }
+        params_json = json.dumps(params)
+        sql_query = """
+            SELECT * FROM ag_catalog.cypher(%(graph_name)s::text, %(cypher)s::text, %(params)s::agtype)
+            AS (path_nodes agtype, path_edges agtype, path_length agtype)
+        """
+        raw_rows = await db_conn.execute_query(
+            sql_query,
+            {
+                "graph_name": validated_graph_name,
+                "cypher": cypher_query,
+                "params": params_json,
+            },
+        )
+
+        if not raw_rows:
+            return ShortestPathResponse(path_length=0)
+
+        row = raw_rows[0]
+        nodes_raw = AgTypeParser.parse(row.get("path_nodes"))
+        edges_raw = AgTypeParser.parse(row.get("path_edges"))
+        path_length_val = AgTypeParser.parse(row.get("path_length")) or 0
+        path_length_int = int(path_length_val) if path_length_val is not None else 0
+
+        nodes_list: list[dict] = []
+        edges_list: list[dict] = []
+
+        if isinstance(nodes_raw, list):
+            for item in nodes_raw:
+                if isinstance(item, dict):
+                    nodes_list.append(item)
+        if isinstance(edges_raw, list):
+            for item in edges_raw:
+                if isinstance(item, dict):
+                    edges_list.append(item)
+
+        # Interleave nodes and edges in traversal order: n0, e0, n1, e1, ..., n_n
+        path_combined: list[dict] | None = None
+        if nodes_list or edges_list:
+            path_combined = []
+            for i in range(len(edges_list)):
+                if i < len(nodes_list):
+                    path_combined.append(nodes_list[i])
+                path_combined.append(edges_list[i])
+            if nodes_list:
+                path_combined.append(nodes_list[-1])
+        return ShortestPathResponse(
+            path=path_combined,
+            path_length=path_length_int,
+            nodes=nodes_list,
+            edges=edges_list,
+        )
+
+    except APIException:
+        raise
+    except Exception as e:
+        logger.exception(
+            f"Error finding shortest path in graph {graph_name}: {e}"
+        )
+        api_exc = translate_db_error(
+            e,
+            context={
+                "graph": graph_name,
+                "source_id": request.source_id,
+                "target_id": request.target_id,
+            },
+        )
+        if api_exc:
+            raise api_exc from e
+        raise APIException(
+            code=ErrorCode.DB_UNAVAILABLE,
+            message=f"Failed to find shortest path: {str(e)}",
+            category=ErrorCategory.UPSTREAM,
+            status_code=500,
+            retryable=True,
+            details={
+                "graph": graph_name,
+                "source_id": request.source_id,
+                "target_id": request.target_id,
+            },
         ) from e
 

@@ -12,7 +12,6 @@ from app.services.user import user_service
 class TestLogin:
     """Tests for login endpoint."""
 
-    @pytest.mark.skip(reason="Requires session middleware setup")
     def test_login_success(self, client: TestClient):
         """Test successful login."""
         # Use default admin user
@@ -32,7 +31,6 @@ class TestLogin:
         cookies = response.headers["Set-Cookie"]
         assert "kotte_session" in cookies
 
-    @pytest.mark.skip(reason="Requires session middleware setup")
     def test_login_invalid_username(self, client: TestClient):
         """Test login with invalid username."""
         response = client.post(
@@ -46,7 +44,6 @@ class TestLogin:
         assert data["error"]["code"] == "AUTH_INVALID_SESSION"
         assert "Invalid username or password" in data["error"]["message"]
 
-    @pytest.mark.skip(reason="Requires session middleware setup")
     def test_login_invalid_password(self, client: TestClient):
         """Test login with invalid password."""
         response = client.post(
@@ -59,7 +56,6 @@ class TestLogin:
         assert "error" in data
         assert data["error"]["code"] == "AUTH_INVALID_SESSION"
 
-    @pytest.mark.skip(reason="Requires session middleware setup")
     def test_login_missing_fields(self, client: TestClient):
         """Test login with missing fields."""
         response = client.post(
@@ -69,7 +65,6 @@ class TestLogin:
         
         assert response.status_code == 422  # Validation error
 
-    @pytest.mark.skip(reason="Requires session middleware setup")
     def test_login_empty_credentials(self, client: TestClient):
         """Test login with empty credentials."""
         response = client.post(
@@ -84,7 +79,6 @@ class TestLogin:
 class TestLogout:
     """Tests for logout endpoint."""
 
-    @pytest.mark.skip(reason="Requires session middleware setup")
     def test_logout_without_session(self, client: TestClient):
         """Test logout without active session."""
         response = client.post("/api/v1/auth/logout")
@@ -92,7 +86,6 @@ class TestLogout:
         # Should fail with 401 (no session)
         assert response.status_code == 401
 
-    @pytest.mark.skip(reason="Requires session middleware setup")
     def test_logout_with_session(self, client: TestClient):
         """Test successful logout."""
         # First login to create session
@@ -124,7 +117,6 @@ class TestLogout:
 class TestGetCurrentUser:
     """Tests for /auth/me endpoint."""
 
-    @pytest.mark.skip(reason="Requires session middleware setup")
     def test_get_current_user_without_session(self, client: TestClient):
         """Test getting current user without session."""
         response = client.get("/api/v1/auth/me")
@@ -134,7 +126,6 @@ class TestGetCurrentUser:
         assert "error" in data
         assert data["error"]["code"] == "AUTH_REQUIRED"
 
-    @pytest.mark.skip(reason="Requires session middleware setup")
     def test_get_current_user_with_session(self, client: TestClient):
         """Test getting current user with valid session."""
         # First login
@@ -154,7 +145,6 @@ class TestGetCurrentUser:
 class TestCSRFToken:
     """Tests for CSRF token endpoint."""
 
-    @pytest.mark.skip(reason="Requires session middleware setup")
     def test_get_csrf_token_without_session(self, client: TestClient):
         """Test getting CSRF token without session."""
         response = client.get("/api/v1/auth/csrf-token")
@@ -162,7 +152,6 @@ class TestCSRFToken:
         # Should require authentication
         assert response.status_code == 401
 
-    @pytest.mark.skip(reason="Requires session middleware setup")
     def test_get_csrf_token_with_session(self, client: TestClient):
         """Test getting CSRF token with session."""
         # First login

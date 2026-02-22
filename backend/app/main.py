@@ -32,11 +32,34 @@ def create_app() -> FastAPI:
     """Create and configure FastAPI application."""
     app = FastAPI(
         title="Kotte API",
-        description="Apache AGE Graph Visualizer Backend API",
+        description="""
+Apache AGE Graph Visualizer Backend API.
+
+## Features
+- **Graphs**: List, metadata, meta-graph, shortest path
+- **Queries**: Execute Cypher, templates, streaming
+- **Import**: CSV import with transaction support
+- **Session**: Auth, database connection, CSRF protection
+
+## Error Codes
+- `AUTH_REQUIRED`, `AUTH_INVALID_SESSION`: Authentication
+- `GRAPH_NOT_FOUND`, `GRAPH_CONSTRAINT_VIOLATION`: Graph operations
+- `CYPHER_SYNTAX_ERROR`, `QUERY_EXECUTION_ERROR`: Query execution
+- `DB_UNAVAILABLE`: Database connection
+        """.strip(),
         version="0.1.0",
         lifespan=lifespan,
         docs_url="/api/docs" if settings.environment == "development" else None,
         redoc_url="/api/redoc" if settings.environment == "development" else None,
+        openapi_tags=[
+            {"name": "health", "description": "Health checks and metrics"},
+            {"name": "authentication", "description": "Login, logout, session, CSRF token"},
+            {"name": "session", "description": "Database connection management"},
+            {"name": "connections", "description": "Saved connection storage"},
+            {"name": "graphs", "description": "Graph metadata, shortest path, node operations"},
+            {"name": "queries", "description": "Cypher execution, templates, streaming"},
+            {"name": "import", "description": "CSV import"},
+        ],
     )
 
     # CORS middleware
@@ -63,6 +86,7 @@ def create_app() -> FastAPI:
         max_age=settings.session_max_age,
         same_site="lax",
         https_only=settings.environment == "production",
+        session_cookie=settings.session_cookie_name,
     )
 
     # Metrics middleware (collect metrics for all requests)

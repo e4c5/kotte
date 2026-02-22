@@ -20,11 +20,17 @@ export interface GraphEdge {
   properties: Record<string, unknown>
 }
 
+export interface PathHighlights {
+  nodeIds: string[]
+  edgeIds: string[]
+}
+
 interface GraphViewProps {
   nodes: GraphNode[]
   edges: GraphEdge[]
   width?: number
   height?: number
+  pathHighlights?: PathHighlights
   onNodeClick?: (node: GraphNode) => void
   onNodeRightClick?: (node: GraphNode, event: MouseEvent) => void
   onExportReady?: (exportFn: () => Promise<void>) => void
@@ -35,6 +41,7 @@ export default function GraphView({
   edges,
   width = 800,
   height = 600,
+  pathHighlights,
   onNodeClick,
   onNodeRightClick,
   onExportReady,
@@ -87,6 +94,15 @@ export default function GraphView({
 
     return filtered
   }, [nodes, filters, hiddenNodes])
+
+  const pathNodeIds = useMemo(
+    () => new Set(pathHighlights?.nodeIds?.map(String) ?? []),
+    [pathHighlights?.nodeIds]
+  )
+  const pathEdgeIds = useMemo(
+    () => new Set(pathHighlights?.edgeIds?.map(String) ?? []),
+    [pathHighlights?.edgeIds]
+  )
 
   const filteredEdges = useMemo(() => {
     let filtered = edges.filter((edge) => {
@@ -254,9 +270,13 @@ export default function GraphView({
       .data(filteredEdges)
       .enter()
       .append('line')
-      .attr('stroke', (d) => getEdgeStyle(d).color)
-      .attr('stroke-opacity', 0.6)
-      .attr('stroke-width', (d) => getEdgeStyle(d).size)
+      .attr('stroke', (d) =>
+        pathEdgeIds.has(String(d.id)) ? '#0066cc' : getEdgeStyle(d).color
+      )
+      .attr('stroke-opacity', (d) => (pathEdgeIds.has(String(d.id)) ? 1 : 0.6))
+      .attr('stroke-width', (d) =>
+        pathEdgeIds.has(String(d.id)) ? Math.max(3, getEdgeStyle(d).size) : getEdgeStyle(d).size
+      )
 
     // Draw nodes
     const node = container
@@ -269,9 +289,19 @@ export default function GraphView({
       .enter()
       .append('circle')
       .attr('r', (d) => getNodeStyle(d).size)
-      .attr('fill', (d) => getNodeStyle(d).color)
-      .attr('stroke', (d) => (selectedNode === d.id ? '#ff0000' : '#fff'))
-      .attr('stroke-width', (d) => (selectedNode === d.id ? 3 : 2))
+      .attr('fill', (d) =>
+        pathNodeIds.has(d.id) ? '#0066cc' : getNodeStyle(d).color
+      )
+      .attr('stroke', (d) => {
+        if (selectedNode === d.id) return '#ff0000'
+        if (pathNodeIds.has(d.id)) return '#004499'
+        return '#fff'
+      })
+      .attr('stroke-width', (d) => {
+        if (selectedNode === d.id) return 3
+        if (pathNodeIds.has(d.id)) return 3
+        return 2
+      })
       .style('cursor', 'pointer')
       .attr('role', 'button')
       .attr('tabindex', 0)
@@ -384,6 +414,8 @@ export default function GraphView({
   }, [
     filteredNodes,
     filteredEdges,
+    pathNodeIds,
+    pathEdgeIds,
     width,
     height,
     layout,

@@ -118,7 +118,7 @@ class TestAgTypeParser:
         assert result["label"] == "KNOWS"
 
     def test_parse_path(self):
-        """Test parsing a path."""
+        """Test parsing a path with preserved structure."""
         path_data = {
             "path": [
                 {"id": 1, "label": "Person", "properties": {}},
@@ -127,12 +127,17 @@ class TestAgTypeParser:
             ]
         }
         result = AgTypeParser.parse(path_data)
-        
-        # Path should be parsed as dict with type and elements
+
         assert isinstance(result, dict)
         assert result["type"] == "path"
         assert "elements" in result
         assert len(result["elements"]) == 3
+        assert "segments" in result
+        assert len(result["segments"]) == 1
+        seg = result["segments"][0]
+        assert "start_node" in seg and "edge" in seg and "end_node" in seg
+        assert result["node_ids"] == ["1", "2"]
+        assert result["edge_ids"] == ["1"]
 
     def test_parse_nested_structures(self):
         """Test parsing nested structures."""
@@ -327,9 +332,29 @@ class TestGraphElementExtraction:
                 ]
             }
         ]
-        
         result = AgTypeParser.extract_graph_elements(rows)
-        
         assert len(result["nodes"]) == 1
+        assert len(result["edges"]) == 1
+
+    def test_extract_preserves_path_structure(self):
+        """Test that path-like results produce paths with segments."""
+        rows = [
+            {
+                "path": [
+                    {"id": 1, "label": "Person", "properties": {"name": "A"}},
+                    {"id": 10, "label": "KNOWS", "start_id": 1, "end_id": 2, "properties": {}},
+                    {"id": 2, "label": "Person", "properties": {"name": "B"}},
+                ]
+            }
+        ]
+        result = AgTypeParser.extract_graph_elements(rows)
+        assert "paths" in result
+        assert len(result["paths"]) == 1
+        p = result["paths"][0]
+        assert p["type"] == "path"
+        assert len(p["segments"]) == 1
+        assert p["node_ids"] == ["1", "2"]
+        assert p["edge_ids"] == ["10"]
+        assert len(result["nodes"]) == 2
         assert len(result["edges"]) == 1
 

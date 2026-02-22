@@ -5,6 +5,25 @@ import httpx
 from unittest.mock import AsyncMock, MagicMock, patch
 
 
+class TestQueryTemplates:
+    """Integration tests for query templates endpoint."""
+
+    @pytest.mark.asyncio
+    async def test_list_templates(self, authenticated_client: httpx.AsyncClient):
+        """Test listing query templates (no DB required)."""
+        response = await authenticated_client.get("/api/v1/queries/templates")
+        assert response.status_code == 200
+        data = response.json()
+        assert isinstance(data, list)
+        if len(data) > 0:
+            t = data[0]
+            assert "id" in t
+            assert "name" in t
+            assert "description" in t
+            assert "cypher" in t
+            assert "param_schema" in t
+
+
 class TestQueryExecution:
     """Integration tests for query execution endpoints."""
 
@@ -127,7 +146,7 @@ class TestQueryExecution:
             },
         )
         
-        assert response.status_code == 422
+        assert response.status_code == 400
         data = response.json()
         assert "error" in data
         assert data["error"]["code"] == "QUERY_VALIDATION_ERROR"
