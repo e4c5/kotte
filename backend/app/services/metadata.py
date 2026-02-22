@@ -69,9 +69,13 @@ class MetadataService:
             return sorted(list(property_keys))
 
         except Exception as e:
-            logger.warning(
-                f"Failed to discover properties for {graph_name}.{label_name}: {e}"
-            )
+            # Log at DEBUG when the relation is missing (common for catalog-only
+            # labels or graphs created outside AGE); WARNING for other errors.
+            msg = f"Failed to discover properties for {graph_name}.{label_name}: {e}"
+            if "does not exist" in str(e):
+                logger.debug(msg)
+            else:
+                logger.warning(msg)
             return []
 
     @staticmethod
@@ -107,9 +111,11 @@ class MetadataService:
             result = await db_conn.execute_scalar(query)
             return int(result) if result else 0
         except Exception as e:
-            logger.warning(
-                f"Failed to get exact count for {graph_name}.{label_name}: {e}"
-            )
+            msg = f"Failed to get exact count for {graph_name}.{label_name}: {e}"
+            if "does not exist" in str(e):
+                logger.debug(msg)
+            else:
+                logger.warning(msg)
             return 0
 
     @staticmethod
@@ -182,8 +188,10 @@ class MetadataService:
             }
 
         except Exception as e:
-            logger.warning(
-                f"Failed to get property statistics for {graph_name}.{label_name}.{property_name}: {e}"
-            )
+            msg = f"Failed to get property statistics for {graph_name}.{label_name}.{property_name}: {e}"
+            if "does not exist" in str(e):
+                logger.debug(msg)
+            else:
+                logger.warning(msg)
             return {"min": None, "max": None}
 

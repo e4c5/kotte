@@ -113,15 +113,21 @@ async def get_graph_metadata(
             # Validate label name
             validated_label_name = validate_label_name(label_name)
             
-            # Get count (using ANALYZE estimates for performance)
-            # Use parameterized query with validated names
-            table_name = f"{validated_graph_name}_{validated_label_name}"
+            # Get count: AGE stores each label in schema (graph name) with table name = label name
             count_query = """
-                SELECT reltuples::bigint as estimate
-                FROM pg_class
-                WHERE relname = %(table_name)s
+                SELECT c.reltuples::bigint as estimate
+                FROM pg_class c
+                JOIN pg_namespace n ON n.oid = c.relnamespace
+                WHERE n.nspname = %(schema_name)s AND c.relname = %(rel_name)s
             """
-            count = await db_conn.execute_scalar(count_query, {"table_name": table_name}) or 0
+            count = await db_conn.execute_scalar(
+                count_query,
+                {"schema_name": validated_graph_name, "rel_name": validated_label_name},
+            ) or 0
+            if count == 0:
+                count = await MetadataService.get_exact_counts(
+                    db_conn, validated_graph_name, validated_label_name, "v"
+                )
 
             # Discover properties by sampling
             properties = await MetadataService.discover_properties(
@@ -150,14 +156,21 @@ async def get_graph_metadata(
             # Validate label name
             validated_label_name = validate_label_name(label_name)
             
-            # Get count estimate (using parameterized query)
-            table_name = f"{validated_graph_name}_{validated_label_name}"
+            # Get count: AGE stores each label in schema (graph name) with table name = label name
             count_query = """
-                SELECT reltuples::bigint as estimate
-                FROM pg_class
-                WHERE relname = %(table_name)s
+                SELECT c.reltuples::bigint as estimate
+                FROM pg_class c
+                JOIN pg_namespace n ON n.oid = c.relnamespace
+                WHERE n.nspname = %(schema_name)s AND c.relname = %(rel_name)s
             """
-            count = await db_conn.execute_scalar(count_query, {"table_name": table_name}) or 0
+            count = await db_conn.execute_scalar(
+                count_query,
+                {"schema_name": validated_graph_name, "rel_name": validated_label_name},
+            ) or 0
+            if count == 0:
+                count = await MetadataService.get_exact_counts(
+                    db_conn, validated_graph_name, validated_label_name, "e"
+                )
 
             # Discover properties by sampling
             properties = await MetadataService.discover_properties(
