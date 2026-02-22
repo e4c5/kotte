@@ -620,7 +620,7 @@ function initializeLayout(
         const cellW = usableWidth / (cols + 1)
         const cellH = usableHeight / (rows + 1)
         nodes.forEach((node, idx) => {
-          if (node.x == null || node.y == null) {
+          if (node.x == null && node.y == null) {
             const col = idx % cols
             const row = Math.floor(idx / cols)
             node.x = xMin + (col + 1) * cellW

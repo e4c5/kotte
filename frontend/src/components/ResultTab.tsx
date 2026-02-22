@@ -81,7 +81,13 @@ export default function ResultTab({
           disabled={!hasGraphData || !!result.visualization_warning}
           aria-label="Switch to graph view"
           aria-pressed={tab.viewMode === 'graph'}
-          title={!hasGraphData ? 'Return nodes and/or edges in your query (e.g. RETURN n, r, m) to see the graph.' : undefined}
+          title={
+            !hasGraphData
+              ? 'Return nodes and/or edges in your query (e.g. RETURN n, r, m) to see the graph.'
+              : result.visualization_warning
+                ? result.visualization_warning
+                : undefined
+          }
           style={{
             padding: '0.5rem 1rem',
             cursor: hasGraphData && !result.visualization_warning ? 'pointer' : 'not-allowed',

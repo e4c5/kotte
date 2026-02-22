@@ -46,7 +46,7 @@ test('quick to workspace: login, connect, open workspace', async ({ page }) => {
 
   if (await workspaceContent.isVisible()) {
     await expect(page).toHaveURL(/\/workspace/)
-    if (process.env.KEEP_BROWSER_OPEN === '1') {
+    if (process.env.KEEP_BROWSER_OPEN === '1' && !process.env.CI) {
       await page.waitForTimeout(3600000)
     }
     return
@@ -67,7 +67,7 @@ test('quick to workspace: login, connect, open workspace', async ({ page }) => {
   await page.waitForURL(/\/workspace/, { timeout: 10000 })
   await expect(page.getByText(/cypher query|query 1|graphs/i).first()).toBeVisible({ timeout: 10000 })
 
-  if (process.env.KEEP_BROWSER_OPEN === '1') {
+  if (process.env.KEEP_BROWSER_OPEN === '1' && !process.env.CI) {
     await page.waitForTimeout(3600000)
   }
 })
