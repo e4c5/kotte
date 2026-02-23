@@ -334,6 +334,7 @@ export default function GraphControls({
                   color: '#1f77b4',
                   size: 10,
                   captionField: 'label',
+                  showLabel: true,
                 }
                 return (
                   <div
@@ -390,6 +391,16 @@ export default function GraphControls({
                           }}
                         />
                       </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <label style={{ fontSize: '0.85rem', width: '60px' }}>Show:</label>
+                        <input
+                          type="checkbox"
+                          checked={style.showLabel !== false}
+                          onChange={(e) =>
+                            setNodeStyle(label, { ...style, showLabel: e.target.checked })
+                          }
+                        />
+                      </div>
                     </div>
                   </div>
                 )
@@ -399,7 +410,7 @@ export default function GraphControls({
             <div style={{ marginBottom: '1.5rem' }}>
               <h4 style={{ marginTop: 0, marginBottom: '0.75rem' }}>Edge Styles</h4>
               {availableEdgeLabels.map((label) => {
-                const style = edgeStyles[label] || { color: '#999', size: 2 }
+                const style = edgeStyles[label] || { color: '#999', size: 2, captionField: 'label', showLabel: true }
                 return (
                   <div
                     key={label}
@@ -436,6 +447,34 @@ export default function GraphControls({
                           style={{ flex: 1 }}
                         />
                         <span style={{ fontSize: '0.85rem', width: '30px' }}>{style.size}</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <label style={{ fontSize: '0.85rem', width: '60px' }}>Caption:</label>
+                        <input
+                          type="text"
+                          value={style.captionField || 'label'}
+                          onChange={(e) =>
+                            setEdgeStyle(label, { ...style, captionField: e.target.value })
+                          }
+                          placeholder="Property name or 'label'"
+                          style={{
+                            flex: 1,
+                            padding: '0.25rem',
+                            border: '1px solid #ccc',
+                            borderRadius: '4px',
+                            fontSize: '0.85rem',
+                          }}
+                        />
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <label style={{ fontSize: '0.85rem', width: '60px' }}>Show:</label>
+                        <input
+                          type="checkbox"
+                          checked={style.showLabel !== false}
+                          onChange={(e) =>
+                            setEdgeStyle(label, { ...style, showLabel: e.target.checked })
+                          }
+                        />
                       </div>
                     </div>
                   </div>
@@ -574,4 +613,3 @@ export default function GraphControls({
     </div>
   )
 }
-

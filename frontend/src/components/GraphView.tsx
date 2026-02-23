@@ -198,6 +198,8 @@ export default function GraphView({
     const baseStyle = edgeStyles[edge.label] || {
       color: '#999',
       size: 2,
+      captionField: 'label',
+      showLabel: true,
     }
     
     // Apply width mapping if enabled
@@ -224,6 +226,9 @@ export default function GraphView({
 
   const getNodeCaption = (node: GraphNode): string => {
     const style = getNodeStyle(node)
+    if (style.showLabel === false) {
+      return ''
+    }
     const field = style.captionField || 'label'
     let caption: string
     if (field === 'label') {
@@ -246,6 +251,22 @@ export default function GraphView({
       }
     }
     return caption
+  }
+
+  const getEdgeCaption = (edge: GraphEdge): string => {
+    const style = getEdgeStyle(edge)
+    if (style.showLabel === false) {
+      return ''
+    }
+    const field = style.captionField || 'label'
+    if (field === 'label') {
+      return edge.label
+    }
+    const fromProperty = edge.properties?.[field]
+    if (fromProperty == null) {
+      return edge.label
+    }
+    return String(fromProperty)
   }
 
   useEffect(() => {
@@ -444,6 +465,20 @@ export default function GraphView({
       .style('pointer-events', 'none')
       .style('fill', '#e4e4e7')
 
+    const edgeLabels = container
+      .append('g')
+      .attr('class', 'edge-labels')
+      .selectAll('text')
+      .data(filteredEdges)
+      .enter()
+      .append('text')
+      .text((d) => getEdgeCaption(d))
+      .attr('font-size', '10px')
+      .attr('text-anchor', 'middle')
+      .attr('dy', -4)
+      .style('pointer-events', 'none')
+      .style('fill', '#a1a1aa')
+
     const centerX = viewportWidth / 2
     const centerY = viewportHeight / 2
 
@@ -507,6 +542,21 @@ export default function GraphView({
 
       node.attr('cx', (d) => d.x ?? centerX).attr('cy', (d) => d.y ?? centerY)
       labels.attr('x', (d) => d.x ?? centerX).attr('y', (d) => d.y ?? centerY)
+      edgeLabels
+        .attr('x', (d) => {
+          const source = getNode(d.source)
+          const target = getNode(d.target)
+          const sx = source?.x ?? centerX
+          const tx = target?.x ?? centerX
+          return (sx + tx) / 2
+        })
+        .attr('y', (d) => {
+          const source = getNode(d.source)
+          const target = getNode(d.target)
+          const sy = source?.y ?? centerY
+          const ty = target?.y ?? centerY
+          return (sy + ty) / 2
+        })
     }
 
     simulation.on('tick', applyPositions)

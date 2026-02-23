@@ -66,7 +66,7 @@ export default function MetadataSidebar({
     if (type === 'node') {
       return `MATCH (n:${label}) RETURN n LIMIT 100`
     }
-    return `MATCH ()-[r:${label}]->() RETURN r LIMIT 100`
+    return `MATCH (a)-[r:${label}]->(b) RETURN a, r, b LIMIT 100`
   }
 
   if (collapsed) {
