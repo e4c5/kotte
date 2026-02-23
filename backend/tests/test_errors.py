@@ -124,3 +124,22 @@ async def test_validation_error_structure(async_client: httpx.AsyncClient):
         json={"username": "admin"},  # missing password
     )
     assert response.status_code == 422
+    data = response.json()
+    # FastAPI/Pydantic validation errors should include detail list.
+    # Keep compatibility with possible custom error envelope.
+    if "detail" in data:
+        assert isinstance(data["detail"], list)
+        assert len(data["detail"]) > 0
+        assert any(
+            "password" in ".".join(str(x) for x in item.get("loc", []))
+            for item in data["detail"]
+            if isinstance(item, dict)
+        )
+    else:
+        assert "error" in data
+        error_obj = data["error"]
+        assert isinstance(error_obj, dict)
+        assert any(
+            "password" in str(v).lower()
+            for v in error_obj.values()
+        )

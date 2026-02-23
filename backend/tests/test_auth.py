@@ -105,7 +105,7 @@ class TestLogout:
         # Get session cookie
         # Async client keeps cookie jar; just call logout.
         response = await async_client.post("/api/v1/auth/logout")
-        assert response.status_code in [200, 401, 500]
+        assert response.status_code in [200, 401]
 
 
 class TestGetCurrentUser:
