@@ -94,70 +94,49 @@ export default function TableView({
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      <div style={{ padding: '1rem', borderBottom: '1px solid #ccc', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+    <div className="flex flex-col h-full">
+      <div className="flex justify-between items-center px-4 py-3 border-b border-zinc-700 bg-zinc-900/80 text-zinc-300 text-sm">
         <div>
           Showing {paginatedRows.length} of {rows.length} rows
         </div>
-        <div style={{ display: 'flex', gap: '0.5rem' }}>
+        <div className="flex gap-2">
           <button
+            type="button"
             onClick={exportToCSV}
-            style={{
-              padding: '0.5rem 1rem',
-              fontSize: '0.9rem',
-              cursor: 'pointer',
-              border: '1px solid #ccc',
-              borderRadius: '4px',
-              backgroundColor: 'white',
-            }}
+            className="px-4 py-2 text-sm rounded-lg border border-zinc-600 bg-zinc-700 text-zinc-100 hover:bg-zinc-600 transition-colors"
           >
             Export CSV
           </button>
           <button
+            type="button"
             onClick={exportToJSON}
-            style={{
-              padding: '0.5rem 1rem',
-              fontSize: '0.9rem',
-              cursor: 'pointer',
-              border: '1px solid #ccc',
-              borderRadius: '4px',
-              backgroundColor: 'white',
-            }}
+            className="px-4 py-2 text-sm rounded-lg border border-zinc-600 bg-zinc-700 text-zinc-100 hover:bg-zinc-600 transition-colors"
           >
             Export JSON
           </button>
         </div>
       </div>
-      <div style={{ flex: 1, overflow: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead style={{ position: 'sticky', top: 0, backgroundColor: '#f5f5f5', zIndex: 1 }}>
+      <div style={{ flex: 1, overflow: 'auto' }} className="bg-zinc-950">
+        <table className="w-full border-collapse">
+          <thead className="sticky top-0 z-10 bg-zinc-800 border-b-2 border-zinc-600">
             <tr>
               {columns.map((col) => (
                 <th
                   key={col}
-                  style={{
-                    padding: '0.75rem',
-                    textAlign: 'left',
-                    borderBottom: '2px solid #ddd',
-                    fontWeight: 'bold',
-                  }}
+                  className="px-3 py-2.5 text-left text-sm font-semibold text-zinc-100"
                 >
                   {col}
                 </th>
               ))}
             </tr>
           </thead>
-          <tbody>
+          <tbody className="text-zinc-100">
             {paginatedRows.map((row, idx) => (
-              <tr key={idx} style={{ borderBottom: '1px solid #eee' }}>
+              <tr key={idx} className="border-b border-zinc-700 hover:bg-zinc-800/50">
                 {columns.map((col) => (
                   <td
                     key={col}
-                    style={{
-                      padding: '0.75rem',
-                      fontFamily: 'monospace',
-                      fontSize: '0.9rem',
-                    }}
+                    className="px-3 py-2.5 font-mono text-sm text-zinc-200"
                   >
                     {formatValue(row.data[col])}
                   </td>
@@ -168,35 +147,23 @@ export default function TableView({
         </table>
       </div>
       {streaming && hasMore && onLoadMore ? (
-        <div style={{ padding: '1rem', borderTop: '1px solid #ccc', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+        <div className="flex justify-center items-center px-4 py-3 border-t border-zinc-700 bg-zinc-900/80">
           <button
+            type="button"
             onClick={onLoadMore}
             disabled={loadingMore}
-            style={{
-              padding: '0.5rem 1rem',
-              cursor: loadingMore ? 'not-allowed' : 'pointer',
-              border: '1px solid #ccc',
-              borderRadius: '4px',
-              backgroundColor: 'white',
-              opacity: loadingMore ? 0.5 : 1,
-            }}
+            className="px-4 py-2 rounded-lg border border-zinc-600 bg-zinc-700 text-zinc-100 hover:bg-zinc-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {loadingMore ? 'Loading...' : 'Load More'}
           </button>
         </div>
       ) : totalPages > 1 ? (
-        <div style={{ padding: '1rem', borderTop: '1px solid #ccc', display: 'flex', justifyContent: 'center', gap: '0.5rem', alignItems: 'center' }}>
+        <div className="flex justify-center gap-2 items-center px-4 py-3 border-t border-zinc-700 bg-zinc-900/80 text-zinc-300 text-sm">
           <button
+            type="button"
             onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
             disabled={currentPage === 1}
-            style={{
-              padding: '0.5rem 1rem',
-              cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
-              border: '1px solid #ccc',
-              borderRadius: '4px',
-              backgroundColor: 'white',
-              opacity: currentPage === 1 ? 0.5 : 1,
-            }}
+            className="px-4 py-2 rounded-lg border border-zinc-600 bg-zinc-700 text-zinc-100 hover:bg-zinc-600 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-zinc-700 transition-colors"
           >
             Previous
           </button>
@@ -204,16 +171,10 @@ export default function TableView({
             Page {currentPage} of {totalPages}
           </span>
           <button
+            type="button"
             onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
             disabled={currentPage === totalPages}
-            style={{
-              padding: '0.5rem 1rem',
-              cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
-              border: '1px solid #ccc',
-              borderRadius: '4px',
-              backgroundColor: 'white',
-              opacity: currentPage === totalPages ? 0.5 : 1,
-            }}
+            className="px-4 py-2 rounded-lg border border-zinc-600 bg-zinc-700 text-zinc-100 hover:bg-zinc-600 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-zinc-700 transition-colors"
           >
             Next
           </button>

@@ -358,10 +358,14 @@ class DatabaseConnection:
         Execute a Cypher query via Apache AGE using literal SQL (graph and query as literals).
         When there are no Cypher parameters we use the 2-arg cypher(graph, query) form;
         when params are present we use the 3-arg form with a bound agtype parameter.
+        A trailing semicolon is stripped before sending to AGE, which does not expect it.
         """
-        tag = self._dollar_quote_tag(cypher_query)
+        cypher_normalized = cypher_query.rstrip()
+        if cypher_normalized.endswith(";"):
+            cypher_normalized = cypher_normalized[:-1].rstrip()
+        tag = self._dollar_quote_tag(cypher_normalized)
         graph_literal = graph_name.replace("'", "''")
-        cypher_literal = tag + cypher_query + tag
+        cypher_literal = tag + cypher_normalized + tag
         has_params = bool(params)
         json_mod = __import__("json")
         params_json = json_mod.dumps(params) if has_params else "null"
