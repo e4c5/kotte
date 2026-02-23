@@ -113,12 +113,23 @@ class MetadataService:
     ) -> Dict[str, int]:
         """
         Get approximate counts for all labels of a given kind in one query.
+
+        Args:
+            db_conn: Database connection.
+            graph_name: Name of the graph (validated via validate_graph_name).
+            label_kind: Label kind ('v' for vertex, 'e' for edge).
+
+        Returns:
+            Mapping of label name to non-negative approximate row count.
         """
         try:
             validated_graph_name = validate_graph_name(graph_name)
             query = """
                 SELECT label.name as label_name,
-                       COALESCE(c.reltuples::bigint, 0) as estimate
+                       CASE
+                           WHEN c.reltuples IS NULL OR c.reltuples <= 0 THEN 0
+                           ELSE c.reltuples::bigint
+                       END as estimate
                 FROM ag_catalog.ag_label label
                 JOIN ag_catalog.ag_graph graph ON label.graph = graph.graphid
                 LEFT JOIN pg_namespace n ON n.nspname = %(graph_name)s
@@ -131,7 +142,7 @@ class MetadataService:
                 {"graph_name": validated_graph_name, "label_kind": label_kind},
             )
             return {
-                row["label_name"]: int(row.get("estimate") or 0)
+                row["label_name"]: max(int(row.get("estimate") or 0), 0)
                 for row in rows
                 if row.get("label_name")
             }

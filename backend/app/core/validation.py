@@ -143,7 +143,7 @@ def add_result_limit_if_missing(cypher: str, max_limit: int) -> tuple[str, bool]
     Returns:
         (cypher_query, limit_was_added)
     """
-    if "LIMIT" in cypher.upper():
+    if re.search(r"\bLIMIT\b", cypher, flags=re.IGNORECASE):
         return cypher, False
     return f"{cypher.rstrip()} LIMIT {max_limit}", True
 

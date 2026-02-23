@@ -102,6 +102,8 @@ async def stream_query_results(
 
         if has_limit or has_skip:
             # Query already controls result window; execute once and stream in-memory chunks.
+            # Ignore request offset here to avoid double-applying SKIP/OFFSET.
+            stream_offset = 0
             raw_rows = await db_conn.execute_cypher(
                 validated_graph_name,
                 cypher_query,
@@ -119,7 +121,7 @@ async def stream_query_results(
                 parsed_rows.append(parsed_row)
 
             all_columns = sorted(list(columns))
-            capped_rows = parsed_rows[offset : offset + max_rows]
+            capped_rows = parsed_rows[stream_offset : stream_offset + max_rows]
             for start in range(0, len(capped_rows), chunk_size):
                 chunk_rows = capped_rows[start : start + chunk_size]
                 result_rows = [QueryResultRow(data=row) for row in chunk_rows]
@@ -128,13 +130,13 @@ async def stream_query_results(
                     columns=all_columns,
                     rows=result_rows,
                     chunk_size=len(result_rows),
-                    offset=offset + start,
+                    offset=stream_offset + start,
                     has_more=has_more,
                     total_rows=None,
                 )
                 yield json.dumps(chunk.model_dump(), default=str) + "\n"
 
-            if len(parsed_rows) - offset > max_rows:
+            if len(parsed_rows) - stream_offset > max_rows:
                 error_chunk = {
                     "error": {
                         "code": ErrorCode.QUERY_VALIDATION_ERROR,
