@@ -105,70 +105,57 @@ export default function SavedConnections({
     }
   }
 
+  const inputClass =
+    'w-full px-3 py-2 text-sm bg-zinc-800 border border-zinc-600 rounded-lg text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent'
+
   return (
-    <div style={{ marginTop: '2rem' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-        <h3>Saved Connections</h3>
+    <div>
+      <div className="flex flex-wrap justify-between items-center gap-2 mb-4">
+        <h3 className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">
+          Saved Connections
+        </h3>
         {currentConfig && (
           <button
             type="button"
             onClick={() => connectionTested && setShowSaveDialog(true)}
             disabled={!connectionTested}
-            title={!connectionTested ? 'Test the connection first to save it' : 'Save this connection'}
-            style={{
-              padding: '0.5rem 1rem',
-              fontSize: '0.9rem',
-              cursor: connectionTested ? 'pointer' : 'not-allowed',
-              opacity: connectionTested ? 1 : 0.6,
-            }}
+            title={
+              !connectionTested ? 'Test the connection first to save it' : 'Save this connection'
+            }
+            className="px-3 py-1.5 text-sm rounded-lg border border-zinc-600 text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             Save Current Connection
           </button>
         )}
       </div>
       {currentConfig && !connectionTested && (
-        <p style={{ fontSize: '0.85rem', color: '#666', marginBottom: '1rem' }}>
+        <p className="text-sm text-zinc-500 mb-4">
           Test the connection first to enable saving.
         </p>
       )}
 
       {showSaveDialog && (
-        <div
-          style={{
-            border: '1px solid #ccc',
-            borderRadius: '4px',
-            padding: '1rem',
-            marginBottom: '1rem',
-            backgroundColor: '#f9f9f9',
-          }}
-        >
-          <label>
-            Connection Name:
-            <input
-              type="text"
-              value={connectionName}
-              onChange={(e) => setConnectionName(e.target.value)}
-              placeholder="My Database Connection"
-              style={{
-                width: '100%',
-                padding: '0.5rem',
-                marginTop: '0.25rem',
-                marginBottom: '0.5rem',
-              }}
-              autoFocus
-            />
+        <div className="rounded-lg border border-zinc-700 bg-zinc-800/50 p-4 mb-4">
+          <label htmlFor="saved-conn-name" className="block text-sm font-medium text-zinc-300 mb-2">
+            Connection name
           </label>
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <input
+            id="saved-conn-name"
+            type="text"
+            value={connectionName}
+            onChange={(e) => setConnectionName(e.target.value)}
+            placeholder="My Database Connection"
+            className={`${inputClass} mb-3`}
+            autoFocus
+          />
+          <div className="flex gap-2">
             <button
               type="button"
               onClick={handleSave}
               disabled={saving || !connectionName.trim()}
-              style={{
-                padding: '0.5rem 1rem',
-                cursor: saving ? 'not-allowed' : 'pointer',
-              }}
+              className="px-3 py-1.5 text-sm font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              {saving ? 'Saving...' : 'Save'}
+              {saving ? 'Saving…' : 'Save'}
             </button>
             <button
               type="button"
@@ -177,10 +164,7 @@ export default function SavedConnections({
                 setConnectionName('')
                 setError(null)
               }}
-              style={{
-                padding: '0.5rem 1rem',
-                cursor: 'pointer',
-              }}
+              className="px-3 py-1.5 text-sm rounded-lg border border-zinc-600 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 transition-colors"
             >
               Cancel
             </button>
@@ -189,60 +173,43 @@ export default function SavedConnections({
       )}
 
       {error && (
-        <div style={{ color: 'red', marginBottom: '1rem', fontSize: '0.9rem' }}>
+        <div className="text-sm text-red-400 bg-red-900/30 border border-red-800 rounded-lg px-3 py-2 mb-4">
           {error}
         </div>
       )}
 
       {loading ? (
-        <div>Loading connections...</div>
+        <div className="text-sm text-zinc-500 py-4">Loading connections…</div>
       ) : connections.length === 0 ? (
-        <div style={{ color: '#666', fontStyle: 'italic' }}>
+        <div className="text-sm text-zinc-500 italic py-4">
           No saved connections. Save a connection to use it later.
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+        <div className="flex flex-col gap-2">
           {connections.map((conn) => (
             <div
               key={conn.id}
-              style={{
-                border: '1px solid #ddd',
-                borderRadius: '4px',
-                padding: '0.75rem',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                cursor: 'pointer',
-                backgroundColor: '#fff',
-              }}
+              role="button"
+              tabIndex={0}
               onClick={() => handleLoad(conn.id)}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = '#f5f5f5'
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  handleLoad(conn.id)
+                }
               }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = '#fff'
-              }}
+              className="flex justify-between items-center gap-3 p-3 rounded-lg border border-zinc-700 bg-zinc-800/50 cursor-pointer hover:bg-zinc-700/50 transition-colors"
             >
-              <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 'bold', marginBottom: '0.25rem' }}>
-                  {conn.name}
-                </div>
-                <div style={{ fontSize: '0.9rem', color: '#666' }}>
+              <div className="min-w-0 flex-1">
+                <div className="font-semibold text-zinc-200 truncate">{conn.name}</div>
+                <div className="text-xs text-zinc-500 truncate">
                   {conn.host}:{conn.port} / {conn.database}
                 </div>
               </div>
               <button
                 type="button"
                 onClick={(e) => handleDelete(conn.id, e)}
-                style={{
-                  padding: '0.25rem 0.5rem',
-                  fontSize: '0.8rem',
-                  cursor: 'pointer',
-                  backgroundColor: '#dc3545',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '3px',
-                }}
+                className="shrink-0 px-2.5 py-1 text-xs font-medium rounded border border-red-800 bg-red-900/60 text-red-200 hover:bg-red-800/60 transition-colors"
                 title="Delete connection"
               >
                 Delete

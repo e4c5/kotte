@@ -61,106 +61,109 @@ export default function ConnectionPage() {
     setConfig(loadedConfig)
   }
 
+  const inputClass =
+    'w-full px-3 py-2 text-sm bg-zinc-800 border border-zinc-600 rounded-lg text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent'
+  const labelClass = 'block text-sm font-medium text-zinc-300 mb-1'
+
   return (
-    <div style={{ padding: '2rem', maxWidth: '800px', margin: '0 auto' }}>
-      <h2>Connect to Database</h2>
-      
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem', marginTop: '2rem' }}>
+    <div className="p-6 md:p-8 max-w-4xl mx-auto">
+      <h2 className="text-xl font-semibold text-zinc-100 mb-6">Connect to Database</h2>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         {/* Connection Form */}
-        <div>
-          <h3>New Connection</h3>
-          <form onSubmit={handleTestConnection}>
-            <div style={{ marginBottom: '1rem' }}>
-              <label>
-                Host:
-                <input
-                  type="text"
-                  value={config.host}
-                  onChange={(e) => setConfig({ ...config, host: e.target.value })}
-                  required
-                  style={{ width: '100%', padding: '0.5rem', marginTop: '0.25rem' }}
-                />
+        <div className="rounded-lg border border-zinc-700 bg-zinc-900/50 p-6">
+          <h3 className="text-sm font-semibold text-zinc-300 uppercase tracking-wide mb-4">
+            New Connection
+          </h3>
+          <form onSubmit={handleTestConnection} className="space-y-4">
+            <div>
+              <label htmlFor="conn-host" className={labelClass}>
+                Host
               </label>
+              <input
+                id="conn-host"
+                type="text"
+                value={config.host}
+                onChange={(e) => setConfig({ ...config, host: e.target.value })}
+                required
+                className={inputClass}
+              />
             </div>
-            <div style={{ marginBottom: '1rem' }}>
-              <label>
-                Port:
-                <input
-                  type="number"
-                  value={config.port}
-                  onChange={(e) => setConfig({ ...config, port: parseInt(e.target.value) })}
-                  required
-                  style={{ width: '100%', padding: '0.5rem', marginTop: '0.25rem' }}
-                />
+            <div>
+              <label htmlFor="conn-port" className={labelClass}>
+                Port
               </label>
+              <input
+                id="conn-port"
+                type="number"
+                value={config.port}
+                onChange={(e) => setConfig({ ...config, port: parseInt(e.target.value) })}
+                required
+                className={inputClass}
+              />
             </div>
-            <div style={{ marginBottom: '1rem' }}>
-              <label>
-                Database:
-                <input
-                  type="text"
-                  value={config.database}
-                  onChange={(e) => setConfig({ ...config, database: e.target.value })}
-                  required
-                  style={{ width: '100%', padding: '0.5rem', marginTop: '0.25rem' }}
-                />
+            <div>
+              <label htmlFor="conn-database" className={labelClass}>
+                Database
               </label>
+              <input
+                id="conn-database"
+                type="text"
+                value={config.database}
+                onChange={(e) => setConfig({ ...config, database: e.target.value })}
+                required
+                className={inputClass}
+              />
             </div>
-            <div style={{ marginBottom: '1rem' }}>
-              <label>
-                User:
-                <input
-                  type="text"
-                  value={config.user}
-                  onChange={(e) => setConfig({ ...config, user: e.target.value })}
-                  required
-                  style={{ width: '100%', padding: '0.5rem', marginTop: '0.25rem' }}
-                />
+            <div>
+              <label htmlFor="conn-user" className={labelClass}>
+                User
               </label>
+              <input
+                id="conn-user"
+                type="text"
+                value={config.user}
+                onChange={(e) => setConfig({ ...config, user: e.target.value })}
+                required
+                className={inputClass}
+              />
             </div>
-            <div style={{ marginBottom: '1rem' }}>
-              <label>
-                Password:
-                <input
-                  type="password"
-                  value={config.password}
-                  onChange={(e) => setConfig({ ...config, password: e.target.value })}
-                  required
-                  style={{ width: '100%', padding: '0.5rem', marginTop: '0.25rem' }}
-                />
+            <div>
+              <label htmlFor="conn-password" className={labelClass}>
+                Password
               </label>
+              <input
+                id="conn-password"
+                type="password"
+                value={config.password}
+                onChange={(e) => setConfig({ ...config, password: e.target.value })}
+                required
+                className={inputClass}
+              />
             </div>
             {error && (
-              <div style={{ color: 'red', marginBottom: '1rem' }}>{error}</div>
+              <div className="text-sm text-red-400 bg-red-900/30 border border-red-800 rounded-lg px-3 py-2">
+                {error}
+              </div>
             )}
             {testSuccessMessage && (
-              <div style={{ color: 'green', marginBottom: '1rem' }}>{testSuccessMessage}</div>
+              <div className="text-sm text-emerald-400 bg-emerald-900/30 border border-emerald-800 rounded-lg px-3 py-2">
+                {testSuccessMessage}
+              </div>
             )}
-            <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+            <div className="flex flex-wrap gap-3 pt-1">
               <button
                 type="submit"
                 disabled={loading}
-                style={{
-                  padding: '0.75rem 1.5rem',
-                  fontSize: '1rem',
-                  cursor: loading ? 'not-allowed' : 'pointer',
-                }}
+                className="px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
-                {loading ? 'Testing...' : 'Test Connection'}
+                {loading ? 'Testing…' : 'Test Connection'}
               </button>
               {connectionTested && (
                 <button
                   type="button"
                   onClick={handleGoToWorkspace}
-                  style={{
-                    padding: '0.75rem 1.5rem',
-                    fontSize: '1rem',
-                    cursor: 'pointer',
-                    backgroundColor: '#0d6efd',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '4px',
-                  }}
+                  className="px-4 py-2 text-sm font-medium rounded-lg border border-zinc-600 text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 transition-colors"
                 >
                   Go to Workspace
                 </button>
@@ -170,7 +173,7 @@ export default function ConnectionPage() {
         </div>
 
         {/* Saved Connections */}
-        <div>
+        <div className="rounded-lg border border-zinc-700 bg-zinc-900/50 p-6">
           <SavedConnections
             onLoadConnection={handleLoadConnection}
             currentConfig={config}
