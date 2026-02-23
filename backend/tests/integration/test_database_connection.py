@@ -1,9 +1,14 @@
 """Integration tests for database connections."""
 
+import os
 import pytest
 from app.core.database import DatabaseConnection
 from app.core.errors import APIException
 
+requires_real_db = pytest.mark.skipif(
+    os.getenv("USE_REAL_TEST_DB", "false").lower() != "true",
+    reason="Requires real test database (set USE_REAL_TEST_DB=true)",
+)
 
 @pytest.mark.integration
 class TestDatabaseConnection:
@@ -15,6 +20,7 @@ class TestDatabaseConnection:
         return test_db_config
 
     @pytest.mark.asyncio
+    @requires_real_db
     async def test_connection_establishment(self, db_config):
         """Test establishing a database connection."""
         conn = DatabaseConnection(
@@ -35,6 +41,7 @@ class TestDatabaseConnection:
                 await conn.disconnect()
 
     @pytest.mark.asyncio
+    @requires_real_db
     async def test_query_execution(self, db_config):
         """Test executing a simple query."""
         conn = DatabaseConnection(
@@ -57,6 +64,7 @@ class TestDatabaseConnection:
                 await conn.disconnect()
 
     @pytest.mark.asyncio
+    @requires_real_db
     async def test_transaction_rollback(self, db_config):
         """Test transaction rollback."""
         conn = DatabaseConnection(

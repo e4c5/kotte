@@ -37,19 +37,27 @@ class DatabaseConnection:
         self.sslmode = sslmode
         self._conn: Optional[psycopg.AsyncConnection] = None
 
+    def _connect_kwargs(self) -> dict:
+        """Build psycopg connection kwargs without embedding secrets in a DSN string."""
+        kwargs = {
+            "host": self.host,
+            "port": self.port,
+            "dbname": self.database,
+            "user": self.user,
+            "password": self.password,
+            "connect_timeout": settings.db_connect_timeout,
+            "row_factory": dict_row,
+        }
+        if self.sslmode:
+            kwargs["sslmode"] = self.sslmode
+        return kwargs
+
     async def connect(self) -> None:
         """Establish database connection."""
         try:
-            conn_str = (
-                f"host={self.host} port={self.port} "
-                f"dbname={self.database} user={self.user} "
-                f"password={self.password}"
-            )
-            if self.sslmode:
-                conn_str += f" sslmode={self.sslmode}"
-
-            self._conn = await psycopg.AsyncConnection.connect(
-                conn_str, row_factory=dict_row
+            self._conn = await asyncio.wait_for(
+                psycopg.AsyncConnection.connect(**self._connect_kwargs()),
+                timeout=settings.db_connect_timeout,
             )
 
             # Verify AGE extension and configure session for AGE
@@ -74,11 +82,26 @@ class DatabaseConnection:
             logger.info(
                 f"Connected to database {self.database} on {self.host}:{self.port}"
             )
-        except psycopg.Error as e:
-            logger.error(f"Database connection failed: {e}")
+        except asyncio.TimeoutError as e:
+            logger.error(
+                "Database connection timed out after %s seconds",
+                settings.db_connect_timeout,
+            )
             raise APIException(
                 code=ErrorCode.DB_CONNECT_FAILED,
-                message=f"Failed to connect to database: {str(e)}",
+                message=(
+                    "Failed to connect to database: "
+                    f"connection timed out after {settings.db_connect_timeout}s"
+                ),
+                category=ErrorCategory.UPSTREAM,
+                status_code=500,
+                retryable=True,
+            ) from e
+        except psycopg.Error as e:
+            logger.error("Database connection failed", exc_info=True)
+            raise APIException(
+                code=ErrorCode.DB_CONNECT_FAILED,
+                message="Failed to connect to database",
                 category=ErrorCategory.UPSTREAM,
                 status_code=500,
                 retryable=True,
@@ -201,16 +224,9 @@ class DatabaseConnection:
         try:
             # Create a temporary connection for cancellation
             # (can't cancel from the same connection that's running the query)
-            conn_str = (
-                f"host={self.host} port={self.port} "
-                f"dbname={self.database} user={self.user} "
-                f"password={self.password}"
-            )
-            if self.sslmode:
-                conn_str += f" sslmode={self.sslmode}"
-
-            cancel_conn = await psycopg.AsyncConnection.connect(
-                conn_str, row_factory=dict_row
+            cancel_conn = await asyncio.wait_for(
+                psycopg.AsyncConnection.connect(**self._connect_kwargs()),
+                timeout=settings.db_connect_timeout,
             )
             try:
                 async with cancel_conn.cursor() as cur:
@@ -222,8 +238,8 @@ class DatabaseConnection:
                     return cancelled
             finally:
                 await cancel_conn.close()
-        except Exception as e:
-            logger.error(f"Failed to cancel backend {pid}: {e}")
+        except Exception:
+            logger.error("Failed to cancel backend PID %s", pid)
             return False
 
     async def get_query_pid(self, query_text: str) -> Optional[int]:
@@ -353,4 +369,3 @@ class DatabaseConnection:
 
 # Connection pool per session (stored in session manager)
 # This is a simplified approach; for production, consider connection pooling library
-

@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     db_name: str = "postgres"
     db_user: str = "postgres"
     db_password: str = "postgres"
+    db_connect_timeout: int = 10  # seconds
 
     # CORS
     cors_origins: List[str] = ["http://localhost:5173", "http://localhost:3000"]
@@ -39,6 +40,7 @@ class Settings(BaseSettings):
     # Query Limits
     query_timeout: int = 300  # 5 minutes
     query_max_result_rows: int = 100000
+    query_max_variable_hops: int = 20
     query_safe_mode: bool = False  # Reject mutating queries when True
     
     # Visualization Limits
@@ -84,4 +86,3 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
-

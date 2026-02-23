@@ -1,6 +1,7 @@
 """Tests for error handling."""
 
-from fastapi.testclient import TestClient
+import pytest
+import httpx
 
 from app.core.errors import (
     APIException,
@@ -13,12 +14,13 @@ from app.core.errors import (
 )
 
 
-def test_error_response_structure(client: TestClient):
+@pytest.mark.asyncio
+async def test_error_response_structure(async_client: httpx.AsyncClient):
     """Test that error responses follow the required structure."""
     # Make a request to a non-existent endpoint
     # Note: This may fail if session middleware is required
     try:
-        response = client.get("/api/v1/nonexistent")
+        response = await async_client.get("/api/v1/nonexistent")
         
         assert response.status_code == 404
         data = response.json()
@@ -97,9 +99,10 @@ def test_graph_cypher_syntax_error_uses_format():
     assert exc.details.get("query") == "MATCH (n"
 
 
-def test_api_error_response_structure(client: TestClient):
+@pytest.mark.asyncio
+async def test_api_error_response_structure(async_client: httpx.AsyncClient):
     """Verify API error responses include code, category, message, request_id, timestamp."""
-    response = client.get("/api/v1/auth/me")
+    response = await async_client.get("/api/v1/auth/me")
     assert response.status_code == 401
     data = response.json()
     assert "error" in data
@@ -113,11 +116,30 @@ def test_api_error_response_structure(client: TestClient):
     assert "retryable" in err
 
 
-def test_validation_error_structure(client: TestClient):
+@pytest.mark.asyncio
+async def test_validation_error_structure(async_client: httpx.AsyncClient):
     """Verify validation errors have clear structure."""
-    response = client.post(
+    response = await async_client.post(
         "/api/v1/auth/login",
         json={"username": "admin"},  # missing password
     )
     assert response.status_code == 422
-
+    data = response.json()
+    # FastAPI/Pydantic validation errors should include detail list.
+    # Keep compatibility with possible custom error envelope.
+    if "detail" in data:
+        assert isinstance(data["detail"], list)
+        assert len(data["detail"]) > 0
+        assert any(
+            "password" in ".".join(str(x) for x in item.get("loc", []))
+            for item in data["detail"]
+            if isinstance(item, dict)
+        )
+    else:
+        assert "error" in data
+        error_obj = data["error"]
+        assert isinstance(error_obj, dict)
+        assert any(
+            "password" in str(v).lower()
+            for v in error_obj.values()
+        )

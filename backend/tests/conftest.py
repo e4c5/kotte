@@ -3,6 +3,8 @@
 import sys
 
 import pytest
+import pytest_asyncio
+import httpx
 from fastapi.testclient import TestClient
 from unittest.mock import Mock, AsyncMock
 
@@ -21,13 +23,34 @@ def test_app(monkeypatch):
         if mod in sys.modules:
             del sys.modules[mod]
     from app.main import create_app
-    return create_app()
+    app = create_app()
+    # Keep unit/security tests aligned with integration middleware behavior.
+    # These two layers can deadlock under test transports in some environments.
+    app.user_middleware = [
+        m
+        for m in app.user_middleware
+        if m.cls.__name__ not in {"RequestIDMiddleware", "MetricsMiddleware"}
+    ]
+    app.middleware_stack = app.build_middleware_stack()
+    return app
 
 
 @pytest.fixture
 def client(test_app):
     """Test client for FastAPI app (uses test_app with session support)."""
     return TestClient(test_app, base_url="http://testserver")
+
+
+@pytest_asyncio.fixture
+async def async_client(test_app):
+    """Async client for endpoints that can deadlock with sync TestClient."""
+    transport = httpx.ASGITransport(app=test_app)
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="http://testserver",
+        timeout=15.0,
+    ) as ac:
+        yield ac
 
 
 @pytest.fixture(autouse=True)
@@ -62,4 +85,3 @@ def mock_session():
             "password": "test_password",
         },
     }
-

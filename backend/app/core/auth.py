@@ -94,7 +94,7 @@ class SessionManager:
 session_manager = SessionManager()
 
 
-def get_session(request: Request) -> dict:
+async def get_session(request: Request) -> dict:
     """Get current session from request."""
     session_id = request.session.get("session_id")
     if not session_id:
@@ -117,7 +117,6 @@ def get_session(request: Request) -> dict:
     return session
 
 
-def require_auth(request: Request) -> dict:
+async def require_auth(request: Request) -> dict:
     """Middleware function to require authentication."""
-    return get_session(request)
-
+    return await get_session(request)

@@ -14,6 +14,7 @@ from app.models.graph import (
     MetaGraphResponse,
     NodeLabel,
     EdgeLabel,
+    PropertyStatistics,
     MetaGraphEdge,
     NodeExpandRequest,
     NodeExpandResponse,
@@ -30,7 +31,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-def get_db_connection(session: dict = Depends(get_session)) -> DatabaseConnection:
+async def get_db_connection(session: dict = Depends(get_session)) -> DatabaseConnection:
     """Get database connection from session."""
     db_conn = session.get("db_connection")
     if not db_conn:
@@ -112,37 +113,26 @@ async def get_graph_metadata(
         node_label_rows = await db_conn.execute_query(
             node_query, {"graph_name": validated_graph_name}
         )
+        node_count_estimates = await MetadataService.get_label_count_estimates(
+            db_conn, validated_graph_name, "v"
+        )
 
-        node_labels = []
-        for row in node_label_rows:
+        async def build_node_label(row: dict) -> NodeLabel:
             label_name = row["label_name"]
-            # Validate label name
             validated_label_name = validate_label_name(label_name)
-
-            # Get count (using ANALYZE estimates for performance)
-            count_query = """
-                SELECT c.reltuples::bigint as estimate
-                FROM pg_class c
-                JOIN pg_namespace n ON n.oid = c.relnamespace
-                WHERE n.nspname = %(schema_name)s AND c.relname = %(rel_name)s
-            """
-            count = await db_conn.execute_scalar(
-                count_query,
-                {"schema_name": validated_graph_name, "rel_name": validated_label_name},
-            ) or 0
-            if not count or count <= 0:
+            count = int(node_count_estimates.get(validated_label_name, 0))
+            if count <= 0:
                 count = await MetadataService.get_exact_counts(
                     db_conn, validated_graph_name, validated_label_name, "v"
                 )
-
-            # Discover properties by sampling
             properties = await MetadataService.discover_properties(
                 db_conn, validated_graph_name, validated_label_name, "v"
             )
+            return NodeLabel(label=label_name, count=int(count), properties=properties)
 
-            node_labels.append(
-                NodeLabel(label=label_name, count=int(count), properties=properties)
-            )
+        node_labels: list[NodeLabel] = []
+        for row in node_label_rows:
+            node_labels.append(await build_node_label(row))
 
         # Get edge labels with counts
         edge_query = """
@@ -155,56 +145,45 @@ async def get_graph_metadata(
         edge_label_rows = await db_conn.execute_query(
             edge_query, {"graph_name": validated_graph_name}
         )
+        edge_count_estimates = await MetadataService.get_label_count_estimates(
+            db_conn, validated_graph_name, "e"
+        )
 
-        edge_labels = []
-        for row in edge_label_rows:
+        async def build_edge_label(row: dict) -> EdgeLabel:
             label_name = row["label_name"]
-            # Validate label name
             validated_label_name = validate_label_name(label_name)
-
-            # Get count estimate (using parameterized query)
-            count_query = """
-                SELECT c.reltuples::bigint as estimate
-                FROM pg_class c
-                JOIN pg_namespace n ON n.oid = c.relnamespace
-                WHERE n.nspname = %(schema_name)s AND c.relname = %(rel_name)s
-            """
-            count = await db_conn.execute_scalar(
-                count_query,
-                {"schema_name": validated_graph_name, "rel_name": validated_label_name},
-            ) or 0
-            if not count or count <= 0:
+            count = int(edge_count_estimates.get(validated_label_name, 0))
+            if count <= 0:
                 count = await MetadataService.get_exact_counts(
                     db_conn, validated_graph_name, validated_label_name, "e"
                 )
 
-            # Discover properties by sampling
             properties = await MetadataService.discover_properties(
                 db_conn, validated_graph_name, validated_label_name, "e"
             )
 
-            # Calculate property statistics for numeric properties
-            from app.models.graph import PropertyStatistics
-            property_stats = []
-            for prop in properties:
-                stats = await MetadataService.get_property_statistics(
-                    db_conn, validated_graph_name, validated_label_name, "e", prop
-                )
-                if stats["min"] is not None and stats["max"] is not None:
-                    property_stats.append(
-                        PropertyStatistics(
-                            property=prop, min=stats["min"], max=stats["max"]
-                        )
-                    )
-
-            edge_labels.append(
-                EdgeLabel(
-                    label=label_name,
-                    count=int(count),
-                    properties=properties,
-                    property_statistics=property_stats,
-                )
+            numeric_stats = await MetadataService.get_numeric_property_statistics_for_label(
+                db_conn, validated_graph_name, validated_label_name
             )
+
+            property_stats = [
+                PropertyStatistics(property=prop, min=stats["min"], max=stats["max"])
+                for prop, stats in numeric_stats.items()
+                if prop in properties
+                and stats.get("min") is not None
+                and stats.get("max") is not None
+            ]
+
+            return EdgeLabel(
+                label=label_name,
+                count=int(count),
+                properties=properties,
+                property_statistics=property_stats,
+            )
+
+        edge_labels: list[EdgeLabel] = []
+        for row in edge_label_rows:
+            edge_labels.append(await build_edge_label(row))
 
         return GraphMetadata(
             graph_name=validated_graph_name,
@@ -567,4 +546,3 @@ async def find_shortest_path(
                 "target_id": request.target_id,
             },
         ) from e
-

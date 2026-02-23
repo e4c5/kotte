@@ -54,26 +54,30 @@ class TestGraphEndpoints:
         """Test getting graph metadata."""
         mock_db = connected_client._mock_db
         
-        # Mock graph exists check
-        # Then for each label: count query (scalar) and properties discovery (query)
-        # The endpoint makes: 1 graph check + (2 node labels * 2 calls each) + 1 edge labels query + (2 edge labels * 2 calls each)
-        mock_db.execute_scalar = AsyncMock(side_effect=[
-            1,  # Graph exists
-            100,  # Person count
-            50,   # Company count
-            200,  # KNOWS count
-            75,   # WORKS_FOR count
-        ])
-        
-        # Mock queries: node labels, edge labels, and property discovery
-        mock_db.execute_query = AsyncMock(side_effect=[
-            [{"label_name": "Person"}, {"label_name": "Company"}],  # Node labels query
-            [],  # Person properties (empty)
-            [],  # Company properties (empty)
-            [{"label_name": "KNOWS"}, {"label_name": "WORKS_FOR"}],  # Edge labels query
-            [],  # KNOWS properties (empty)
-            [],  # WORKS_FOR properties (empty)
-        ])
+        # Graph exists check
+        mock_db.execute_scalar = AsyncMock(return_value=1)
+
+        async def query_side_effect(query, params=None):
+            query_text = " ".join(str(query).split())
+            if "label.kind = 'v'" in query_text and "SELECT DISTINCT label.name as label_name" in query_text:
+                return [{"label_name": "Person"}, {"label_name": "Company"}]
+            if "label.kind = 'e'" in query_text and "SELECT DISTINCT label.name as label_name" in query_text:
+                return [{"label_name": "KNOWS"}, {"label_name": "WORKS_FOR"}]
+            if "COALESCE(c.reltuples::bigint, 0) as estimate" in query_text:
+                if params and params.get("label_kind") == "v":
+                    return [
+                        {"label_name": "Person", "estimate": 100},
+                        {"label_name": "Company", "estimate": 50},
+                    ]
+                if params and params.get("label_kind") == "e":
+                    return [
+                        {"label_name": "KNOWS", "estimate": 200},
+                        {"label_name": "WORKS_FOR", "estimate": 75},
+                    ]
+            # discover_properties and numeric statistics queries
+            return []
+
+        mock_db.execute_query = AsyncMock(side_effect=query_side_effect)
         
         response = await connected_client.get("/api/v1/graphs/test_graph/metadata")
         
@@ -329,4 +333,3 @@ class TestNodeDeletion:
         data = response.json()
         assert "error" in data
         assert data["error"]["code"] == "GRAPH_NOT_FOUND"
-

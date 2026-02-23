@@ -17,10 +17,10 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-def get_db_connection(session: dict = Depends(get_session)) -> DatabaseConnection:
+async def get_db_connection(session: dict = Depends(get_session)) -> DatabaseConnection:
     """Get database connection from session."""
     from app.api.v1.graph import get_db_connection as base_get_db_connection
-    return base_get_db_connection(session)
+    return await base_get_db_connection(session)
 
 
 @router.delete("/{graph_name}/nodes/{node_id}", response_model=NodeDeleteResponse)
@@ -179,4 +179,3 @@ async def delete_node(
             retryable=True,
             details={"graph": validated_graph_name, "node_id": node_id},
         ) from e
-
