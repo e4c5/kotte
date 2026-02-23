@@ -219,7 +219,7 @@ export default function WorkspacePage() {
 
   if (!status || !status.connected) {
     return (
-      <div className="min-h-screen bg-zinc-950 flex items-center justify-center text-zinc-400">
+      <div className="h-screen bg-zinc-950 flex items-center justify-center text-zinc-400">
         Loading...
       </div>
     )
@@ -231,12 +231,13 @@ export default function WorkspacePage() {
   const inspectorOpen = !!selectedNode || !!selectedEdge
 
   return (
-    <div className="relative min-h-screen w-screen bg-zinc-950 text-zinc-100 overflow-hidden">
+    <div className="relative h-screen w-full bg-zinc-950 text-zinc-100 overflow-hidden">
       {/* Canvas layer: full-size result area (graph / table) — offset left by sidebar width */}
       <div
-        className={`absolute top-12 right-0 bottom-0 transition-[left] duration-300 ${
+        className={`absolute right-0 bottom-0 transition-[left] duration-300 ${
           sidebarCollapsed ? 'left-12' : 'left-64'
         }`}
+        style={{ top: '5.5rem' }}
       >
         {activeTab ? (
           <ResultTab
@@ -289,17 +290,23 @@ export default function WorkspacePage() {
         </button>
       </header>
 
-      {/* Floating query bar */}
-      <QueryEditor
-        value={query}
-        onChange={setQuery}
-        params={params}
-        onParamsChange={setParams}
-        onExecute={handleExecute}
-        onCancel={() => activeTabId && cancelQuery(activeTabId)}
-        loading={loading}
-        history={history}
-      />
+      {/* Query bar */}
+      <div
+        className={`fixed top-12 right-0 h-10 transition-[left] duration-300 z-20 ${
+          sidebarCollapsed ? 'left-12' : 'left-64'
+        }`}
+      >
+        <QueryEditor
+          value={query}
+          onChange={setQuery}
+          params={params}
+          onParamsChange={setParams}
+          onExecute={handleExecute}
+          onCancel={() => activeTabId && cancelQuery(activeTabId)}
+          loading={loading}
+          history={history}
+        />
+      </div>
 
       {/* Error toast */}
       {error && (
