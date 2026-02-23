@@ -227,18 +227,18 @@ export default function GraphView({
     const svg = d3.select(svgRef.current)
     svg.selectAll('*').remove()
 
+    // Create container for zoomable content (must be defined before zoom handler)
+    const container = svg.append('g')
+
     // Set up zoom
     const zoom = d3
       .zoom<SVGSVGElement, unknown>()
-      .scaleExtent([0.1, 4])
+      .scaleExtent([0.05, 20])
       .on('zoom', (event) => {
         container.attr('transform', event.transform)
       })
 
     svg.call(zoom)
-
-    // Create container for zoomable content
-    const container = svg.append('g')
 
     // Initialize positions based on layout
     const nodesWithPositions = initializeLayout(filteredNodes, layout, width, height)
@@ -397,6 +397,33 @@ export default function GraphView({
     const centerX = width / 2
     const centerY = height / 2
 
+    // Helper: zoom/pan so that all nodes fit nicely in view
+    const fitToView = () => {
+      if (!nodesWithPositions.length) return
+      const xs = nodesWithPositions.map((n) => n.x ?? centerX)
+      const ys = nodesWithPositions.map((n) => n.y ?? centerY)
+      const minX = Math.min(...xs)
+      const maxX = Math.max(...xs)
+      const minY = Math.min(...ys)
+      const maxY = Math.max(...ys)
+      const contentWidth = maxX - minX || 1
+      const contentHeight = maxY - minY || 1
+
+      // Leave some margin around the graph
+      const margin = 40
+      const rawScale = 0.9 * Math.min(
+        (width - 2 * margin) / contentWidth,
+        (height - 2 * margin) / contentHeight
+      )
+      const scale = Math.max(0.1, rawScale)
+
+      const tx = centerX - scale * (minX + contentWidth / 2)
+      const ty = centerY - scale * (minY + contentHeight / 2)
+
+      const transform = d3.zoomIdentity.translate(tx, ty).scale(scale)
+      svg.transition().duration(400).call(zoom.transform, transform)
+    }
+
     // Resolve link endpoint to node (source/target may be string ID when no link force is used)
     const nodeById = new Map(nodesWithPositions.map((n) => [n.id, n]))
     const getNode = (endpoint: string | GraphNode): GraphNode | undefined =>
@@ -428,6 +455,16 @@ export default function GraphView({
     if (layout !== 'force' || !hasEdges) {
       applyPositions()
       simulation.tick()
+      // For static layouts, immediately fit to view
+      fitToView()
+    }
+
+    // After a force simulation, fit once it settles
+    if (layout === 'force' && hasEdges) {
+      simulation.on('end', () => {
+        applyPositions()
+        fitToView()
+      })
     }
 
     // Cleanup

@@ -35,12 +35,30 @@ export default function ResultTab({
   useEffect(() => {
     const el = graphContainerRef.current
     if (!el) return
+    const MIN_WIDTH = 400
+    const MIN_HEIGHT = 300
+    const applySize = (w: number, h: number) => {
+      if (w > 0 && h > 0) {
+        setGraphSize({
+          width: Math.max(MIN_WIDTH, w),
+          height: Math.max(MIN_HEIGHT, h),
+        })
+      }
+    }
     const ro = new ResizeObserver((entries) => {
-      const { width, height } = entries[0]?.contentRect ?? { width: 800, height: 600 }
-      setGraphSize({ width: Math.max(1, width), height: Math.max(1, height) })
+      const { width, height } = entries[0]?.contentRect ?? { width: 0, height: 0 }
+      applySize(width, height)
     })
     ro.observe(el)
-    return () => ro.disconnect()
+    // Initial size after layout (ResizeObserver can fire with 0 before layout completes)
+    const raf = requestAnimationFrame(() => {
+      const rect = el.getBoundingClientRect()
+      applySize(rect.width, rect.height)
+    })
+    return () => {
+      cancelAnimationFrame(raf)
+      ro.disconnect()
+    }
   }, [tab.viewMode])
 
   const result = tab.result
@@ -165,7 +183,7 @@ export default function ResultTab({
           </div>
         )}
 
-        <div ref={graphContainerRef} className="flex-1 relative min-w-0 min-h-0">
+        <div ref={graphContainerRef} className="flex-1 relative min-w-0 min-h-0 flex flex-col overflow-hidden">
           {tab.viewMode === 'graph' && hasGraphData ? (
             <>
               <GraphView
