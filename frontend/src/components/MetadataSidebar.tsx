@@ -6,12 +6,14 @@ interface MetadataSidebarProps {
   currentGraph?: string
   onGraphSelect: (graphName: string) => void
   onQueryTemplate: (query: string) => void
+  onCollapsedChange?: (collapsed: boolean) => void
 }
 
 export default function MetadataSidebar({
   currentGraph,
   onGraphSelect,
   onQueryTemplate,
+  onCollapsedChange,
 }: MetadataSidebarProps) {
   const [graphs, setGraphs] = useState<GraphInfo[]>([])
   const [metadata, setMetadata] = useState<GraphMetadata | null>(null)
@@ -19,6 +21,10 @@ export default function MetadataSidebar({
   const [collapsed, setCollapsed] = useState(false)
   const [nodeLabelsOpen, setNodeLabelsOpen] = useState(true)
   const [edgeLabelsOpen, setEdgeLabelsOpen] = useState(true)
+
+  useEffect(() => {
+    onCollapsedChange?.(collapsed)
+  }, [collapsed, onCollapsedChange])
 
   useEffect(() => {
     loadGraphs()

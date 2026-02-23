@@ -46,6 +46,7 @@ export default function WorkspacePage() {
   const { tablePageSize, defaultLayout } = useSettingsStore()
   const [showSettings, setShowSettings] = useState(false)
   const [expanding, setExpanding] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const {
     setSelectedNode,
     setSelectedEdge,
@@ -231,8 +232,12 @@ export default function WorkspacePage() {
 
   return (
     <div className="relative min-h-screen w-screen bg-zinc-950 text-zinc-100 overflow-hidden">
-      {/* Canvas layer: full-size result area (graph / table) */}
-      <div className="absolute inset-0 pt-12">
+      {/* Canvas layer: full-size result area (graph / table) — offset left by sidebar width */}
+      <div
+        className={`absolute top-12 right-0 bottom-0 transition-[left] duration-300 ${
+          sidebarCollapsed ? 'left-12' : 'left-64'
+        }`}
+      >
         {activeTab ? (
           <ResultTab
             tab={activeTab}
@@ -251,8 +256,12 @@ export default function WorkspacePage() {
         )}
       </div>
 
-      {/* Header: slim, fixed */}
-      <header className="fixed top-0 left-0 right-0 h-12 flex items-center justify-between px-4 bg-zinc-900/95 border-b border-zinc-800 z-10 shrink-0">
+      {/* Header: slim, fixed — offset left by sidebar width so it does not sit under the sidebar */}
+      <header
+        className={`fixed top-0 right-0 h-12 flex items-center justify-between px-4 bg-zinc-900/95 border-b border-zinc-800 z-10 shrink-0 transition-[left] duration-300 ${
+          sidebarCollapsed ? 'left-12' : 'left-64'
+        }`}
+      >
         <div className="flex items-center gap-4 min-w-0">
           <span className="font-semibold text-zinc-100 shrink-0">Kotte</span>
           <span className="text-zinc-500 text-sm truncate">
@@ -314,6 +323,7 @@ export default function WorkspacePage() {
         currentGraph={currentGraph ?? undefined}
         onGraphSelect={handleGraphSelect}
         onQueryTemplate={handleQueryTemplate}
+        onCollapsedChange={setSidebarCollapsed}
       />
 
       {/* Right inspector panel */}

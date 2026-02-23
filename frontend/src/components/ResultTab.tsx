@@ -206,6 +206,7 @@ export default function ResultTab({
               columns={result.columns}
               rows={result.rows}
               pageSize={tablePageSize}
+              queriedGraph={tab.graph}
             />
           )}
         </div>

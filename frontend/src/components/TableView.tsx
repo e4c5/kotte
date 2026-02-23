@@ -12,6 +12,8 @@ interface TableViewProps {
   onLoadMore?: () => Promise<void>
   hasMore?: boolean
   loadingMore?: boolean
+  /** When empty, show this graph name so user can verify they selected the right graph */
+  queriedGraph?: string | null
 }
 
 export default function TableView({
@@ -22,6 +24,7 @@ export default function TableView({
   onLoadMore,
   hasMore = false,
   loadingMore = false,
+  queriedGraph = null,
 }: TableViewProps) {
   const [currentPage, setCurrentPage] = useState(1)
 
@@ -78,7 +81,16 @@ export default function TableView({
   }
 
   if (rows.length === 0) {
-    return <div style={{ padding: '2rem', textAlign: 'center' }}>No data to display</div>
+    return (
+      <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--color-zinc-400, #a1a1aa)' }}>
+        <p style={{ marginBottom: '0.5rem' }}>No rows returned.</p>
+        {queriedGraph && (
+          <p style={{ fontSize: '0.875rem', marginTop: '0.25rem' }}>
+            Queried graph: <strong>{queriedGraph}</strong>. If you expected data, select the correct graph in the schema sidebar (e.g. <code style={{ fontSize: '0.8rem' }}>antikythera_graph</code>).
+          </p>
+        )}
+      </div>
+    )
   }
 
   return (
