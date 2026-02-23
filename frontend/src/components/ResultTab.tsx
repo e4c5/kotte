@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect } from 'react'
+import { useState, useMemo, useRef, useLayoutEffect } from 'react'
 import GraphView, { type GraphNode, type GraphEdge, type PathHighlights } from './GraphView'
 import TableView from './TableView'
 import GraphControls from './GraphControls'
@@ -32,7 +32,7 @@ export default function ResultTab({
   const [graphSize, setGraphSize] = useState({ width: 800, height: 600 })
   const graphContainerRef = useRef<HTMLDivElement>(null)
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const el = graphContainerRef.current
     if (!el) return
     const MIN_WIDTH = 400
@@ -55,11 +55,17 @@ export default function ResultTab({
       const rect = el.getBoundingClientRect()
       applySize(rect.width, rect.height)
     })
+    const onWindowResize = () => {
+      const rect = el.getBoundingClientRect()
+      applySize(rect.width, rect.height)
+    }
+    window.addEventListener('resize', onWindowResize)
     return () => {
       cancelAnimationFrame(raf)
+      window.removeEventListener('resize', onWindowResize)
       ro.disconnect()
     }
-  }, [tab.viewMode])
+  }, [tab.viewMode, showControls])
 
   const result = tab.result
 
@@ -232,4 +238,3 @@ export default function ResultTab({
     </div>
   )
 }
-

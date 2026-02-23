@@ -1,4 +1,4 @@
-import { useEffect, useRef, useMemo } from 'react'
+import { useEffect, useRef, useMemo, useState } from 'react'
 import * as d3 from 'd3'
 import { useGraphStore, type LayoutType, type LabelStyle } from '../stores/graphStore'
 
@@ -50,6 +50,8 @@ export default function GraphView({
 }: GraphViewProps) {
   const svgRef = useRef<SVGSVGElement>(null)
   const simulationRef = useRef<d3.Simulation<GraphNode, GraphEdge> | null>(null)
+  const [debugFitScale, setDebugFitScale] = useState<number | null>(null)
+  const [resolvedSize, setResolvedSize] = useState({ width, height })
   const {
     layout,
     nodeStyles,
@@ -224,7 +226,20 @@ export default function GraphView({
   useEffect(() => {
     if (!svgRef.current || filteredNodes.length === 0) return
 
-    const svg = d3.select(svgRef.current)
+    const svgEl = svgRef.current
+    const containerRect = svgEl.parentElement?.getBoundingClientRect()
+    const measuredWidth = Math.floor(containerRect?.width ?? 0)
+    const measuredHeight = Math.floor(containerRect?.height ?? 0)
+    // Prefer measured container size to avoid oversized SVG causing page scrollbars.
+    const viewportWidth = Math.max(measuredWidth > 0 ? measuredWidth : width, 1)
+    const viewportHeight = Math.max(measuredHeight > 0 ? measuredHeight : height, 1)
+    setResolvedSize((prev) =>
+      prev.width === viewportWidth && prev.height === viewportHeight
+        ? prev
+        : { width: viewportWidth, height: viewportHeight }
+    )
+
+    const svg = d3.select(svgEl)
     svg.selectAll('*').remove()
 
     // Create container for zoomable content (must be defined before zoom handler)
@@ -241,7 +256,7 @@ export default function GraphView({
     svg.call(zoom)
 
     // Initialize positions based on layout
-    const nodesWithPositions = initializeLayout(filteredNodes, layout, width, height)
+    const nodesWithPositions = initializeLayout(filteredNodes, layout, viewportWidth, viewportHeight)
 
     // When there are no edges, force-directed layout has nothing to optimize (no links);
     // repulsion alone pushes nodes to the boundaries. Use static layout only (no simulation).
@@ -255,6 +270,9 @@ export default function GraphView({
       // enough ticks to reach equilibrium (D3 default ~300 iterations).
       simulation = d3
         .forceSimulation<GraphNode>(nodesWithPositions)
+        .alpha(1)
+        .alphaDecay(0.05)
+        .velocityDecay(0.45)
         .force(
           'link',
           d3
@@ -263,7 +281,7 @@ export default function GraphView({
             .distance(100)
         )
         .force('charge', d3.forceManyBody().strength(-200))
-        .force('center', d3.forceCenter(width / 2, height / 2))
+        .force('center', d3.forceCenter(viewportWidth / 2, viewportHeight / 2))
         .force('collision', d3.forceCollide().radius(28))
     } else {
       // Static layout: grid/circle/radial already set in initializeLayout; no forces, no run.
@@ -276,8 +294,8 @@ export default function GraphView({
     // Pin nodes that should be pinned
     nodesWithPositions.forEach((node) => {
       if (pinnedNodes.has(node.id)) {
-        node.fx = node.x || width / 2
-        node.fy = node.y || height / 2
+        node.fx = node.x || viewportWidth / 2
+        node.fy = node.y || viewportHeight / 2
       }
     })
 
@@ -390,15 +408,15 @@ export default function GraphView({
     // Bounds for force-directed layout (only applied when simulation is running)
     const padding = 60
     const xMin = padding
-    const xMax = width - padding
+    const xMax = viewportWidth - padding
     const yMin = padding
-    const yMax = height - padding
+    const yMax = viewportHeight - padding
 
-    const centerX = width / 2
-    const centerY = height / 2
+    const centerX = viewportWidth / 2
+    const centerY = viewportHeight / 2
 
     // Helper: zoom/pan so that all nodes fit nicely in view
-    const fitToView = () => {
+    const fitToView = (animate = true) => {
       if (!nodesWithPositions.length) return
       const xs = nodesWithPositions.map((n) => n.x ?? centerX)
       const ys = nodesWithPositions.map((n) => n.y ?? centerY)
@@ -411,17 +429,21 @@ export default function GraphView({
 
       // Leave some margin around the graph
       const margin = 40
-      const rawScale = 0.9 * Math.min(
-        (width - 2 * margin) / contentWidth,
-        (height - 2 * margin) / contentHeight
-      )
+      const scaleX = (viewportWidth - 2 * margin) / contentWidth
+      const scaleY = (viewportHeight - 2 * margin) / contentHeight
+      const rawScale = 0.92 * Math.min(scaleX, scaleY)
       const scale = Math.max(0.1, rawScale)
+      setDebugFitScale(scale)
 
       const tx = centerX - scale * (minX + contentWidth / 2)
       const ty = centerY - scale * (minY + contentHeight / 2)
 
       const transform = d3.zoomIdentity.translate(tx, ty).scale(scale)
-      svg.transition().duration(400).call(zoom.transform, transform)
+      if (animate) {
+        svg.transition().duration(400).call(zoom.transform, transform)
+      } else {
+        svg.call(zoom.transform, transform)
+      }
     }
 
     // Resolve link endpoint to node (source/target may be string ID when no link force is used)
@@ -456,12 +478,31 @@ export default function GraphView({
       applyPositions()
       simulation.tick()
       // For static layouts, immediately fit to view
-      fitToView()
+      fitToView(false)
     }
 
     // After a force simulation, fit once it settles
+    let forceFitTimer: number | null = null
+    let forceStopTimer: number | null = null
     if (layout === 'force' && hasEdges) {
+      // Ensure graph fills the viewport even if simulation is interrupted/restarted.
+      forceFitTimer = window.setTimeout(() => {
+        applyPositions()
+        fitToView(false)
+      }, 800)
+
+      // Hard cap to prevent endless animation in high-energy/degenerate graphs.
+      forceStopTimer = window.setTimeout(() => {
+        simulation.stop()
+        applyPositions()
+        fitToView()
+      }, 3500)
+
       simulation.on('end', () => {
+        if (forceStopTimer !== null) {
+          window.clearTimeout(forceStopTimer)
+          forceStopTimer = null
+        }
         applyPositions()
         fitToView()
       })
@@ -469,6 +510,12 @@ export default function GraphView({
 
     // Cleanup
     return () => {
+      if (forceFitTimer !== null) {
+        window.clearTimeout(forceFitTimer)
+      }
+      if (forceStopTimer !== null) {
+        window.clearTimeout(forceStopTimer)
+      }
       simulation.stop()
     }
   }, [
@@ -528,8 +575,8 @@ export default function GraphView({
         try {
           // Create a canvas
         const canvas = document.createElement('canvas')
-          canvas.width = width
-          canvas.height = height
+          canvas.width = resolvedSize.width
+          canvas.height = resolvedSize.height
           const ctx = canvas.getContext('2d')
           
           if (!ctx) {
@@ -586,11 +633,14 @@ export default function GraphView({
     if (onExportReady) {
       onExportReady(exportToPNG)
     }
-  }, [onExportReady, filteredNodes, filteredEdges, width, height])
+  }, [onExportReady, filteredNodes, filteredEdges, width, height, resolvedSize.width, resolvedSize.height])
 
   return (
-    <div className="w-full h-full bg-zinc-950">
-      <svg ref={svgRef} width={width} height={height} className="block" />
+    <div className="w-full h-full bg-zinc-950 relative">
+      <div className="absolute left-2 top-2 z-10 pointer-events-none rounded bg-emerald-500/20 border border-emerald-400/40 px-2 py-1 text-[10px] text-emerald-300 font-mono">
+        GraphView marker: 2026-02-23-v3 | prop:{width}x{height} | view:{resolvedSize.width}x{resolvedSize.height} | fit:{debugFitScale?.toFixed(2) ?? 'n/a'}
+      </div>
+      <svg ref={svgRef} width={resolvedSize.width} height={resolvedSize.height} className="block" />
     </div>
   )
 }
@@ -702,4 +752,3 @@ function initializeLayout(
 
   return nodes
 }
-
