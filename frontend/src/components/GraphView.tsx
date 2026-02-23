@@ -8,6 +8,8 @@ export interface GraphNode {
   properties: Record<string, unknown>
   x?: number
   y?: number
+  vx?: number
+  vy?: number
   fx?: number | null
   fy?: number | null
 }
@@ -278,10 +280,12 @@ export default function GraphView({
           d3
             .forceLink<GraphNode, GraphEdge>(filteredEdges)
             .id((d) => d.id)
-            .distance(100)
+            .distance(90)
         )
-        .force('charge', d3.forceManyBody().strength(-200))
+        .force('charge', d3.forceManyBody().strength(-110))
         .force('center', d3.forceCenter(viewportWidth / 2, viewportHeight / 2))
+        .force('x', d3.forceX(viewportWidth / 2).strength(0.04))
+        .force('y', d3.forceY(viewportHeight / 2).strength(0.04))
         .force('collision', d3.forceCollide().radius(28))
     } else {
       // Static layout: grid/circle/radial already set in initializeLayout; no forces, no run.
@@ -452,13 +456,33 @@ export default function GraphView({
       typeof endpoint === 'string' ? nodeById.get(endpoint) : endpoint
 
     // Update positions on simulation tick (and initial render for static layout)
+    let didAutoStop = false
     function applyPositions() {
       if (layout === 'force' && hasEdges) {
         nodesWithPositions.forEach((n) => {
           if (n.fx != null && n.fy != null) return // pinned
-          n.x = Math.max(xMin, Math.min(xMax, n.x ?? centerX))
-          n.y = Math.max(yMin, Math.min(yMax, n.y ?? centerY))
+          if ((n.x ?? centerX) < xMin) {
+            n.x = xMin
+            n.vx = (n.vx ?? 0) * -0.25
+          } else if ((n.x ?? centerX) > xMax) {
+            n.x = xMax
+            n.vx = (n.vx ?? 0) * -0.25
+          }
+
+          if ((n.y ?? centerY) < yMin) {
+            n.y = yMin
+            n.vy = (n.vy ?? 0) * -0.25
+          } else if ((n.y ?? centerY) > yMax) {
+            n.y = yMax
+            n.vy = (n.vy ?? 0) * -0.25
+          }
         })
+
+        if (!didAutoStop && simulation.alpha() < 0.035) {
+          didAutoStop = true
+          simulation.stop()
+          fitToView()
+        }
       }
 
       link
