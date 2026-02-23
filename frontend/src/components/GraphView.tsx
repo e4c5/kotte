@@ -444,13 +444,6 @@ export default function GraphView({
       .style('pointer-events', 'none')
       .style('fill', '#e4e4e7')
 
-    // Bounds for force-directed layout (only applied when simulation is running)
-    const padding = 60
-    const xMin = padding
-    const xMax = viewportWidth - padding
-    const yMin = padding
-    const yMax = viewportHeight - padding
-
     const centerX = viewportWidth / 2
     const centerY = viewportHeight / 2
 
@@ -500,25 +493,6 @@ export default function GraphView({
     let didAutoStop = false
     function applyPositions() {
       if (layout === 'force' && hasEdges) {
-        nodesWithPositions.forEach((n) => {
-          if (n.fx != null && n.fy != null) return // pinned
-          if ((n.x ?? centerX) < xMin) {
-            n.x = xMin
-            n.vx = (n.vx ?? 0) * -0.25
-          } else if ((n.x ?? centerX) > xMax) {
-            n.x = xMax
-            n.vx = (n.vx ?? 0) * -0.25
-          }
-
-          if ((n.y ?? centerY) < yMin) {
-            n.y = yMin
-            n.vy = (n.vy ?? 0) * -0.25
-          } else if ((n.y ?? centerY) > yMax) {
-            n.y = yMax
-            n.vy = (n.vy ?? 0) * -0.25
-          }
-        })
-
         if (!didAutoStop && simulation.alpha() < 0.035) {
           didAutoStop = true
           simulation.stop()
