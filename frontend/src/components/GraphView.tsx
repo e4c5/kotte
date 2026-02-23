@@ -50,8 +50,19 @@ export default function GraphView({
   onEdgeClick,
   onExportReady,
 }: GraphViewProps) {
+  type SvgSelection = d3.Selection<SVGSVGElement, unknown, null, undefined>
+
   const svgRef = useRef<SVGSVGElement>(null)
   const simulationRef = useRef<d3.Simulation<GraphNode, GraphEdge> | null>(null)
+  const svgSelectionRef = useRef<SvgSelection | null>(null)
+  const zoomBehaviorRef = useRef<d3.ZoomBehavior<SVGSVGElement, unknown> | null>(null)
+  const fitToViewRef = useRef<(() => void) | null>(null)
+  const zoomTransformRef = useRef(d3.zoomIdentity)
+  const userZoomedRef = useRef(false)
+  const applyingAutoTransformRef = useRef(false)
+  const onNodeClickRef = useRef<typeof onNodeClick>(onNodeClick)
+  const onNodeRightClickRef = useRef<typeof onNodeRightClick>(onNodeRightClick)
+  const onEdgeClickRef = useRef<typeof onEdgeClick>(onEdgeClick)
   const [debugFitScale, setDebugFitScale] = useState<number | null>(null)
   const [resolvedSize, setResolvedSize] = useState({ width, height })
   const {
@@ -110,6 +121,12 @@ export default function GraphView({
     [pathHighlights?.edgeIds]
   )
 
+  useEffect(() => {
+    onNodeClickRef.current = onNodeClick
+    onNodeRightClickRef.current = onNodeRightClick
+    onEdgeClickRef.current = onEdgeClick
+  }, [onNodeClick, onNodeRightClick, onEdgeClick])
+
   const filteredEdges = useMemo(() => {
     let filtered = edges.filter((edge) => {
       const sourceId = typeof edge.source === 'string' ? edge.source : edge.source.id
@@ -132,6 +149,12 @@ export default function GraphView({
 
     return filtered
   }, [edges, filters, hiddenNodes, filteredNodes])
+
+  useEffect(() => {
+    // New graph/layout data should start from fit-to-view again.
+    userZoomedRef.current = false
+    zoomTransformRef.current = d3.zoomIdentity
+  }, [filteredNodes, filteredEdges, layout])
 
   // Get style for node/edge
   const getNodeStyle = (node: GraphNode): LabelStyle => {
@@ -226,7 +249,7 @@ export default function GraphView({
   }
 
   useEffect(() => {
-    if (!svgRef.current || filteredNodes.length === 0) return
+    if (!svgRef.current) return
 
     const svgEl = svgRef.current
     const containerRect = svgEl.parentElement?.getBoundingClientRect()
@@ -252,13 +275,25 @@ export default function GraphView({
       .zoom<SVGSVGElement, unknown>()
       .scaleExtent([0.05, 20])
       .on('zoom', (event) => {
+        zoomTransformRef.current = event.transform
+        if (!applyingAutoTransformRef.current) {
+          userZoomedRef.current = true
+        }
         container.attr('transform', event.transform)
       })
 
     svg.call(zoom)
+    svgSelectionRef.current = svg
+    zoomBehaviorRef.current = zoom
 
     // Initialize positions based on layout
     const nodesWithPositions = initializeLayout(filteredNodes, layout, viewportWidth, viewportHeight)
+    if (nodesWithPositions.length === 0) {
+      fitToViewRef.current = null
+      return () => {
+        fitToViewRef.current = null
+      }
+    }
 
     // When there are no edges, force-directed layout has nothing to optimize (no links);
     // repulsion alone pushes nodes to the boundaries. Use static layout only (no simulation).
@@ -321,12 +356,12 @@ export default function GraphView({
         pathEdgeIds.has(String(d.id)) ? Math.max(3, getEdgeStyle(d).size) : getEdgeStyle(d).size
       )
 
-    if (onEdgeClick) {
+    if (onEdgeClickRef.current) {
       link
         .style('cursor', 'pointer')
         .on('click', (event: MouseEvent, d: GraphEdge) => {
           event.stopPropagation()
-          onEdgeClick(d)
+          onEdgeClickRef.current?.(d)
         })
     }
 
@@ -387,11 +422,11 @@ export default function GraphView({
       )
       .on('click', (event, d) => {
         event.stopPropagation()
-        onNodeClick?.(d)
+        onNodeClickRef.current?.(d)
       })
       .on('contextmenu', (event, d) => {
         event.preventDefault()
-        onNodeRightClick?.(d, event)
+        onNodeRightClickRef.current?.(d, event)
       })
 
     // Add labels
@@ -443,12 +478,18 @@ export default function GraphView({
       const ty = centerY - scale * (minY + contentHeight / 2)
 
       const transform = d3.zoomIdentity.translate(tx, ty).scale(scale)
+      applyingAutoTransformRef.current = true
       if (animate) {
         svg.transition().duration(400).call(zoom.transform, transform)
+        window.setTimeout(() => {
+          applyingAutoTransformRef.current = false
+        }, 450)
       } else {
         svg.call(zoom.transform, transform)
+        applyingAutoTransformRef.current = false
       }
     }
+    fitToViewRef.current = () => fitToView(true)
 
     // Resolve link endpoint to node (source/target may be string ID when no link force is used)
     const nodeById = new Map(nodesWithPositions.map((n) => [n.id, n]))
@@ -481,7 +522,6 @@ export default function GraphView({
         if (!didAutoStop && simulation.alpha() < 0.035) {
           didAutoStop = true
           simulation.stop()
-          fitToView()
         }
       }
 
@@ -497,49 +537,25 @@ export default function GraphView({
 
     simulation.on('tick', applyPositions)
 
-    // Static layout: apply initial positions immediately so graph is visible without waiting for tick
+    // Apply initial positions immediately.
+    applyPositions()
     if (layout !== 'force' || !hasEdges) {
-      applyPositions()
       simulation.tick()
-      // For static layouts, immediately fit to view
-      fitToView(false)
     }
 
-    // After a force simulation, fit once it settles
-    let forceFitTimer: number | null = null
-    let forceStopTimer: number | null = null
-    if (layout === 'force' && hasEdges) {
-      // Ensure graph fills the viewport even if simulation is interrupted/restarted.
-      forceFitTimer = window.setTimeout(() => {
-        applyPositions()
-        fitToView(false)
-      }, 800)
-
-      // Hard cap to prevent endless animation in high-energy/degenerate graphs.
-      forceStopTimer = window.setTimeout(() => {
-        simulation.stop()
-        applyPositions()
-        fitToView()
-      }, 3500)
-
-      simulation.on('end', () => {
-        if (forceStopTimer !== null) {
-          window.clearTimeout(forceStopTimer)
-          forceStopTimer = null
-        }
-        applyPositions()
-        fitToView()
-      })
+    // Fresh implementation: fit exactly once for new graph data.
+    // After user starts zooming/panning, we never auto-fit until Reset is clicked.
+    if (userZoomedRef.current) {
+      applyingAutoTransformRef.current = true
+      svg.call(zoom.transform, zoomTransformRef.current)
+      applyingAutoTransformRef.current = false
+    } else {
+      fitToView(false)
     }
 
     // Cleanup
     return () => {
-      if (forceFitTimer !== null) {
-        window.clearTimeout(forceFitTimer)
-      }
-      if (forceStopTimer !== null) {
-        window.clearTimeout(forceStopTimer)
-      }
+      fitToViewRef.current = null
       simulation.stop()
     }
   }, [
@@ -554,9 +570,6 @@ export default function GraphView({
     edgeStyles,
     selectedNode,
     pinnedNodes,
-    onNodeClick,
-    onNodeRightClick,
-    onEdgeClick,
   ])
 
   // Export to PNG function
@@ -659,10 +672,62 @@ export default function GraphView({
     }
   }, [onExportReady, filteredNodes, filteredEdges, width, height, resolvedSize.width, resolvedSize.height])
 
+  const zoomBy = (factor: number) => {
+    const svg = svgSelectionRef.current
+    const zoom = zoomBehaviorRef.current
+    if (!svg || !zoom) return
+    const node = svg.node()
+    if (!node) return
+    const current = d3.zoomTransform(node)
+    const nextScale = Math.max(0.05, Math.min(20, current.k * factor))
+    const center: [number, number] = [resolvedSize.width / 2, resolvedSize.height / 2]
+    svg.call(zoom.scaleTo, nextScale, center)
+  }
+
+  const resetZoom = () => {
+    const svg = svgSelectionRef.current
+    const zoom = zoomBehaviorRef.current
+    if (!svg || !zoom) return
+    if (fitToViewRef.current) {
+      fitToViewRef.current()
+      return
+    }
+    svg.call(zoom.transform, d3.zoomIdentity)
+  }
+
   return (
     <div className="w-full h-full bg-zinc-950 relative">
       <div className="absolute left-2 top-2 z-10 pointer-events-none rounded bg-emerald-500/20 border border-emerald-400/40 px-2 py-1 text-[10px] text-emerald-300 font-mono">
         GraphView marker: 2026-02-23-v3 | prop:{width}x{height} | view:{resolvedSize.width}x{resolvedSize.height} | fit:{debugFitScale?.toFixed(2) ?? 'n/a'}
+      </div>
+      <div className="absolute right-3 bottom-3 z-20 flex items-center gap-1 rounded border border-zinc-700 bg-zinc-900/85 p-1">
+        <button
+          type="button"
+          onClick={() => zoomBy(1.2)}
+          className="h-8 w-8 rounded bg-zinc-800 text-zinc-200 hover:bg-zinc-700"
+          aria-label="Zoom in"
+          title="Zoom in"
+        >
+          +
+        </button>
+        <button
+          type="button"
+          onClick={() => zoomBy(0.8)}
+          className="h-8 w-8 rounded bg-zinc-800 text-zinc-200 hover:bg-zinc-700"
+          aria-label="Zoom out"
+          title="Zoom out"
+        >
+          -
+        </button>
+        <button
+          type="button"
+          onClick={resetZoom}
+          className="h-8 rounded bg-zinc-800 px-2 text-xs font-medium text-zinc-200 hover:bg-zinc-700"
+          aria-label="Reset zoom"
+          title="Reset zoom"
+        >
+          Reset
+        </button>
       </div>
       <svg ref={svgRef} width={resolvedSize.width} height={resolvedSize.height} className="block" />
     </div>
