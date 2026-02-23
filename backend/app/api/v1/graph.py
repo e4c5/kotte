@@ -1,6 +1,5 @@
 """Graph metadata endpoints."""
 
-import asyncio
 import logging
 
 from fastapi import APIRouter, Depends
@@ -15,6 +14,7 @@ from app.models.graph import (
     MetaGraphResponse,
     NodeLabel,
     EdgeLabel,
+    PropertyStatistics,
     MetaGraphEdge,
     NodeExpandRequest,
     NodeExpandResponse,
@@ -130,11 +130,9 @@ async def get_graph_metadata(
             )
             return NodeLabel(label=label_name, count=int(count), properties=properties)
 
-        node_labels = (
-            await asyncio.gather(*(build_node_label(row) for row in node_label_rows))
-            if node_label_rows
-            else []
-        )
+        node_labels: list[NodeLabel] = []
+        for row in node_label_rows:
+            node_labels.append(await build_node_label(row))
 
         # Get edge labels with counts
         edge_query = """
@@ -168,8 +166,6 @@ async def get_graph_metadata(
                 db_conn, validated_graph_name, validated_label_name
             )
 
-            from app.models.graph import PropertyStatistics
-
             property_stats = [
                 PropertyStatistics(property=prop, min=stats["min"], max=stats["max"])
                 for prop, stats in numeric_stats.items()
@@ -185,11 +181,9 @@ async def get_graph_metadata(
                 property_statistics=property_stats,
             )
 
-        edge_labels = (
-            await asyncio.gather(*(build_edge_label(row) for row in edge_label_rows))
-            if edge_label_rows
-            else []
-        )
+        edge_labels: list[EdgeLabel] = []
+        for row in edge_label_rows:
+            edge_labels.append(await build_edge_label(row))
 
         return GraphMetadata(
             graph_name=validated_graph_name,

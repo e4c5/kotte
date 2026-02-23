@@ -46,9 +46,10 @@ class TestGraphNameInjection:
             from urllib.parse import quote
             encoded = quote(malicious, safe="")
             response = await async_client.get(f"/api/v1/graphs/{encoded}/metadata")
-            # Must not return 200 success for malicious input
-            assert response.status_code != 200 or response.json().get("labels") is None, (
-                f"Graph name '{malicious!r}' may have bypassed validation: {response.status_code}"
+            # Must never return success for malicious input.
+            assert response.status_code != 200, (
+                f"Graph name '{malicious!r}' may have bypassed validation: "
+                f"{response.status_code}, body={response.text}"
             )
 
     @pytest.mark.asyncio
