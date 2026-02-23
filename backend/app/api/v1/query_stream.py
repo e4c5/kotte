@@ -150,10 +150,11 @@ async def stream_query_results(
             return
         
         while True:
-            # Add SKIP and LIMIT to the query
-            modified_cypher = (
-                f"{cypher_query.rstrip(';')} SKIP {current_offset} LIMIT {chunk_size}"
-            )
+            # Add SKIP and LIMIT to the query (strip trailing ; so we don't produce "...; SKIP")
+            cypher_base = cypher_query.rstrip()
+            if cypher_base.endswith(";"):
+                cypher_base = cypher_base[:-1].rstrip()
+            modified_cypher = f"{cypher_base} SKIP {current_offset} LIMIT {chunk_size}"
             
             # Execute via literal SQL (execute_cypher) to avoid cypher() overload issues
             raw_rows = await db_conn.execute_cypher(

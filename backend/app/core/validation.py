@@ -140,12 +140,18 @@ def add_result_limit_if_missing(cypher: str, max_limit: int) -> tuple[str, bool]
     """
     Add LIMIT to a Cypher query if absent.
 
+    Strips a trailing semicolon before appending so we do not produce invalid
+    Cypher like "... ORDER BY x; LIMIT 5000" (semicolon terminates the statement).
+
     Returns:
         (cypher_query, limit_was_added)
     """
     if re.search(r"\bLIMIT\b", cypher, flags=re.IGNORECASE):
         return cypher, False
-    return f"{cypher.rstrip()} LIMIT {max_limit}", True
+    normalized = cypher.rstrip()
+    if normalized.endswith(";"):
+        normalized = normalized[:-1].rstrip()
+    return f"{normalized} LIMIT {max_limit}", True
 
 
 def validate_variable_length_traversal(

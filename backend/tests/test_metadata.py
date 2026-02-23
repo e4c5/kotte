@@ -11,15 +11,13 @@ class TestMetadataService:
 
     @pytest.mark.asyncio
     async def test_discover_properties_node_label(self, mock_db_connection):
-        """Test discovering properties for a node label (jsonb_object_keys format)."""
+        """Test discovering properties for a node label (Cypher keys() format)."""
         property_cache.invalidate("test_graph", "Person")
-        # Mock jsonb_object_keys query result: one row per distinct property key
+        # execute_cypher returns AS (k agtype); k is list of keys from keys(n)
         mock_result = [
-            {"prop_key": "age"},
-            {"prop_key": "city"},
-            {"prop_key": "name"},
+            {"k": ["age", "city", "name"]},
         ]
-        mock_db_connection.execute_query = AsyncMock(return_value=mock_result)
+        mock_db_connection.execute_cypher = AsyncMock(return_value=mock_result)
 
         properties = await MetadataService.discover_properties(
             mock_db_connection, "test_graph", "Person", "v"
@@ -32,13 +30,12 @@ class TestMetadataService:
 
     @pytest.mark.asyncio
     async def test_discover_properties_edge_label(self, mock_db_connection):
-        """Test discovering properties for an edge label (jsonb_object_keys format)."""
+        """Test discovering properties for an edge label (Cypher keys() format)."""
         property_cache.invalidate("test_graph", "KNOWS")
         mock_result = [
-            {"prop_key": "since"},
-            {"prop_key": "weight"},
+            {"k": ["since", "weight"]},
         ]
-        mock_db_connection.execute_query = AsyncMock(return_value=mock_result)
+        mock_db_connection.execute_cypher = AsyncMock(return_value=mock_result)
 
         properties = await MetadataService.discover_properties(
             mock_db_connection, "test_graph", "KNOWS", "e"
@@ -52,21 +49,20 @@ class TestMetadataService:
     async def test_discover_properties_empty_result(self, mock_db_connection):
         """Test discovering properties when no data exists."""
         property_cache.invalidate("test_graph", "EmptyLabel")
-        mock_db_connection.execute_query = AsyncMock(return_value=[])
-        
+        mock_db_connection.execute_cypher = AsyncMock(return_value=[])
+
         properties = await MetadataService.discover_properties(
             mock_db_connection, "test_graph", "EmptyLabel", "v"
         )
-        
+
         assert isinstance(properties, list)
         assert len(properties) == 0
 
     @pytest.mark.asyncio
     async def test_discover_properties_no_properties(self, mock_db_connection):
         """Test discovering properties when nodes have no properties."""
-        property_cache.invalidate("test_graph", "NoPropsLabel")  # avoid cache from other tests
-        # jsonb_object_keys returns no rows for empty/null properties
-        mock_db_connection.execute_query = AsyncMock(return_value=[])
+        property_cache.invalidate("test_graph", "NoPropsLabel")
+        mock_db_connection.execute_cypher = AsyncMock(return_value=[])
 
         properties = await MetadataService.discover_properties(
             mock_db_connection, "test_graph", "NoPropsLabel", "v"
@@ -94,20 +90,9 @@ class TestMetadataService:
 
     @pytest.mark.asyncio
     async def test_get_numeric_property_statistics_for_label(self, mock_db_connection):
-        """Test fetching numeric property stats for an edge/vertex label."""
-        mock_db_connection.execute_query = AsyncMock(
-            return_value=[
-                {"property": "weight", "min": 0.1, "max": 0.9},
-                {"property": "cost", "min": 1, "max": 10},
-            ]
-        )
-
+        """Numeric stats for label returns empty (agtype; no CROSS JOIN jsonb)."""
         stats = await MetadataService.get_numeric_property_statistics_for_label(
             mock_db_connection, "test_graph", "REL"
         )
-
-        assert stats["weight"]["min"] == 0.1
-        assert stats["weight"]["max"] == 0.9
-        assert stats["cost"]["min"] == 1.0
-        assert stats["cost"]["max"] == 10.0
+        assert stats == {}
 

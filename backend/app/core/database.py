@@ -1,11 +1,12 @@
 """Database connection management."""
 
 import asyncio
+import re
 import logging
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from typing import Optional
+from typing import List, Optional
 
 import psycopg
 from psycopg.rows import dict_row
@@ -163,6 +164,12 @@ class DatabaseConnection:
                 await self._conn.rollback()
                 raise
             except Exception:
+                logger.error(
+                    "execute_query failed; full SQL: %s",
+                    query,
+                    exc_info=True,
+                )
+                logger.error("execute_query failed; params: %s", params)
                 await self._conn.rollback()
                 raise
 
@@ -308,6 +315,38 @@ class DatabaseConnection:
         import secrets
         return "$c" + secrets.token_hex(4) + "$"
 
+    @staticmethod
+    def _cypher_return_columns(cypher_query: str) -> List[str]:
+        """
+        Infer RETURN column names from Cypher so we can build AS (col1 agtype, ...).
+        AGE requires the AS clause to match the return column count and names.
+        """
+        # Find RETURN ... up to ORDER BY, LIMIT, SKIP, or end
+        m = re.search(
+            r"\bRETURN\s+(.+?)(?=\s+ORDER\s+BY|\s+LIMIT|\s+SKIP|\s*;|\s*$)",
+            cypher_query,
+            re.IGNORECASE | re.DOTALL,
+        )
+        if not m:
+            return ["result"]
+        return_expr = m.group(1).strip()
+        # Split by comma (simple: no nested parens handling)
+        parts = [p.strip() for p in return_expr.split(",")]
+        names: List[str] = []
+        for i, part in enumerate(parts):
+            # Prefer "AS alias"
+            as_match = re.search(r"\s+AS\s+(\w+)\s*$", part, re.IGNORECASE)
+            if as_match:
+                name = as_match.group(1)
+            else:
+                name = f"c{i + 1}"
+            # Safe identifier: alphanumeric and underscore only
+            if re.match(r"^[a-zA-Z_][a-zA-Z0-9_]*$", name):
+                names.append(name)
+            else:
+                names.append(f"c{i + 1}")
+        return names if names else ["result"]
+
     async def execute_cypher(
         self,
         graph_name: str,
@@ -317,29 +356,61 @@ class DatabaseConnection:
     ) -> list[dict]:
         """
         Execute a Cypher query via Apache AGE using literal SQL (graph and query as literals).
-        This matches the AGE docs pattern and avoids overload resolution issues with
-        parameterized cypher(...) calls across different AGE versions.
+        When there are no Cypher parameters we use the 2-arg cypher(graph, query) form;
+        when params are present we use the 3-arg form with a bound agtype parameter.
         """
         tag = self._dollar_quote_tag(cypher_query)
-        # Graph name is already validated (identifier-safe); escape for SQL literal
         graph_literal = graph_name.replace("'", "''")
         cypher_literal = tag + cypher_query + tag
-        # AGE requires the third argument to be a *parameter* (bind), not a literal like NULL::agtype.
+        has_params = bool(params)
         json_mod = __import__("json")
-        params_json = json_mod.dumps(params) if params else "null"
-        sql = (
-            f"SELECT * FROM ag_catalog.cypher("
-            f"'{graph_literal}', {cypher_literal}, %(params)s::agtype"
-            f") AS (result agtype)"
+        params_json = json_mod.dumps(params) if has_params else "null"
+
+        # AGE requires AS (col1 agtype, ...) to match RETURN column count and names
+        return_cols = self._cypher_return_columns(cypher_query)
+        as_clause = ", ".join(f"{c} agtype" for c in return_cols)
+
+        if has_params:
+            # 3-arg form: AGE expects the third argument as a bind, not a literal
+            sql = (
+                f"SELECT * FROM ag_catalog.cypher("
+                f"'{graph_literal}', {cypher_literal}, %(params)s::agtype"
+                f") AS ({as_clause})"
+            )
+            run_params: Optional[dict] = {"params": params_json}
+            params_literal = params_json.replace("'", "''")
+            runnable_sql = sql.replace(
+                "%(params)s::agtype", f"'{params_literal}'::agtype"
+            )
+        else:
+            # 2-arg form: no bind, matches typical AGE examples and avoids overload issues
+            sql = (
+                f"SELECT * FROM ag_catalog.cypher("
+                f"'{graph_literal}', {cypher_literal}"
+                f") AS ({as_clause})"
+            )
+            run_params = None
+            runnable_sql = sql
+
+        logger.info(
+            "execute_cypher: graph=%s, user cypher (verbatim): %s",
+            graph_name,
+            cypher_query,
         )
-        run_params: Optional[dict] = {"params": params_json}
+        logger.info("execute_cypher: generated SQL (template): %s", sql)
+        logger.info("execute_cypher: full runnable SQL: %s", runnable_sql)
+        if has_params:
+            logger.info("execute_cypher: bind params (params)=%s", params_json)
 
-        # Log verbatim: user cypher and full generated SQL (so we can copy-paste into psql)
-        logger.info("execute_cypher: user cypher (graph=%s) verbatim: %s", graph_name, cypher_query)
-        logger.info("execute_cypher: generated SQL verbatim: %s", sql)
-        logger.info("execute_cypher: bind params (params)=%s", params_json)
-
-        return await self.execute_query(sql, run_params, timeout=timeout)
+        try:
+            return await self.execute_query(sql, run_params, timeout=timeout)
+        except Exception:
+            logger.error(
+                "execute_cypher: query failed; full generated SQL: %s",
+                runnable_sql,
+                exc_info=True,
+            )
+            raise
 
     @asynccontextmanager
     async def transaction(self, timeout: Optional[int] = None):

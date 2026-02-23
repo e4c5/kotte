@@ -98,7 +98,10 @@ async def delete_node(
             )
             edges_deleted = 0
             if edge_count_result:
-                parsed = AgTypeParser.parse(edge_count_result[0].get("result", {}))
+                first_val = next(
+                    iter(edge_count_result[0].values()), None
+                ) if edge_count_result[0] else None
+                parsed = AgTypeParser.parse(first_val)
                 if isinstance(parsed, dict) and "edge_count" in parsed:
                     edges_deleted = int(parsed["edge_count"]) or 0
                 elif isinstance(parsed, (int, float)):
@@ -130,7 +133,8 @@ async def delete_node(
                     status_code=500,
                 )
 
-            parsed_result = AgTypeParser.parse(delete_result[0].get("result", {}))
+            first_val = next(iter(delete_result[0].values()), None) if delete_result[0] else None
+            parsed_result = AgTypeParser.parse(first_val)
             if isinstance(parsed_result, dict) and "deleted_count" in parsed_result:
                 deleted_count = int(parsed_result["deleted_count"]) or 0
             elif isinstance(parsed_result, (int, float)):
