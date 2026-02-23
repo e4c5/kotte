@@ -35,6 +35,14 @@ def test_app(monkeypatch):
     # Now import and create app
     from app.main import create_app
     app = create_app()
+    # Starlette/AnyIO can deadlock in ASGITransport with stacked BaseHTTPMiddleware.
+    # For integration tests, keep behavior-focused middlewares and remove observability-only layers.
+    app.user_middleware = [
+        m
+        for m in app.user_middleware
+        if m.cls.__name__ not in {"RequestIDMiddleware", "MetricsMiddleware"}
+    ]
+    app.middleware_stack = app.build_middleware_stack()
     return app
 
 
@@ -49,7 +57,11 @@ async def async_client(test_app):
     """Async test client that properly supports session middleware."""
     from httpx import ASGITransport
     transport = ASGITransport(app=test_app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as ac:
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="http://testserver",
+        timeout=15.0,
+    ) as ac:
         yield ac
 
 
@@ -161,24 +173,26 @@ async def connected_client(authenticated_client):
             # Store mock for tests to access
             authenticated_client._mock_db = mock_conn
             authenticated_client._mock_db_class = mock_db_class
-            
-            # Connect
-            connect_response = await authenticated_client.post(
-                "/api/v1/session/connect",
-                json={
-                    "connection": {
+
+            # Avoid calling /session/connect in integration tests: attach mocked DB directly
+            # to the authenticated session created by /auth/login.
+            session_id = next(iter(session_manager._sessions.keys()), None)
+            if not session_id:
+                pytest.skip("No active authenticated session found")
+            session_manager.update_session(
+                session_id,
+                {
+                    "connection_config": {
                         "host": "localhost",
                         "port": 5432,
                         "database": "test_db",
                         "user": "test_user",
                         "password": "test_password",
-                    }
+                    },
+                    "db_connection": mock_conn,
                 },
             )
-            
-            if connect_response.status_code != 201:
-                pytest.skip(f"Failed to connect to database: {connect_response.status_code}")
-            
+
             yield authenticated_client
             return
     

@@ -46,7 +46,7 @@ async def list_query_templates():
     return get_templates()
 
 
-def get_db_connection(session: dict = Depends(get_session)) -> DatabaseConnection:
+async def get_db_connection(session: dict = Depends(get_session)) -> DatabaseConnection:
     """Get database connection from session."""
     db_conn = session.get("db_connection")
     if not db_conn:

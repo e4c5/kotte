@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     db_name: str = "postgres"
     db_user: str = "postgres"
     db_password: str = "postgres"
+    db_connect_timeout: int = 10  # seconds
 
     # CORS
     cors_origins: List[str] = ["http://localhost:5173", "http://localhost:3000"]

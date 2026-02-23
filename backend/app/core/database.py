@@ -43,13 +43,15 @@ class DatabaseConnection:
             conn_str = (
                 f"host={self.host} port={self.port} "
                 f"dbname={self.database} user={self.user} "
-                f"password={self.password}"
+                f"password={self.password} "
+                f"connect_timeout={settings.db_connect_timeout}"
             )
             if self.sslmode:
                 conn_str += f" sslmode={self.sslmode}"
 
-            self._conn = await psycopg.AsyncConnection.connect(
-                conn_str, row_factory=dict_row
+            self._conn = await asyncio.wait_for(
+                psycopg.AsyncConnection.connect(conn_str, row_factory=dict_row),
+                timeout=settings.db_connect_timeout,
             )
 
             # Verify AGE extension and configure session for AGE
@@ -74,6 +76,21 @@ class DatabaseConnection:
             logger.info(
                 f"Connected to database {self.database} on {self.host}:{self.port}"
             )
+        except asyncio.TimeoutError as e:
+            logger.error(
+                "Database connection timed out after %s seconds",
+                settings.db_connect_timeout,
+            )
+            raise APIException(
+                code=ErrorCode.DB_CONNECT_FAILED,
+                message=(
+                    "Failed to connect to database: "
+                    f"connection timed out after {settings.db_connect_timeout}s"
+                ),
+                category=ErrorCategory.UPSTREAM,
+                status_code=500,
+                retryable=True,
+            ) from e
         except psycopg.Error as e:
             logger.error(f"Database connection failed: {e}")
             raise APIException(
@@ -204,13 +221,15 @@ class DatabaseConnection:
             conn_str = (
                 f"host={self.host} port={self.port} "
                 f"dbname={self.database} user={self.user} "
-                f"password={self.password}"
+                f"password={self.password} "
+                f"connect_timeout={settings.db_connect_timeout}"
             )
             if self.sslmode:
                 conn_str += f" sslmode={self.sslmode}"
 
-            cancel_conn = await psycopg.AsyncConnection.connect(
-                conn_str, row_factory=dict_row
+            cancel_conn = await asyncio.wait_for(
+                psycopg.AsyncConnection.connect(conn_str, row_factory=dict_row),
+                timeout=settings.db_connect_timeout,
             )
             try:
                 async with cancel_conn.cursor() as cur:
@@ -353,4 +372,3 @@ class DatabaseConnection:
 
 # Connection pool per session (stored in session manager)
 # This is a simplified approach; for production, consider connection pooling library
-

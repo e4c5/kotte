@@ -1,11 +1,16 @@
 """Integration tests for database connections."""
 
+import os
 import pytest
 from app.core.database import DatabaseConnection
 from app.core.errors import APIException
 
 
 @pytest.mark.integration
+@pytest.mark.skipif(
+    os.getenv("USE_REAL_TEST_DB", "false").lower() != "true",
+    reason="Requires real test database (set USE_REAL_TEST_DB=true)",
+)
 class TestDatabaseConnection:
     """Integration tests for database connection management."""
 
