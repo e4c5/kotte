@@ -117,6 +117,22 @@ class TestAgTypeParser:
         assert result["type"] == "edge"
         assert result["label"] == "KNOWS"
 
+    def test_parse_edge_startid_endid(self):
+        """Test parsing edge with startid/endid (no underscore), as returned by some AGE versions."""
+        edge = {
+            "id": 2,
+            "label": "CALLS",
+            "startid": 100,
+            "endid": 200,
+            "properties": {},
+        }
+        result = AgTypeParser.parse(edge)
+        assert result["type"] == "edge"
+        assert result["id"] == "2"
+        assert result["label"] == "CALLS"
+        assert result["source"] == "100"
+        assert result["target"] == "200"
+
     def test_parse_path(self):
         """Test parsing a path with preserved structure."""
         path_data = {

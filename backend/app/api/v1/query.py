@@ -186,7 +186,34 @@ async def execute_query(
         
         # Extract graph elements (nodes and edges) for visualization
         graph_elements = AgTypeParser.extract_graph_elements(parsed_rows)
-        
+        nodes_count = len(graph_elements["nodes"])
+        edges_count = len(graph_elements["edges"])
+
+        # Debug (log at DEBUG level): raw row structure when we get nodes but no edges
+        if edges_count == 0 and nodes_count > 0 and raw_rows:
+            logger.debug(
+                "agtype_debug: 0 edges but %s nodes — first raw row structure",
+                nodes_count,
+            )
+            first_raw = raw_rows[0]
+            for col_name, raw_val in first_raw.items():
+                if isinstance(raw_val, dict):
+                    logger.debug("agtype_debug: column %r = dict keys=%s", col_name, list(raw_val.keys()))
+                elif isinstance(raw_val, str):
+                    logger.debug(
+                        "agtype_debug: column %r = str len=%s prefix=%s",
+                        col_name,
+                        len(raw_val),
+                        raw_val[:350] if raw_val else "",
+                    )
+                else:
+                    logger.debug(
+                        "agtype_debug: column %r type=%s repr=%s",
+                        col_name,
+                        type(raw_val).__name__,
+                        repr(raw_val)[:350],
+                    )
+
         # Build result rows
         columns = sorted(all_columns) if all_columns else ["result"]
         result_rows = [
@@ -194,9 +221,6 @@ async def execute_query(
         ]
 
         # Add graph elements to response stats
-        nodes_count = len(graph_elements["nodes"])
-        edges_count = len(graph_elements["edges"])
-        
         paths_list = graph_elements.get("paths", [])
         stats = {
             "nodes_extracted": nodes_count,

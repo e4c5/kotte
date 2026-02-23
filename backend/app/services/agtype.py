@@ -2,9 +2,59 @@
 
 import json
 import logging
+import re
 from typing import Any, Dict, List, Optional, Union
 
 logger = logging.getLogger(__name__)
+
+
+def _get_first_value_for_key_containing(obj: Dict[str, Any], substring: str) -> Any:
+    """Return value for first key that contains substring and looks like an id key."""
+    for k, v in obj.items():
+        if v is None:
+            continue
+        k_lower = k.lower()
+        if substring.lower() in k_lower and ("id" in k_lower or k_lower in ("startid", "endid")):
+            return v
+    return None
+
+
+def _object_to_dict(value: Any) -> Optional[Dict[str, Any]]:
+    """If value is an object with id/label/start/end-like attributes, return a dict for edge/vertex parsing."""
+    if value is None or isinstance(value, (dict, list, str, int, float, bool)):
+        return None
+    try:
+        d = getattr(value, "__dict__", None)
+        if isinstance(d, dict) and "id" in d and "label" in d:
+            return d
+        # Try attribute access for known keys (e.g. psycopg custom type)
+        for start_key in ("start_id", "startid", "startId"):
+            for end_key in ("end_id", "endid", "endId"):
+                if getattr(value, start_key, None) is not None and getattr(value, end_key, None) is not None:
+                    return {
+                        "id": getattr(value, "id", None),
+                        "label": getattr(value, "label", None),
+                        "start_id": getattr(value, "start_id", None),
+                        "end_id": getattr(value, "end_id", None),
+                        "startid": getattr(value, "startid", None),
+                        "endid": getattr(value, "endid", None),
+                        "properties": getattr(value, "properties", {}),
+                    }
+    except (TypeError, AttributeError):
+        pass
+    return None
+
+
+def _normalize_agtype_string(s: str) -> Optional[str]:
+    """Try to convert AGE native format (semicolons, unquoted keys) to JSON. Returns None if not applicable."""
+    s = s.strip()
+    if not s.startswith("{") or not s.endswith("}"):
+        return None
+    # Replace known unquoted keys with quoted keys (id, startid, endid, label, properties)
+    for key in ("id", "startid", "endid", "start_id", "end_id", "label", "properties"):
+        s = re.sub(rf"\b{re.escape(key)}\s*:", rf'"{key}":', s, flags=re.IGNORECASE)
+    s = s.replace(";", ",")
+    return s
 
 
 class AgTypeParser:
@@ -42,18 +92,59 @@ class AgTypeParser:
                 parsed = json.loads(s)
                 return AgTypeParser.parse(parsed)
             except (json.JSONDecodeError, TypeError):
+                # AGE native format uses semicolons; try to convert to JSON-like and re-parse
+                normalized = _normalize_agtype_string(s)
+                if normalized is not None:
+                    try:
+                        parsed = json.loads(normalized)
+                        return AgTypeParser.parse(parsed)
+                    except (json.JSONDecodeError, TypeError):
+                        pass
                 return agtype_value
         else:
+            # Custom type (e.g. psycopg adapter)? Try to convert to dict
+            obj = _object_to_dict(agtype_value)
+            if obj is not None:
+                return AgTypeParser._parse_dict(obj)
             # Scalar value (int, float, bool)
             return agtype_value
+
+    @staticmethod
+    def _is_edge(obj: Dict[str, Any]) -> bool:
+        """True if dict looks like an AGE edge (has endpoint ids in any known format)."""
+        if "id" not in obj or "label" not in obj:
+            return False
+        # Already-parsed edge (from a previous parse() call)
+        if obj.get("source") is not None and obj.get("target") is not None:
+            return True
+        # Explicit keys we know (raw AGE format)
+        if obj.get("start_id") is not None and obj.get("end_id") is not None:
+            return True
+        if obj.get("startid") is not None and obj.get("endid") is not None:
+            return True
+        if obj.get("startId") is not None and obj.get("endId") is not None:
+            return True
+        if obj.get("start_vertex_id") is not None and obj.get("end_vertex_id") is not None:
+            return True
+        # Fallback: any key containing 'start' and some key containing 'end' (for unknown AGE variants)
+        start_val = None
+        end_val = None
+        for k, v in obj.items():
+            if v is None:
+                continue
+            k_lower = k.lower()
+            if "start" in k_lower and ("id" in k_lower or k_lower == "startid"):
+                start_val = v
+            elif "end" in k_lower and ("id" in k_lower or k_lower == "endid"):
+                end_val = v
+        return start_val is not None and end_val is not None
 
     @staticmethod
     def _parse_dict(obj: Dict[str, Any]) -> Any:
         """Parse a dictionary that might be a vertex, edge, or path."""
         # Check for vertex structure
         if "id" in obj and "label" in obj:
-            if "start_id" in obj and "end_id" in obj:
-                # This is an edge
+            if AgTypeParser._is_edge(obj):
                 return AgTypeParser._parse_edge(obj)
             else:
                 # This is a vertex (node)
@@ -92,11 +183,21 @@ class AgTypeParser:
 
     @staticmethod
     def _parse_edge(obj: Dict[str, Any]) -> Dict[str, Any]:
-        """Parse an edge from agtype."""
+        """Parse an edge from agtype. Supports start_id/end_id, startid/endid, and already-parsed source/target."""
         edge_id = obj.get("id")
         label = obj.get("label", "")
-        start_id = obj.get("start_id")
-        end_id = obj.get("end_id")
+        start_id = (
+            obj.get("start_id") or obj.get("startid") or obj.get("startId")
+            or obj.get("start_vertex_id")
+            or obj.get("source")
+            or _get_first_value_for_key_containing(obj, "start")
+        )
+        end_id = (
+            obj.get("end_id") or obj.get("endid") or obj.get("endId")
+            or obj.get("end_vertex_id")
+            or obj.get("target")
+            or _get_first_value_for_key_containing(obj, "end")
+        )
         properties = obj.get("properties", {})
 
         # Handle label as string or list
