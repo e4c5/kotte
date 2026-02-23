@@ -198,8 +198,27 @@ export default function GraphView({
   const getNodeCaption = (node: GraphNode): string => {
     const style = getNodeStyle(node)
     const field = style.captionField || 'label'
-    if (field === 'label') return node.label
-    return String(node.properties[field] || node.id)
+    let caption: string
+    if (field === 'label') {
+      caption = node.label
+    } else {
+      caption = String(node.properties[field] ?? node.id)
+    }
+    // If caption is the graph label (e.g. "CodeElement") and we have properties, use a descriptive property
+    if (caption === node.label && node.properties && typeof node.properties === 'object') {
+      const p = node.properties as Record<string, unknown>
+      const name = p.name ?? p.title ?? p.fqn ?? p.signature
+      if (name != null && String(name).trim() !== '') {
+        const s = String(name)
+        // Shorten long FQN/signature: show last segment if longer than 40 chars
+        if (s.length > 40 && (s.includes('.') || s.includes('#'))) {
+          const last = s.includes('#') ? s.split('#').pop()! : s.split('.').pop()!
+          return last
+        }
+        return s
+      }
+    }
+    return caption
   }
 
   useEffect(() => {
