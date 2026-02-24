@@ -6,8 +6,6 @@ interface TabBarProps {
   onTabClick: (tabId: string) => void
   onTabClose: (tabId: string, e: React.MouseEvent) => void
   onNewTab: () => void
-  onTabPin: (tabId: string) => void
-  onTabUnpin: (tabId: string) => void
 }
 
 export default function TabBar({
@@ -16,8 +14,6 @@ export default function TabBar({
   onTabClick,
   onTabClose,
   onNewTab,
-  onTabPin,
-  onTabUnpin,
 }: TabBarProps) {
   const sortedTabs = [...tabs].sort((a, b) => {
     if (a.pinned && !b.pinned) return -1
@@ -29,7 +25,7 @@ export default function TabBar({
     <div
       role="tablist"
       aria-label="Query result tabs"
-      className="flex overflow-x-auto items-center gap-0.5 min-w-0"
+      className="flex items-end gap-1 min-w-0 h-9 px-1"
     >
       {sortedTabs.map((tab, index) => (
         <div
@@ -59,54 +55,23 @@ export default function TabBar({
             }
           }}
           className={`
-            flex items-center gap-1.5 px-2.5 py-1.5 rounded-t text-sm cursor-pointer outline-none
-            min-w-0 max-w-[180px] shrink-0
-            transition-colors
+            flex items-center gap-1.5 px-3 py-1 text-sm cursor-pointer outline-none
+            min-w-0 max-w-[180px] shrink-0 h-8
+            transition-colors border
             ${activeTabId === tab.id
-              ? 'bg-zinc-700 text-zinc-100'
-              : 'text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200'
+              ? 'bg-zinc-900 text-zinc-100 border-zinc-600 border-b-zinc-900 rounded-t-md'
+              : 'bg-zinc-900/40 text-zinc-400 border-transparent hover:text-zinc-100 hover:border-zinc-600 hover:bg-zinc-900/70 rounded-t-md'
             }
           `}
           title={tab.name}
         >
-          {tab.pinned && (
-            <span className="text-xs shrink-0" aria-label="Pinned tab" role="img">📌</span>
-          )}
           <span className="flex-1 truncate">{tab.name}</span>
-          {tab.loading && (
-            <span className="text-xs shrink-0" aria-label="Query running" role="status">⏳</span>
-          )}
-          {tab.error && (
-            <span className="text-xs shrink-0 text-red-400" aria-label="Error in query" role="alert">⚠️</span>
-          )}
           <div className="flex items-center gap-0.5 shrink-0" onClick={(e) => e.stopPropagation()}>
-            {!tab.pinned && (
-              <button
-                type="button"
-                onClick={() => onTabPin(tab.id)}
-                aria-label={`Pin tab: ${tab.name}`}
-                className="p-0.5 rounded hover:bg-zinc-600 text-zinc-400 hover:text-zinc-200 text-xs"
-                title="Pin tab"
-              >
-                📌
-              </button>
-            )}
-            {tab.pinned && (
-              <button
-                type="button"
-                onClick={() => onTabUnpin(tab.id)}
-                aria-label={`Unpin tab: ${tab.name}`}
-                className="p-0.5 rounded hover:bg-zinc-600 text-zinc-400 hover:text-zinc-200 text-xs"
-                title="Unpin tab"
-              >
-                📍
-              </button>
-            )}
             <button
               type="button"
               onClick={(e) => onTabClose(tab.id, e)}
               aria-label={`Close tab: ${tab.name}`}
-              className="p-0.5 rounded hover:bg-red-900/50 text-zinc-400 hover:text-red-300 text-sm leading-none"
+              className="p-0.5 rounded text-zinc-400 text-sm leading-none"
               title="Close tab"
             >
               ×
@@ -118,7 +83,7 @@ export default function TabBar({
         type="button"
         onClick={onNewTab}
         aria-label="Create new query tab"
-        className="shrink-0 px-2 py-1.5 rounded text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200 text-lg leading-none transition-colors"
+        className="shrink-0 h-8 w-8 flex items-center justify-center cursor-pointer outline-none rounded-t-md text-sm leading-none text-zinc-400 bg-zinc-900/40 border border-transparent hover:text-zinc-100 hover:border-zinc-600 hover:bg-zinc-900/70 transition-colors"
         title="New tab"
       >
         +
