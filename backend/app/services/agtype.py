@@ -57,6 +57,27 @@ def _normalize_agtype_string(s: str) -> Optional[str]:
     return s
 
 
+def _normalize_path_array_string(s: str) -> Optional[str]:
+    """
+    Convert AGE path array string to parseable JSON.
+    AGE returns paths as e.g. [{"id":0,"label":"Person",...}::vertex, {...}::edge, ...]::path
+    Strips ::path and inner ::vertex / ::edge so json.loads can parse the array.
+    """
+    s = s.strip()
+    if not s.startswith("["):
+        return None
+    for suffix in ("::path", "::agtype"):
+        if s.endswith(suffix):
+            s = s[: -len(suffix)].strip()
+            break
+    if not s.startswith("[") or not s.endswith("]"):
+        return None
+    # Remove type suffixes that break JSON (only after "}" to avoid stripping inside string values)
+    s = re.sub(r"\}::vertex\s*", "}", s, flags=re.IGNORECASE)
+    s = re.sub(r"\}::edge\s*", "}", s, flags=re.IGNORECASE)
+    return s
+
+
 class AgTypeParser:
     """Parser for AGE agtype format."""
 
@@ -98,6 +119,15 @@ class AgTypeParser:
                     try:
                         parsed = json.loads(normalized)
                         return AgTypeParser.parse(parsed)
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+                # Path array: [ {...}::vertex, {...}::edge, ... ] or ]::path
+                path_normalized = _normalize_path_array_string(agtype_value.strip())
+                if path_normalized is not None:
+                    try:
+                        parsed = json.loads(path_normalized)
+                        if isinstance(parsed, list):
+                            return AgTypeParser.parse(parsed)
                     except (json.JSONDecodeError, TypeError):
                         pass
                 return agtype_value
