@@ -316,6 +316,65 @@ class DatabaseConnection:
         return "$c" + secrets.token_hex(4) + "$"
 
     @staticmethod
+    def _split_top_level_commas(s: str) -> List[str]:
+        """Split s by commas only at top level (not inside (), [], {}, or strings)."""
+        parts: List[str] = []
+        cur: List[str] = []
+        depth_p, depth_b, depth_br = 0, 0, 0
+        in_sq, in_dq = False, False
+        i = 0
+        while i < len(s):
+            c = s[i]
+            if in_sq:
+                if c == "'" and (i == 0 or s[i - 1] != "\\"):
+                    in_sq = False
+                cur.append(c)
+                i += 1
+                continue
+            if in_dq:
+                if c == '"' and (i == 0 or s[i - 1] != "\\"):
+                    in_dq = False
+                cur.append(c)
+                i += 1
+                continue
+            if c == "'":
+                in_sq = True
+                cur.append(c)
+                i += 1
+                continue
+            if c == '"':
+                in_dq = True
+                cur.append(c)
+                i += 1
+                continue
+            if c == "(":
+                depth_p += 1
+            elif c == ")":
+                depth_p -= 1
+            elif c == "[":
+                depth_b += 1
+            elif c == "]":
+                depth_b -= 1
+            elif c == "{":
+                depth_br += 1
+            elif c == "}":
+                depth_br -= 1
+            elif (
+                c == ","
+                and depth_p == 0
+                and depth_b == 0
+                and depth_br == 0
+            ):
+                parts.append("".join(cur).strip())
+                cur = []
+                i += 1
+                continue
+            cur.append(c)
+            i += 1
+        parts.append("".join(cur).strip())
+        return parts
+
+    @staticmethod
     def _cypher_return_columns(cypher_query: str) -> List[str]:
         """
         Infer RETURN column names from Cypher so we can build AS (col1 agtype, ...).
@@ -330,8 +389,7 @@ class DatabaseConnection:
         if not m:
             return ["result"]
         return_expr = m.group(1).strip()
-        # Split by comma (simple: no nested parens handling)
-        parts = [p.strip() for p in return_expr.split(",")]
+        parts = DatabaseConnection._split_top_level_commas(return_expr)
         names: List[str] = []
         for i, part in enumerate(parts):
             # Prefer "AS alias"
