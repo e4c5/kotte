@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useSessionStore } from '../stores/sessionStore'
 import { useQueryStore } from '../stores/queryStore'
@@ -64,11 +64,15 @@ export default function WorkspacePage() {
     }
   }, [])
 
+  // Apply default layout only when the user changes it in Settings, not when they change the dropdown
+  const isFirstLayoutSync = useRef(true)
   useEffect(() => {
-    if (defaultLayout && layout !== defaultLayout) {
-      setLayout(defaultLayout)
+    if (isFirstLayoutSync.current) {
+      isFirstLayoutSync.current = false
+      return
     }
-  }, [defaultLayout, layout, setLayout])
+    setLayout(defaultLayout)
+  }, [defaultLayout, setLayout])
 
   useEffect(() => {
     checkAuth().then(() => {
