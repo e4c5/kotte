@@ -236,31 +236,6 @@ export default function WorkspacePage() {
 
   return (
     <div className="relative h-screen w-full bg-zinc-950 text-zinc-100 overflow-hidden">
-      {/* Canvas layer: full-size result area (graph / table) — offset left by sidebar width */}
-      <div
-        className={`absolute right-0 bottom-0 transition-[left] duration-300 ${
-          sidebarCollapsed ? 'left-12' : 'left-64'
-        }`}
-        style={{ top: '5.5rem' }}
-      >
-        {activeTab ? (
-          <ResultTab
-            tab={activeTab}
-            tablePageSize={tablePageSize}
-            onViewModeChange={(mode) => handleTabViewModeChange(activeTab.id, mode)}
-            onNodeExpand={handleExpandNode}
-            onNodeDelete={handleDeleteNode}
-            onNodeSelect={(node) => setSelectedNode(node.id)}
-            onEdgeSelect={(edge) => setSelectedEdge(edge.id)}
-            onExportReady={(exportFn) => handleTabExportReady(activeTab.id, exportFn)}
-          />
-        ) : (
-          <div className="h-full flex items-center justify-center text-zinc-500">
-            No active tab. Create a new tab to start querying.
-          </div>
-        )}
-      </div>
-
       {/* Header: slim, fixed — offset left by sidebar width so it does not sit under the sidebar */}
       <header
         className={`fixed top-0 right-0 h-12 flex items-center justify-between px-4 bg-zinc-900/95 border-b border-zinc-800 z-10 shrink-0 transition-[left] duration-300 ${
@@ -294,22 +269,48 @@ export default function WorkspacePage() {
         </button>
       </header>
 
-      {/* Query bar */}
+      {/* Main content: query editor + results, offset by header and sidebar */}
       <div
-        className={`fixed top-12 right-0 h-10 transition-[left] duration-300 z-20 ${
+        className={`absolute right-0 bottom-0 transition-[left] duration-300 ${
           sidebarCollapsed ? 'left-12' : 'left-64'
         }`}
+        style={{ top: '3rem' }}
       >
-        <QueryEditor
-          value={query}
-          onChange={setQuery}
-          params={params}
-          onParamsChange={setParams}
-          onExecute={handleExecute}
-          onCancel={() => activeTabId && cancelQuery(activeTabId)}
-          loading={loading}
-          history={history}
-        />
+        <div className="flex h-full flex-col">
+          {/* Query bar */}
+          <div className="shrink-0 px-3 py-2 bg-zinc-950 border-b border-zinc-800">
+            <QueryEditor
+              value={query}
+              onChange={setQuery}
+              params={params}
+              onParamsChange={setParams}
+              onExecute={handleExecute}
+              onCancel={() => activeTabId && cancelQuery(activeTabId)}
+              loading={loading}
+              history={history}
+            />
+          </div>
+
+          {/* Canvas layer: full-size result area (graph / table) */}
+          <div className="flex-1 min-h-0">
+            {activeTab ? (
+              <ResultTab
+                tab={activeTab}
+                tablePageSize={tablePageSize}
+                onViewModeChange={(mode) => handleTabViewModeChange(activeTab.id, mode)}
+                onNodeExpand={handleExpandNode}
+                onNodeDelete={handleDeleteNode}
+                onNodeSelect={(node) => setSelectedNode(node.id)}
+                onEdgeSelect={(edge) => setSelectedEdge(edge.id)}
+                onExportReady={(exportFn) => handleTabExportReady(activeTab.id, exportFn)}
+              />
+            ) : (
+              <div className="h-full flex items-center justify-center text-zinc-500">
+                No active tab. Create a new tab to start querying.
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Error toast */}

@@ -43,6 +43,12 @@ export default function QueryEditor({
         setExpanded(false)
       }
 
+      if (e.key === 'Escape' && textareaRef.current === document.activeElement) {
+        e.preventDefault()
+        setExpanded(false)
+        textareaRef.current?.blur()
+      }
+
       if (e.ctrlKey || e.metaKey) {
         if (e.key === 'ArrowUp' && history.length > 0) {
           e.preventDefault()
@@ -84,10 +90,10 @@ export default function QueryEditor({
   }
 
   return (
-    <div ref={containerRef} className="relative w-full h-full">
+    <div ref={containerRef} className="relative w-full">
       <div
-        className={`absolute top-0 left-0 right-0 z-20 bg-zinc-950 border-y border-zinc-800 overflow-hidden ${
-          expanded ? 'shadow-xl border border-zinc-700 ring-2 ring-blue-500/50' : 'h-full'
+        className={`bg-zinc-950 border-y border-zinc-800 overflow-hidden ${
+          expanded ? 'shadow-xl border border-zinc-700 ring-2 ring-blue-500/50' : ''
         }`}
       >
         <div className={`flex items-center gap-2 px-4 ${expanded ? 'py-2 border-b border-zinc-700' : 'h-full'}`}>
