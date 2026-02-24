@@ -1,5 +1,8 @@
 """CSV import endpoints."""
 
+import csv
+import io
+import json
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -10,6 +13,7 @@ from fastapi.responses import JSONResponse
 from app.core.auth import get_session
 from app.services.metadata import MetadataService, property_cache
 from app.core.database import DatabaseConnection
+from app.core.deps import get_db_connection
 from app.core.errors import APIException, ErrorCode, ErrorCategory, translate_db_error
 from app.core.validation import validate_graph_name, validate_label_name, escape_string_literal
 from app.models.import_models import (
@@ -23,19 +27,6 @@ router = APIRouter()
 
 # In-memory job store (use Redis/DB in production)
 _import_jobs: dict[str, ImportJobStatus] = {}
-
-
-def get_db_connection(session: dict = Depends(get_session)) -> DatabaseConnection:
-    """Get database connection from session."""
-    db_conn = session.get("db_connection")
-    if not db_conn:
-        raise APIException(
-            code=ErrorCode.DB_UNAVAILABLE,
-            message="Database connection not established",
-            category=ErrorCategory.UPSTREAM,
-            status_code=500,
-        )
-    return db_conn
 
 
 @router.post("/csv", response_model=CSVImportResponse)
@@ -118,8 +109,11 @@ async def import_csv(
     try:
         # Read CSV file
         content = await file.read()
-        lines = content.decode("utf-8").split("\n")
-        if not lines or not lines[0].strip():
+        # Parse CSV using the csv module to handle quoted fields and embedded commas
+        text = content.decode("utf-8")
+        reader = csv.reader(io.StringIO(text))
+        rows = list(reader)
+        if not rows or not rows[0]:
             raise APIException(
                 code=ErrorCode.IMPORT_INVALID_FILE,
                 message="CSV file is empty",
@@ -128,7 +122,7 @@ async def import_csv(
             )
 
         # Parse header
-        header = [col.strip() for col in lines[0].split(",")]
+        header = [col.strip() for col in rows[0]]
         if not header:
             raise APIException(
                 code=ErrorCode.IMPORT_INVALID_FILE,
@@ -142,7 +136,7 @@ async def import_csv(
         # identifiers are used directly in the function calls below.
         if drop_if_exists:
             drop_query = f"""
-                SELECT * FROM ag_catalog.drop_label({graph_lit}, {label_lit}, {label_kind == 'v'})
+                SELECT * FROM ag_catalog.drop_label({graph_lit}, {label_lit}, {'true' if label_kind == 'v' else 'false'})
             """
             try:
                 await db_conn.execute_query(drop_query)
@@ -150,7 +144,7 @@ async def import_csv(
                 pass  # Label might not exist
 
         create_label_query = f"""
-            SELECT * FROM ag_catalog.create_label({graph_lit}, {label_lit}, {label_kind == 'v'})
+            SELECT * FROM ag_catalog.create_label({graph_lit}, {label_lit}, {'true' if label_kind == 'v' else 'false'})
         """
         try:
             await db_conn.execute_query(create_label_query)
@@ -177,11 +171,11 @@ async def import_csv(
         errors = []
 
         async with db_conn.transaction():
-            for line_num, line in enumerate(lines[1:], start=2):
-                if not line.strip():
+            for line_num, row_values in enumerate(rows[1:], start=2):
+                if not any(v.strip() for v in row_values):
                     continue
 
-                values = [v.strip() for v in line.split(",")]
+                values = [v.strip() for v in row_values]
                 if len(values) != len(header):
                     rejected += 1
                     errors.append(f"Row {line_num}: column count mismatch")
@@ -222,8 +216,6 @@ async def import_csv(
                     """
 
                 try:
-                    import json
-
                     props_json = json.dumps(properties)
                     if label_kind == "v":
                         await db_conn.execute_query(

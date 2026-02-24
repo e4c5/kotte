@@ -161,7 +161,7 @@ async def get_connection(
         conn = connection_storage.get_connection(user_id, connection_id)
         if not conn:
             raise APIException(
-                code=ErrorCode.GRAPH_NOT_FOUND,  # Reuse existing code
+                code=ErrorCode.CONNECTION_NOT_FOUND,
                 message=f"Connection '{connection_id}' not found",
                 category=ErrorCategory.NOT_FOUND,
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -219,7 +219,7 @@ async def delete_connection(
         success = connection_storage.delete_connection(user_id, connection_id)
         if not success:
             raise APIException(
-                code=ErrorCode.GRAPH_NOT_FOUND,  # Reuse existing code
+                code=ErrorCode.CONNECTION_NOT_FOUND,
                 message=f"Connection '{connection_id}' not found",
                 category=ErrorCategory.NOT_FOUND,
                 status_code=status.HTTP_404_NOT_FOUND,

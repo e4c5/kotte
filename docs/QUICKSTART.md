@@ -102,8 +102,19 @@ make lint-frontend
 2. Start backend server (`make dev-backend`)
 3. Start frontend server (`make dev-frontend`)
 4. Open browser to `http://localhost:5173`
-5. Connect to your database
-6. Start exploring graphs!
+5. Log in with the default credentials (`admin` / `admin`) — see the security note below
+6. Connect to your database
+7. Start exploring graphs!
+
+## Security Note — Default Credentials
+
+> ⚠️ The default login is **admin / admin**. This is intentional for local development only.
+> Before exposing the application to any network, set a strong password via the
+> `ADMIN_PASSWORD` environment variable (see [CONFIGURATION.md](CONFIGURATION.md)):
+>
+> ```bash
+> export ADMIN_PASSWORD=$(openssl rand -base64 24)
+> ```
 
 ## Next Steps
 

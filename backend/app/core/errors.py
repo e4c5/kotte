@@ -43,6 +43,9 @@ class ErrorCode:
     IMPORT_JOB_NOT_FOUND = "IMPORT_JOB_NOT_FOUND"
     IMPORT_FAILED = "IMPORT_FAILED"
 
+    # Connection management
+    CONNECTION_NOT_FOUND = "CONNECTION_NOT_FOUND"
+
     # Graph-specific
     NODE_NOT_FOUND = "NODE_NOT_FOUND"
     EDGE_NOT_FOUND = "EDGE_NOT_FOUND"

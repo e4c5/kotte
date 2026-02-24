@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import re
 import time
 import uuid
 
@@ -10,6 +11,7 @@ from fastapi import APIRouter, Depends
 from app.core.auth import get_session
 from app.core.config import settings
 from app.core.database import DatabaseConnection
+from app.core.deps import get_db_connection
 from app.core.errors import (
     APIException,
     ErrorCode,
@@ -44,19 +46,6 @@ router = APIRouter()
 async def list_query_templates():
     """List available Cypher query templates for common graph patterns."""
     return get_templates()
-
-
-async def get_db_connection(session: dict = Depends(get_session)) -> DatabaseConnection:
-    """Get database connection from session."""
-    db_conn = session.get("db_connection")
-    if not db_conn:
-        raise APIException(
-            code=ErrorCode.DB_UNAVAILABLE,
-            message="Database connection not established",
-            category=ErrorCategory.UPSTREAM,
-            status_code=500,
-        )
-    return db_conn
 
 
 @router.post("/execute", response_model=QueryExecuteResponse)
@@ -143,8 +132,10 @@ async def execute_query(
     # Safe mode: reject mutating queries if enabled
     if settings.query_safe_mode:
         cypher_upper = request.cypher.upper()
-        mutating_keywords = ["CREATE", "DELETE", "SET", "REMOVE", "MERGE", "DETACH"]
-        if any(keyword in cypher_upper for keyword in mutating_keywords):
+        mutating_pattern = re.compile(
+            r"\b(CREATE|DELETE|SET|REMOVE|MERGE|DETACH)\b"
+        )
+        if mutating_pattern.search(cypher_upper):
             raise APIException(
                 code=ErrorCode.QUERY_VALIDATION_ERROR,
                 message="Mutating queries are not allowed in safe mode",
@@ -336,15 +327,21 @@ async def execute_query(
             graph=validated_graph_name, status="error", duration=query_duration
         )
         metrics.record_error(ErrorCode.QUERY_EXECUTION_ERROR, ErrorCategory.UPSTREAM)
+        # Avoid leaking internal DB error details in production
+        public_message = (
+            f"Query execution failed: {error_msg}"
+            if settings.environment != "production"
+            else "Query execution failed"
+        )
         raise APIException(
             code=ErrorCode.QUERY_EXECUTION_ERROR,
-            message=f"Query execution failed: {error_msg}",
+            message=public_message,
             category=ErrorCategory.UPSTREAM,
             status_code=500,
             details={
                 "graph": validated_graph_name,
-                "query": request.cypher[:500],
-                "error": error_msg,
+                "query": request.cypher[:500] if settings.environment != "production" else None,
+                **({"error": error_msg} if settings.environment != "production" else {}),
                 "params": (
                     {k: str(v)[:100] for k, v in (request.params or {}).items()}
                     if request.params

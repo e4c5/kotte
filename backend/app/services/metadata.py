@@ -1,7 +1,7 @@
 """Graph metadata discovery and indexing service."""
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Tuple
 
 from app.core.database import DatabaseConnection
@@ -23,7 +23,7 @@ class PropertyCache:
         key = f"{graph_name}.{label_name}"
         if key in self._cache:
             properties, timestamp = self._cache[key]
-            if datetime.now() - timestamp < self._ttl:
+            if datetime.now(timezone.utc) - timestamp < self._ttl:
                 return properties
             del self._cache[key]
         return None
@@ -31,7 +31,7 @@ class PropertyCache:
     def set(self, graph_name: str, label_name: str, properties: List[str]) -> None:
         """Cache properties with current timestamp."""
         key = f"{graph_name}.{label_name}"
-        self._cache[key] = (properties, datetime.now())
+        self._cache[key] = (properties, datetime.now(timezone.utc))
 
     def invalidate(self, graph_name: str, label_name: Optional[str] = None) -> None:
         """Invalidate cache for graph or specific label."""

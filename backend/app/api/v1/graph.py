@@ -1,11 +1,14 @@
 """Graph metadata endpoints."""
 
+import asyncio
+import json
 import logging
 
 from fastapi import APIRouter, Depends
 
 from app.core.auth import get_session
 from app.core.database import DatabaseConnection
+from app.core.deps import get_db_connection
 from app.core.errors import APIException, ErrorCode, ErrorCategory, translate_db_error
 from app.core.validation import validate_graph_name, validate_label_name, escape_identifier
 from app.models.graph import (
@@ -29,19 +32,6 @@ from app.services.agtype import AgTypeParser
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-
-
-async def get_db_connection(session: dict = Depends(get_session)) -> DatabaseConnection:
-    """Get database connection from session."""
-    db_conn = session.get("db_connection")
-    if not db_conn:
-        raise APIException(
-            code=ErrorCode.DB_UNAVAILABLE,
-            message="Database connection not established",
-            category=ErrorCategory.UPSTREAM,
-            status_code=500,
-        )
-    return db_conn
 
 
 @router.get("", response_model=list[GraphInfo])
@@ -130,9 +120,9 @@ async def get_graph_metadata(
             )
             return NodeLabel(label=label_name, count=int(count), properties=properties)
 
-        node_labels: list[NodeLabel] = []
-        for row in node_label_rows:
-            node_labels.append(await build_node_label(row))
+        node_labels: list[NodeLabel] = list(
+            await asyncio.gather(*[build_node_label(row) for row in node_label_rows])
+        )
 
         # Get edge labels with counts
         edge_query = """
@@ -181,9 +171,9 @@ async def get_graph_metadata(
                 property_statistics=property_stats,
             )
 
-        edge_labels: list[EdgeLabel] = []
-        for row in edge_label_rows:
-            edge_labels.append(await build_edge_label(row))
+        edge_labels: list[EdgeLabel] = list(
+            await asyncio.gather(*[build_edge_label(row) for row in edge_label_rows])
+        )
 
         return GraphMetadata(
             graph_name=validated_graph_name,
@@ -460,7 +450,6 @@ async def find_shortest_path(
             LIMIT 1
             RETURN nodes(path) as path_nodes, relationships(path) as path_edges, path_length
         """
-        import json
 
         params = {
             "source_id": request.source_id,

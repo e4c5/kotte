@@ -128,7 +128,7 @@ export const useQueryStore = create<QueryState>()(
 
         createTab: (name?: string) => {
           const { tabs } = get()
-          const tabId = `tab-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+          const tabId = `tab-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`
           const tabNumber = tabs.length + 1
           const tabName = name || generateTabName(tabNumber)
           
