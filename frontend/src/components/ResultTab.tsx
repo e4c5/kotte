@@ -180,15 +180,6 @@ export default function ResultTab({
       )}
 
       <div className="flex-1 flex min-h-0 relative">
-        {showControls && tab.viewMode === 'graph' && (
-          <div className="w-72 shrink-0 border-r border-zinc-700 overflow-auto bg-zinc-800/50">
-            <GraphControls
-              availableNodeLabels={Array.from(new Set(result.graph_elements?.nodes?.map(n => n.label) || []))}
-              availableEdgeLabels={Array.from(new Set(result.graph_elements?.edges?.map(e => e.label) || []))}
-            />
-          </div>
-        )}
-
         <div ref={graphContainerRef} className="flex-1 relative min-w-0 min-h-0 flex flex-col overflow-hidden">
           {tab.viewMode === 'graph' && hasGraphData ? (
             <>
@@ -222,6 +213,13 @@ export default function ResultTab({
                     setContextMenu(null)
                   }}
                   onClose={() => setContextMenu(null)}
+                />
+              )}
+              {showControls && (
+                <GraphControls
+                  availableNodeLabels={Array.from(new Set(result.graph_elements?.nodes?.map(n => n.label) || []))}
+                  availableEdgeLabels={Array.from(new Set(result.graph_elements?.edges?.map(e => e.label) || []))}
+                  onClose={() => setShowControls(false)}
                 />
               )}
             </>

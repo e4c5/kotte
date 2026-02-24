@@ -329,11 +329,12 @@ export default function WorkspacePage() {
         </div>
       )}
 
-      {/* Left schema sidebar */}
+      {/* Left schema sidebar — controlled so layout stays in sync when e.g. Graph Controls open */}
       <MetadataSidebar
         currentGraph={currentGraph ?? undefined}
         onGraphSelect={handleGraphSelect}
         onQueryTemplate={handleQueryTemplate}
+        collapsed={sidebarCollapsed}
         onCollapsedChange={setSidebarCollapsed}
       />
 

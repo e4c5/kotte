@@ -6,25 +6,23 @@ interface MetadataSidebarProps {
   currentGraph?: string
   onGraphSelect: (graphName: string) => void
   onQueryTemplate: (query: string) => void
-  onCollapsedChange?: (collapsed: boolean) => void
+  /** Controlled: whether the sidebar is collapsed. Parent is the source of truth. */
+  collapsed: boolean
+  onCollapsedChange: (collapsed: boolean) => void
 }
 
 export default function MetadataSidebar({
   currentGraph,
   onGraphSelect,
   onQueryTemplate,
+  collapsed,
   onCollapsedChange,
 }: MetadataSidebarProps) {
   const [graphs, setGraphs] = useState<GraphInfo[]>([])
   const [metadata, setMetadata] = useState<GraphMetadata | null>(null)
   const [loading, setLoading] = useState(false)
-  const [collapsed, setCollapsed] = useState(false)
   const [nodeLabelsOpen, setNodeLabelsOpen] = useState(true)
   const [edgeLabelsOpen, setEdgeLabelsOpen] = useState(true)
-
-  useEffect(() => {
-    onCollapsedChange?.(collapsed)
-  }, [collapsed, onCollapsedChange])
 
   useEffect(() => {
     loadGraphs()
@@ -74,7 +72,7 @@ export default function MetadataSidebar({
       <div className="fixed left-0 top-0 h-full w-12 bg-zinc-800 border-r border-zinc-700 flex flex-col items-center py-4 z-30 transition-all duration-300">
         <button
           type="button"
-          onClick={() => setCollapsed(false)}
+          onClick={() => onCollapsedChange(false)}
           className="p-2 rounded text-zinc-400 hover:text-zinc-100 hover:bg-zinc-700"
           aria-label="Expand schema sidebar"
         >
@@ -90,7 +88,7 @@ export default function MetadataSidebar({
         <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wide">Schema</span>
         <button
           type="button"
-          onClick={() => setCollapsed(true)}
+          onClick={() => onCollapsedChange(true)}
           className="p-1.5 rounded text-zinc-400 hover:text-zinc-100 hover:bg-zinc-700"
           aria-label="Collapse sidebar"
         >
