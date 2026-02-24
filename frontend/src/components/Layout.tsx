@@ -2,7 +2,8 @@ import { Outlet, useLocation } from 'react-router-dom'
 
 export default function Layout() {
   const { pathname } = useLocation()
-  const isWorkspaceRoute = pathname.startsWith('/workspace')
+  const isWorkspaceRoute =
+    pathname === '/workspace' || pathname.startsWith('/workspace/')
 
   if (isWorkspaceRoute) {
     return <Outlet />

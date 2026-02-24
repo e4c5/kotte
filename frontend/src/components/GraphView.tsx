@@ -508,10 +508,13 @@ export default function GraphView({
       const transform = d3.zoomIdentity.translate(tx, ty).scale(scale)
       applyingAutoTransformRef.current = true
       if (animate) {
-        svg.transition().duration(400).call(zoom.transform, transform)
-        window.setTimeout(() => {
-          applyingAutoTransformRef.current = false
-        }, 450)
+        svg
+          .transition()
+          .duration(400)
+          .on('end', () => {
+            applyingAutoTransformRef.current = false
+          })
+          .call(zoom.transform, transform)
       } else {
         svg.call(zoom.transform, transform)
         applyingAutoTransformRef.current = false

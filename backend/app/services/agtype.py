@@ -186,18 +186,28 @@ class AgTypeParser:
         """Parse an edge from agtype. Supports start_id/end_id, startid/endid, and already-parsed source/target."""
         edge_id = obj.get("id")
         label = obj.get("label", "")
-        start_id = (
-            obj.get("start_id") or obj.get("startid") or obj.get("startId")
-            or obj.get("start_vertex_id")
-            or obj.get("source")
-            or _get_first_value_for_key_containing(obj, "start")
-        )
-        end_id = (
-            obj.get("end_id") or obj.get("endid") or obj.get("endId")
-            or obj.get("end_vertex_id")
-            or obj.get("target")
-            or _get_first_value_for_key_containing(obj, "end")
-        )
+        start_id = obj.get("start_id")
+        if start_id is None:
+            start_id = obj.get("startid")
+        if start_id is None:
+            start_id = obj.get("startId")
+        if start_id is None:
+            start_id = obj.get("start_vertex_id")
+        if start_id is None:
+            start_id = obj.get("source")
+        if start_id is None:
+            start_id = _get_first_value_for_key_containing(obj, "start")
+        end_id = obj.get("end_id")
+        if end_id is None:
+            end_id = obj.get("endid")
+        if end_id is None:
+            end_id = obj.get("endId")
+        if end_id is None:
+            end_id = obj.get("end_vertex_id")
+        if end_id is None:
+            end_id = obj.get("target")
+        if end_id is None:
+            end_id = _get_first_value_for_key_containing(obj, "end")
         properties = obj.get("properties", {})
 
         # Handle label as string or list
