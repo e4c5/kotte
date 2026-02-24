@@ -422,22 +422,31 @@ export default function GraphView({
             if (!event.active && layout === 'force') {
               simulation.alphaTarget(0.3).restart()
             }
-            if (!pinnedNodes.has(d.id)) {
+            if (!pinnedNodes.has(d.id) && layout === 'force') {
               d.fx = d.x
               d.fy = d.y
             }
           })
           .on('drag', (event, d) => {
-            if (!pinnedNodes.has(d.id)) {
+            if (pinnedNodes.has(d.id)) {
+              return
+            }
+            if (layout === 'force') {
               d.fx = event.x
               d.fy = event.y
+            } else {
+              d.x = event.x
+              d.y = event.y
             }
+            applyPositions()
           })
           .on('end', (event, d) => {
-            if (!event.active) simulation.alphaTarget(0)
-            if (!pinnedNodes.has(d.id)) {
-              d.fx = null
-              d.fy = null
+            if (layout === 'force') {
+              if (!event.active) simulation.alphaTarget(0)
+              if (!pinnedNodes.has(d.id)) {
+                d.fx = null
+                d.fy = null
+              }
             }
           })
       )
