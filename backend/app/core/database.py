@@ -9,11 +9,13 @@ from datetime import datetime, timezone
 from typing import List, Optional
 
 import psycopg
+from psycopg import sql
 from psycopg.rows import dict_row
 
 from app.core.config import settings
 from app.core.errors import APIException, ErrorCode, ErrorCategory
 from app.core.metrics import metrics
+from app.core.validation import validate_graph_name
 
 logger = logging.getLogger(__name__)
 
@@ -316,8 +318,9 @@ class DatabaseConnection:
         return "$c" + secrets.token_hex(4) + "$"
 
     @staticmethod
-    def _split_top_level_commas(s: str) -> List[str]:
-        """Split s by commas only at top level (not inside (), [], {}, or strings)."""
+    def _split_top_level_commas(s: str) -> Optional[List[str]]:
+        """Split s by commas only at top level (not inside (), [], {}, or strings).
+        Returns None if quotes or brackets are unbalanced (ambiguous input)."""
         parts: List[str] = []
         cur: List[str] = []
         depth_p, depth_b, depth_br = 0, 0, 0
@@ -351,14 +354,20 @@ class DatabaseConnection:
                 depth_p += 1
             elif c == ")":
                 depth_p -= 1
+                if depth_p < 0:
+                    return None
             elif c == "[":
                 depth_b += 1
             elif c == "]":
                 depth_b -= 1
+                if depth_b < 0:
+                    return None
             elif c == "{":
                 depth_br += 1
             elif c == "}":
                 depth_br -= 1
+                if depth_br < 0:
+                    return None
             elif (
                 c == ","
                 and depth_p == 0
@@ -371,6 +380,8 @@ class DatabaseConnection:
                 continue
             cur.append(c)
             i += 1
+        if in_sq or in_dq or depth_p != 0 or depth_b != 0 or depth_br != 0:
+            return None
         parts.append("".join(cur).strip())
         return parts
 
@@ -390,6 +401,8 @@ class DatabaseConnection:
             return ["result"]
         return_expr = m.group(1).strip()
         parts = DatabaseConnection._split_top_level_commas(return_expr)
+        if parts is None:
+            return ["result"]
         names: List[str] = []
         for i, part in enumerate(parts):
             # Prefer "AS alias"
@@ -413,63 +426,65 @@ class DatabaseConnection:
         timeout: Optional[int] = None,
     ) -> list[dict]:
         """
-        Execute a Cypher query via Apache AGE using literal SQL (graph and query as literals).
+        Execute a Cypher query via Apache AGE using bound parameters.
         When there are no Cypher parameters we use the 2-arg cypher(graph, query) form;
         when params are present we use the 3-arg form with a bound agtype parameter.
         A trailing semicolon is stripped before sending to AGE, which does not expect it.
         """
+        validated_graph_name = validate_graph_name(graph_name)
         cypher_normalized = cypher_query.rstrip()
         if cypher_normalized.endswith(";"):
             cypher_normalized = cypher_normalized[:-1].rstrip()
-        tag = self._dollar_quote_tag(cypher_normalized)
-        graph_literal = graph_name.replace("'", "''")
-        cypher_literal = tag + cypher_normalized + tag
         has_params = bool(params)
         json_mod = __import__("json")
         params_json = json_mod.dumps(params) if has_params else "null"
 
         # AGE requires AS (col1 agtype, ...) to match RETURN column count and names
         return_cols = self._cypher_return_columns(cypher_query)
-        as_clause = ", ".join(f"{c} agtype" for c in return_cols)
+        as_clause = sql.SQL(", ").join(
+            sql.Identifier(c) + sql.SQL(" agtype") for c in return_cols
+        )
 
         if has_params:
-            # 3-arg form: AGE expects the third argument as a bind, not a literal
-            sql = (
-                f"SELECT * FROM ag_catalog.cypher("
-                f"'{graph_literal}', {cypher_literal}, %(params)s::agtype"
-                f") AS ({as_clause})"
+            query_composed = sql.SQL(
+                "SELECT * FROM ag_catalog.cypher({graph_name}::text, {cypher}::text, {params}::agtype) AS ({as_clause})"
+            ).format(
+                graph_name=sql.Placeholder("graph_name"),
+                cypher=sql.Placeholder("cypher"),
+                params=sql.Placeholder("params"),
+                as_clause=as_clause,
             )
-            run_params: Optional[dict] = {"params": params_json}
-            params_literal = params_json.replace("'", "''")
-            runnable_sql = sql.replace(
-                "%(params)s::agtype", f"'{params_literal}'::agtype"
-            )
+            run_params: Optional[dict] = {
+                "graph_name": validated_graph_name,
+                "cypher": cypher_normalized,
+                "params": params_json,
+            }
         else:
-            # 2-arg form: no bind, matches typical AGE examples and avoids overload issues
-            sql = (
-                f"SELECT * FROM ag_catalog.cypher("
-                f"'{graph_literal}', {cypher_literal}"
-                f") AS ({as_clause})"
+            query_composed = sql.SQL(
+                "SELECT * FROM ag_catalog.cypher({graph_name}::text, {cypher}::text) AS ({as_clause})"
+            ).format(
+                graph_name=sql.Placeholder("graph_name"),
+                cypher=sql.Placeholder("cypher"),
+                as_clause=as_clause,
             )
-            run_params = None
-            runnable_sql = sql
+            run_params = {
+                "graph_name": validated_graph_name,
+                "cypher": cypher_normalized,
+            }
 
         logger.info(
             "execute_cypher: graph=%s, user cypher (verbatim): %s",
-            graph_name,
+            validated_graph_name,
             cypher_query,
         )
-        logger.info("execute_cypher: generated SQL (template): %s", sql)
-        logger.info("execute_cypher: full runnable SQL: %s", runnable_sql)
-        if has_params:
-            logger.info("execute_cypher: bind params (params)=%s", params_json)
+        logger.info("execute_cypher: params: %s", run_params)
 
         try:
-            return await self.execute_query(sql, run_params, timeout=timeout)
+            return await self.execute_query(query_composed, run_params, timeout=timeout)
         except Exception:
             logger.error(
-                "execute_cypher: query failed; full generated SQL: %s",
-                runnable_sql,
+                "execute_cypher: query failed; params: %s",
+                run_params,
                 exc_info=True,
             )
             raise

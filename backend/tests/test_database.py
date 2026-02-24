@@ -1,7 +1,11 @@
 """Unit tests for database module (DatabaseConnection helpers)."""
 
 import pytest
+from unittest.mock import AsyncMock
+
 from app.core.database import DatabaseConnection
+from app.core.errors import APIException
+from app.core.errors import APIException
 
 
 class TestCypherReturnColumns:
@@ -93,3 +97,110 @@ class TestCypherReturnColumns:
         """Commas inside function args do not split; single return column."""
         q = "RETURN func(a, b) AS x"
         assert DatabaseConnection._cypher_return_columns(q) == ["x"]
+
+    def test_list_literal_single_column(self):
+        """Commas inside list literal do not split; single return column."""
+        q = "RETURN [1, 2, 3] AS arr"
+        assert DatabaseConnection._cypher_return_columns(q) == ["arr"]
+
+    def test_string_literal_single_column(self):
+        """Commas inside single-quoted string do not split; single return column."""
+        q = "RETURN 'a, b' AS s"
+        assert DatabaseConnection._cypher_return_columns(q) == ["s"]
+
+    def test_string_literal_double_quote_single_column(self):
+        """Commas inside double-quoted string do not split; single return column."""
+        q = 'RETURN "a, b" AS s'
+        assert DatabaseConnection._cypher_return_columns(q) == ["s"]
+
+    def test_invalid_identifier_fallback_to_cn(self):
+        """AS alias that fails safe-identifier regex falls back to cN."""
+        q = "MATCH (n) RETURN n AS my-col"
+        assert DatabaseConnection._cypher_return_columns(q) == ["c1"]
+
+    def test_unbalanced_brackets_fallback_to_result(self):
+        """Unbalanced parentheses/brackets/braces or unclosed string yields ['result']."""
+        assert DatabaseConnection._cypher_return_columns("RETURN (a, b") == ["result"]
+        assert DatabaseConnection._cypher_return_columns("RETURN a) AS x") == ["result"]
+        assert DatabaseConnection._cypher_return_columns("RETURN 'unclosed AS s") == ["result"]
+
+
+class TestExecuteCypher:
+    """Tests for execute_cypher (SQL generation and execute_query call)."""
+
+    def _query_string(self, call_args):
+        """Render first arg (query) to string; supports psycopg.sql.Composed."""
+        query = call_args[0][0]
+        if hasattr(query, "as_string"):
+            return query.as_string()
+        return str(query)
+
+    @pytest.mark.asyncio
+    async def test_execute_cypher_two_arg_form_no_params(self):
+        """With params=None, uses 2-arg cypher(...) with bound graph_name and cypher."""
+        conn = DatabaseConnection(
+            host="h", port=5432, database="d", user="u", password="p"
+        )
+        conn.execute_query = AsyncMock(return_value=[])
+        await conn.execute_cypher("my_graph", "MATCH (n) RETURN n AS node")
+        conn.execute_query.assert_called_once()
+        sql_str = self._query_string(conn.execute_query.call_args)
+        params = conn.execute_query.call_args[0][1]
+        assert "ag_catalog.cypher(" in sql_str
+        assert "graph_name" in sql_str or "cypher" in sql_str  # placeholders
+        assert params is not None
+        assert params["graph_name"] == "my_graph"
+        assert params["cypher"] == "MATCH (n) RETURN n AS node"
+        assert "params" not in params
+
+    @pytest.mark.asyncio
+    async def test_execute_cypher_three_arg_form_with_params(self):
+        """With params set, uses 3-arg cypher(..., params) and passes run_params."""
+        conn = DatabaseConnection(
+            host="h", port=5432, database="d", user="u", password="p"
+        )
+        conn.execute_query = AsyncMock(return_value=[])
+        await conn.execute_cypher(
+            "g", "RETURN n AS x", params={"n": 1}
+        )
+        conn.execute_query.assert_called_once()
+        params = conn.execute_query.call_args[0][1]
+        assert params is not None
+        assert "params" in params
+        assert params["params"] == '{"n": 1}'
+        assert params["graph_name"] == "g"
+        assert params["cypher"] == "RETURN n AS x"
+
+    @pytest.mark.asyncio
+    async def test_execute_cypher_strips_trailing_semicolon(self):
+        """Trailing semicolon in cypher is stripped before passing as param."""
+        conn = DatabaseConnection(
+            host="h", port=5432, database="d", user="u", password="p"
+        )
+        conn.execute_query = AsyncMock(return_value=[])
+        await conn.execute_cypher("g", "RETURN 1 AS x;")
+        params = conn.execute_query.call_args[0][1]
+        assert params["cypher"] == "RETURN 1 AS x"
+        assert not params["cypher"].endswith(";")
+
+    @pytest.mark.asyncio
+    async def test_execute_cypher_invalid_graph_name_raises(self):
+        """Invalid graph name (e.g. contains quote) raises APIException."""
+        conn = DatabaseConnection(
+            host="h", port=5432, database="d", user="u", password="p"
+        )
+        conn.execute_query = AsyncMock(return_value=[])
+        with pytest.raises(APIException):
+            await conn.execute_cypher("my'graph", "RETURN 1 AS c1")
+        conn.execute_query.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_execute_cypher_returns_result_from_execute_query(self):
+        """Return value is that of execute_query."""
+        conn = DatabaseConnection(
+            host="h", port=5432, database="d", user="u", password="p"
+        )
+        expected = [{"node": "value"}]
+        conn.execute_query = AsyncMock(return_value=expected)
+        result = await conn.execute_cypher("g", "RETURN n AS node")
+        assert result == expected
