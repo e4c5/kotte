@@ -193,6 +193,7 @@ export default function SavedConnections({
               tabIndex={0}
               onClick={() => handleLoad(conn.id)}
               onKeyDown={(e) => {
+                if (e.target !== e.currentTarget) return
                 if (e.key === 'Enter' || e.key === ' ') {
                   e.preventDefault()
                   handleLoad(conn.id)

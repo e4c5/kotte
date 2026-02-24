@@ -97,7 +97,10 @@ export default function ConnectionPage() {
                 id="conn-port"
                 type="number"
                 value={config.port}
-                onChange={(e) => setConfig({ ...config, port: parseInt(e.target.value) })}
+                onChange={(e) => {
+                  const next = parseInt(e.target.value, 10)
+                  setConfig({ ...config, port: Number.isFinite(next) ? next : config.port })
+                }}
                 required
                 className={inputClass}
               />
