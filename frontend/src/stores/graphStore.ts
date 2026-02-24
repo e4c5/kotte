@@ -5,7 +5,15 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
-export type LayoutType = 'force' | 'hierarchical' | 'radial' | 'grid' | 'random'
+export type LayoutType =
+  | 'force'
+  | 'hierarchical'
+  | 'radial'
+  | 'grid'
+  | 'random'
+  | 'cluster'
+  | 'partition'
+  | 'pack'
 
 export interface LabelStyle {
   color: string

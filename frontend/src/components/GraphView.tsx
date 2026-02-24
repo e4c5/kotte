@@ -323,6 +323,21 @@ export default function GraphView({
     // Create force simulation (or static "simulation" for rendering only)
     let simulation: d3.Simulation<GraphNode, GraphEdge>
 
+    const nodeCount = nodesWithPositions.length
+    const linkDistance =
+      layout === 'force' && hasEdges
+        ? (() => {
+            const minDist = 40
+            const maxDist = Math.min(viewportWidth, viewportHeight) * 0.55
+            const minNodes = 5
+            const maxNodes = 300
+            if (nodeCount <= minNodes) return maxDist
+            if (nodeCount >= maxNodes) return minDist
+            const t = (nodeCount - minNodes) / (maxNodes - minNodes)
+            return maxDist - t * (maxDist - minDist)
+          })()
+        : 90
+
     if (layout === 'force' && hasEdges) {
       // Run real force simulation: default alpha (1) and alphaDecay (~0.028) so it runs
       // enough ticks to reach equilibrium (D3 default ~300 iterations).
@@ -336,7 +351,7 @@ export default function GraphView({
           d3
             .forceLink<GraphNode, GraphEdge>(filteredEdges)
             .id((d) => d.id)
-            .distance(90)
+            .distance(linkDistance)
         )
         .force('charge', d3.forceManyBody().strength(-110))
         .force('center', d3.forceCenter(viewportWidth / 2, viewportHeight / 2))
@@ -422,22 +437,31 @@ export default function GraphView({
             if (!event.active && layout === 'force') {
               simulation.alphaTarget(0.3).restart()
             }
-            if (!pinnedNodes.has(d.id)) {
+            if (!pinnedNodes.has(d.id) && layout === 'force') {
               d.fx = d.x
               d.fy = d.y
             }
           })
           .on('drag', (event, d) => {
-            if (!pinnedNodes.has(d.id)) {
+            if (pinnedNodes.has(d.id)) {
+              return
+            }
+            if (layout === 'force') {
               d.fx = event.x
               d.fy = event.y
+            } else {
+              d.x = event.x
+              d.y = event.y
             }
+            applyPositions()
           })
           .on('end', (event, d) => {
-            if (!event.active) simulation.alphaTarget(0)
-            if (!pinnedNodes.has(d.id)) {
-              d.fx = null
-              d.fy = null
+            if (layout === 'force') {
+              if (!event.active) simulation.alphaTarget(0)
+              if (!pinnedNodes.has(d.id)) {
+                d.fx = null
+                d.fy = null
+              }
             }
           })
       )
@@ -768,6 +792,12 @@ function getDefaultNodeColor(label: string): string {
   return colorScale(label) || '#999'
 }
 
+type HierarchyNodeData = {
+  name: string
+  node?: GraphNode
+  children?: HierarchyNodeData[]
+}
+
 // Initialize node positions based on layout type
 function initializeLayout(
   nodes: GraphNode[],
@@ -834,6 +864,149 @@ function initializeLayout(
         node.x = Math.random() * width
         node.y = Math.random() * height
       })
+      break
+    }
+
+    case 'cluster': {
+      if (!nodes.length) break
+
+      const groups = new Map<string, GraphNode[]>()
+      nodes.forEach((node) => {
+        const key = node.label || 'Other'
+        const group = groups.get(key)
+        if (group) {
+          group.push(node)
+        } else {
+          groups.set(key, [node])
+        }
+      })
+
+      const rootData: HierarchyNodeData = {
+        name: 'root',
+        children: Array.from(groups.entries()).map(([label, groupNodes]) => ({
+          name: label,
+          children: groupNodes.map((node) => ({
+            name: String(node.id),
+            node,
+          })),
+        })),
+      }
+
+      const root = d3
+        .hierarchy<HierarchyNodeData>(rootData, (d) => d.children)
+        .sum((d) => (d.node ? 1 : 0))
+
+      const radius = Math.min(width, height) * 0.4
+      const clusterLayout = d3.cluster<HierarchyNodeData>().size([2 * Math.PI, radius])
+      clusterLayout(root)
+
+      const byId = new Map(nodes.map((n) => [n.id, n]))
+      root.leaves().forEach((leaf) => {
+        const data = leaf.data.node
+        if (!data) return
+        const target = byId.get(data.id)
+        if (!target) return
+        const angle = leaf.x
+        const r = leaf.y
+        target.x = centerX + r * Math.cos(angle)
+        target.y = centerY + r * Math.sin(angle)
+      })
+
+      break
+    }
+
+    case 'partition': {
+      if (!nodes.length) break
+
+      const groups = new Map<string, GraphNode[]>()
+      nodes.forEach((node) => {
+        const key = node.label || 'Other'
+        const group = groups.get(key)
+        if (group) {
+          group.push(node)
+        } else {
+          groups.set(key, [node])
+        }
+      })
+
+      const rootData: HierarchyNodeData = {
+        name: 'root',
+        children: Array.from(groups.entries()).map(([label, groupNodes]) => ({
+          name: label,
+          children: groupNodes.map((node) => ({
+            name: String(node.id),
+            node,
+          })),
+        })),
+      }
+
+      const root = d3
+        .hierarchy<HierarchyNodeData>(rootData, (d) => d.children)
+        .sum((d) => (d.node ? 1 : 0))
+
+      const partitionLayout = d3.partition<HierarchyNodeData>().size([width, height])
+      partitionLayout(root)
+
+      const byId = new Map(nodes.map((n) => [n.id, n]))
+      root.leaves().forEach((leaf) => {
+        const data = leaf.data.node
+        if (!data) return
+        const target = byId.get(data.id)
+        if (!target) return
+        const x = leaf.x0 + (leaf.x1 - leaf.x0) / 2
+        const y = leaf.y0 + (leaf.y1 - leaf.y0) / 2
+        target.x = x
+        target.y = y
+      })
+
+      break
+    }
+
+    case 'pack': {
+      if (!nodes.length) break
+
+      const groups = new Map<string, GraphNode[]>()
+      nodes.forEach((node) => {
+        const key = node.label || 'Other'
+        const group = groups.get(key)
+        if (group) {
+          group.push(node)
+        } else {
+          groups.set(key, [node])
+        }
+      })
+
+      const rootData: HierarchyNodeData = {
+        name: 'root',
+        children: Array.from(groups.entries()).map(([label, groupNodes]) => ({
+          name: label,
+          children: groupNodes.map((node) => ({
+            name: String(node.id),
+            node,
+          })),
+        })),
+      }
+
+      const root = d3
+        .hierarchy<HierarchyNodeData>(rootData, (d) => d.children)
+        .sum((d) => (d.node ? 1 : 0))
+
+      const packLayout = d3
+        .pack<HierarchyNodeData>()
+        .size([width, height])
+        .padding(8)
+      packLayout(root)
+
+      const byId = new Map(nodes.map((n) => [n.id, n]))
+      root.leaves().forEach((leaf) => {
+        const data = leaf.data.node
+        if (!data) return
+        const target = byId.get(data.id)
+        if (!target) return
+        target.x = leaf.x
+        target.y = leaf.y
+      })
+
       break
     }
 

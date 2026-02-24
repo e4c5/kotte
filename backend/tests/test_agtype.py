@@ -190,6 +190,24 @@ class TestAgTypeParser:
         # Should return the string as-is
         assert result == "not valid json"
 
+    def test_parse_path_string_age_format(self):
+        """Test parsing AGE path string (RETURN p format with ::vertex, ::edge, ::path)."""
+        # Simulates what Apache AGE returns for: MATCH p=(a:Person)-[:ACTED_IN]->(:Movie) RETURN p
+        path_str = (
+            '[{"id": 1, "label": "Person", "properties": {"name": "Alice"}}::vertex, '
+            '{"id": 10, "label": "ACTED_IN", "start_id": 1, "end_id": 2, "properties": {}}::edge, '
+            '{"id": 2, "label": "Movie", "properties": {"title": "Matrix"}}::vertex]::path'
+        )
+        result = AgTypeParser.parse(path_str)
+        assert isinstance(result, list)
+        assert len(result) == 3
+        assert result[0].get("type") == "node"
+        assert result[0].get("label") == "Person"
+        assert result[1].get("type") == "edge"
+        assert result[1].get("label") == "ACTED_IN"
+        assert result[2].get("type") == "node"
+        assert result[2].get("label") == "Movie"
+
 
 class TestGraphElementExtraction:
     """Tests for graph element extraction."""
@@ -376,4 +394,23 @@ class TestGraphElementExtraction:
         assert p["edge_ids"] == ["10"]
         assert len(result["nodes"]) == 2
         assert len(result["edges"]) == 1
+
+    def test_extract_from_path_string_age_format(self):
+        """Test extracting nodes/edges when row value is AGE path string (RETURN p)."""
+        path_str = (
+            '[{"id": 1, "label": "Person", "properties": {}}::vertex, '
+            '{"id": 10, "label": "ACTED_IN", "start_id": 1, "end_id": 2, "properties": {}}::edge, '
+            '{"id": 2, "label": "Movie", "properties": {}}::vertex]::path'
+        )
+        # Simulate parsed_rows: column "p" has raw string as returned by DB (before parse)
+        # In real flow query.py parses each cell, so we pass the string and extract_graph_elements
+        # calls parse() again - so rows should have the raw string to mimic DB response
+        rows = [{"p": path_str}]
+        result = AgTypeParser.extract_graph_elements(rows)
+        assert len(result["nodes"]) == 2
+        assert len(result["edges"]) == 1
+        assert len(result["paths"]) == 1
+        assert result["paths"][0]["type"] == "path"
+        assert result["paths"][0]["node_ids"] == ["1", "2"]
+        assert result["paths"][0]["edge_ids"] == ["10"]
 
