@@ -426,65 +426,58 @@ class DatabaseConnection:
         timeout: Optional[int] = None,
     ) -> list[dict]:
         """
-        Execute a Cypher query via Apache AGE using bound parameters.
+        Execute a Cypher query via Apache AGE using literal SQL (graph and query as literals).
+        AGE's cypher() does not support bound (text, text) parameters; we pass validated
+        literals (dollar-quoted for cypher, escaped for graph name and params).
         When there are no Cypher parameters we use the 2-arg cypher(graph, query) form;
-        when params are present we use the 3-arg form with a bound agtype parameter.
+        when params are present we use the 3-arg form with a literal agtype.
         A trailing semicolon is stripped before sending to AGE, which does not expect it.
         """
         validated_graph_name = validate_graph_name(graph_name)
         cypher_normalized = cypher_query.rstrip()
         if cypher_normalized.endswith(";"):
             cypher_normalized = cypher_normalized[:-1].rstrip()
+        tag = self._dollar_quote_tag(cypher_normalized)
+        graph_literal = validated_graph_name.replace("'", "''")
+        cypher_literal = tag + cypher_normalized + tag
         has_params = bool(params)
         json_mod = __import__("json")
         params_json = json_mod.dumps(params) if has_params else "null"
 
-        # AGE requires AS (col1 agtype, ...) to match RETURN column count and names
+        # AGE requires AS (col1 agtype, ...) to match RETURN column count and names.
+        # Use quoted identifiers for column names.
         return_cols = self._cypher_return_columns(cypher_query)
-        as_clause = sql.SQL(", ").join(
-            sql.Identifier(c) + sql.SQL(" agtype") for c in return_cols
-        )
+        as_clause_str = ", ".join(f'"{c}" agtype' for c in return_cols)
 
         if has_params:
-            query_composed = sql.SQL(
-                "SELECT * FROM ag_catalog.cypher({graph_name}::text, {cypher}::text, {params}::agtype) AS ({as_clause})"
-            ).format(
-                graph_name=sql.Placeholder("graph_name"),
-                cypher=sql.Placeholder("cypher"),
-                params=sql.Placeholder("params"),
-                as_clause=as_clause,
+            params_literal = params_json.replace("'", "''")
+            runnable_sql = (
+                f"SELECT * FROM ag_catalog.cypher("
+                f"'{graph_literal}', {cypher_literal}, '{params_literal}'::agtype"
+                f") AS ({as_clause_str})"
             )
-            run_params: Optional[dict] = {
-                "graph_name": validated_graph_name,
-                "cypher": cypher_normalized,
-                "params": params_json,
-            }
+            run_params: Optional[dict] = None
         else:
-            query_composed = sql.SQL(
-                "SELECT * FROM ag_catalog.cypher({graph_name}::text, {cypher}::text) AS ({as_clause})"
-            ).format(
-                graph_name=sql.Placeholder("graph_name"),
-                cypher=sql.Placeholder("cypher"),
-                as_clause=as_clause,
+            runnable_sql = (
+                f"SELECT * FROM ag_catalog.cypher("
+                f"'{graph_literal}', {cypher_literal}"
+                f") AS ({as_clause_str})"
             )
-            run_params = {
-                "graph_name": validated_graph_name,
-                "cypher": cypher_normalized,
-            }
+            run_params = None
 
         logger.info(
             "execute_cypher: graph=%s, user cypher (verbatim): %s",
             validated_graph_name,
             cypher_query,
         )
-        logger.info("execute_cypher: params: %s", run_params)
+        logger.info("execute_cypher: generated SQL (template): %s", runnable_sql)
 
         try:
-            return await self.execute_query(query_composed, run_params, timeout=timeout)
+            return await self.execute_query(runnable_sql, run_params, timeout=timeout)
         except Exception:
             logger.error(
-                "execute_cypher: query failed; params: %s",
-                run_params,
+                "execute_cypher: query failed; full generated SQL: %s",
+                runnable_sql,
                 exc_info=True,
             )
             raise
