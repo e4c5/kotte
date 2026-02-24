@@ -11,6 +11,7 @@ export interface LabelStyle {
   color: string
   size: number
   captionField?: string
+  showLabel?: boolean
 }
 
 export interface GraphFilters {
@@ -71,11 +72,14 @@ const defaultNodeStyle: LabelStyle = {
   color: '#1f77b4',
   size: 10,
   captionField: 'label',
+  showLabel: true,
 }
 
 const defaultEdgeStyle: LabelStyle = {
   color: '#999',
   size: 2,
+  captionField: 'label',
+  showLabel: true,
 }
 
 export const useGraphStore = create<GraphState>()(
@@ -236,4 +240,3 @@ export const useGraphStore = create<GraphState>()(
     }
   )
 )
-

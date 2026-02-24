@@ -1,18 +1,21 @@
 """Database connection management."""
 
 import asyncio
+import re
 import logging
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from typing import Optional
+from typing import List, Optional
 
 import psycopg
+from psycopg import sql
 from psycopg.rows import dict_row
 
 from app.core.config import settings
 from app.core.errors import APIException, ErrorCode, ErrorCategory
 from app.core.metrics import metrics
+from app.core.validation import validate_graph_name
 
 logger = logging.getLogger(__name__)
 
@@ -163,6 +166,12 @@ class DatabaseConnection:
                 await self._conn.rollback()
                 raise
             except Exception:
+                logger.error(
+                    "execute_query failed; full SQL: %s",
+                    query,
+                    exc_info=True,
+                )
+                logger.error("execute_query failed; params: %s", params)
                 await self._conn.rollback()
                 raise
 
@@ -308,6 +317,107 @@ class DatabaseConnection:
         import secrets
         return "$c" + secrets.token_hex(4) + "$"
 
+    @staticmethod
+    def _split_top_level_commas(s: str) -> Optional[List[str]]:
+        """Split s by commas only at top level (not inside (), [], {}, or strings).
+        Returns None if quotes or brackets are unbalanced (ambiguous input)."""
+        parts: List[str] = []
+        cur: List[str] = []
+        depth_p, depth_b, depth_br = 0, 0, 0
+        in_sq, in_dq = False, False
+        i = 0
+        while i < len(s):
+            c = s[i]
+            if in_sq:
+                if c == "'" and (i == 0 or s[i - 1] != "\\"):
+                    in_sq = False
+                cur.append(c)
+                i += 1
+                continue
+            if in_dq:
+                if c == '"' and (i == 0 or s[i - 1] != "\\"):
+                    in_dq = False
+                cur.append(c)
+                i += 1
+                continue
+            if c == "'":
+                in_sq = True
+                cur.append(c)
+                i += 1
+                continue
+            if c == '"':
+                in_dq = True
+                cur.append(c)
+                i += 1
+                continue
+            if c == "(":
+                depth_p += 1
+            elif c == ")":
+                depth_p -= 1
+                if depth_p < 0:
+                    return None
+            elif c == "[":
+                depth_b += 1
+            elif c == "]":
+                depth_b -= 1
+                if depth_b < 0:
+                    return None
+            elif c == "{":
+                depth_br += 1
+            elif c == "}":
+                depth_br -= 1
+                if depth_br < 0:
+                    return None
+            elif (
+                c == ","
+                and depth_p == 0
+                and depth_b == 0
+                and depth_br == 0
+            ):
+                parts.append("".join(cur).strip())
+                cur = []
+                i += 1
+                continue
+            cur.append(c)
+            i += 1
+        if in_sq or in_dq or depth_p != 0 or depth_b != 0 or depth_br != 0:
+            return None
+        parts.append("".join(cur).strip())
+        return parts
+
+    @staticmethod
+    def _cypher_return_columns(cypher_query: str) -> List[str]:
+        """
+        Infer RETURN column names from Cypher so we can build AS (col1 agtype, ...).
+        AGE requires the AS clause to match the return column count and names.
+        """
+        # Find RETURN ... up to ORDER BY, LIMIT, SKIP, or end
+        m = re.search(
+            r"\bRETURN\s+(.+?)(?=\s+ORDER\s+BY|\s+LIMIT|\s+SKIP|\s*;|\s*$)",
+            cypher_query,
+            re.IGNORECASE | re.DOTALL,
+        )
+        if not m:
+            return ["result"]
+        return_expr = m.group(1).strip()
+        parts = DatabaseConnection._split_top_level_commas(return_expr)
+        if parts is None:
+            return ["result"]
+        names: List[str] = []
+        for i, part in enumerate(parts):
+            # Prefer "AS alias"
+            as_match = re.search(r"\s+AS\s+(\w+)\s*$", part, re.IGNORECASE)
+            if as_match:
+                name = as_match.group(1)
+            else:
+                name = f"c{i + 1}"
+            # Safe identifier: alphanumeric and underscore only
+            if re.match(r"^[a-zA-Z_][a-zA-Z0-9_]*$", name):
+                names.append(name)
+            else:
+                names.append(f"c{i + 1}")
+        return names if names else ["result"]
+
     async def execute_cypher(
         self,
         graph_name: str,
@@ -317,29 +427,60 @@ class DatabaseConnection:
     ) -> list[dict]:
         """
         Execute a Cypher query via Apache AGE using literal SQL (graph and query as literals).
-        This matches the AGE docs pattern and avoids overload resolution issues with
-        parameterized cypher(...) calls across different AGE versions.
+        AGE's cypher() does not support bound (text, text) parameters; we pass validated
+        literals (dollar-quoted for cypher, escaped for graph name and params).
+        When there are no Cypher parameters we use the 2-arg cypher(graph, query) form;
+        when params are present we use the 3-arg form with a literal agtype.
+        A trailing semicolon is stripped before sending to AGE, which does not expect it.
         """
-        tag = self._dollar_quote_tag(cypher_query)
-        # Graph name is already validated (identifier-safe); escape for SQL literal
-        graph_literal = graph_name.replace("'", "''")
-        cypher_literal = tag + cypher_query + tag
-        # AGE requires the third argument to be a *parameter* (bind), not a literal like NULL::agtype.
+        validated_graph_name = validate_graph_name(graph_name)
+        cypher_normalized = cypher_query.rstrip()
+        if cypher_normalized.endswith(";"):
+            cypher_normalized = cypher_normalized[:-1].rstrip()
+        tag = self._dollar_quote_tag(cypher_normalized)
+        graph_literal = validated_graph_name.replace("'", "''")
+        cypher_literal = tag + cypher_normalized + tag
+        has_params = bool(params)
         json_mod = __import__("json")
-        params_json = json_mod.dumps(params) if params else "null"
-        sql = (
-            f"SELECT * FROM ag_catalog.cypher("
-            f"'{graph_literal}', {cypher_literal}, %(params)s::agtype"
-            f") AS (result agtype)"
+        params_json = json_mod.dumps(params) if has_params else "null"
+
+        # AGE requires AS (col1 agtype, ...) to match RETURN column count and names.
+        # Use quoted identifiers for column names.
+        return_cols = self._cypher_return_columns(cypher_query)
+        as_clause_str = ", ".join(f'"{c}" agtype' for c in return_cols)
+
+        if has_params:
+            params_literal = params_json.replace("'", "''")
+            runnable_sql = (
+                f"SELECT * FROM ag_catalog.cypher("
+                f"'{graph_literal}', {cypher_literal}, '{params_literal}'::agtype"
+                f") AS ({as_clause_str})"
+            )
+            run_params: Optional[dict] = None
+        else:
+            runnable_sql = (
+                f"SELECT * FROM ag_catalog.cypher("
+                f"'{graph_literal}', {cypher_literal}"
+                f") AS ({as_clause_str})"
+            )
+            run_params = None
+
+        logger.info(
+            "execute_cypher: graph=%s, user cypher (verbatim): %s",
+            validated_graph_name,
+            cypher_query,
         )
-        run_params: Optional[dict] = {"params": params_json}
+        logger.info("execute_cypher: generated SQL (template): %s", runnable_sql)
 
-        # Log verbatim: user cypher and full generated SQL (so we can copy-paste into psql)
-        logger.info("execute_cypher: user cypher (graph=%s) verbatim: %s", graph_name, cypher_query)
-        logger.info("execute_cypher: generated SQL verbatim: %s", sql)
-        logger.info("execute_cypher: bind params (params)=%s", params_json)
-
-        return await self.execute_query(sql, run_params, timeout=timeout)
+        try:
+            return await self.execute_query(runnable_sql, run_params, timeout=timeout)
+        except Exception:
+            logger.error(
+                "execute_cypher: query failed; full generated SQL: %s",
+                runnable_sql,
+                exc_info=True,
+            )
+            raise
 
     @asynccontextmanager
     async def transaction(self, timeout: Optional[int] = None):

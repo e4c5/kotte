@@ -6,6 +6,7 @@ from typing import Dict, List, Optional, Tuple
 
 from app.core.database import DatabaseConnection
 from app.core.validation import validate_graph_name, validate_label_name, escape_identifier
+from app.services.agtype import AgTypeParser
 
 logger = logging.getLogger(__name__)
 
@@ -58,16 +59,17 @@ class MetadataService:
         sample_size: int = 1000,
     ) -> List[str]:
         """
-        Discover property keys for a label using PostgreSQL jsonb_object_keys.
+        Discover property keys for a label using Cypher keys().
 
-        Finds ALL property keys (not just sampled) via a single efficient query.
+        AGE stores properties as agtype, not jsonb, so we use Cypher to sample
+        nodes/edges and merge property keys instead of raw SQL jsonb functions.
 
         Args:
             db_conn: Database connection
             graph_name: Name of the graph
             label_name: Name of the label
-            label_kind: 'v' for vertex, 'e' for edge (unused - same schema)
-            sample_size: Ignored (kept for API compatibility)
+            label_kind: 'v' for vertex, 'e' for edge
+            sample_size: Max number of rows to sample for key discovery (default 1000)
 
         Returns:
             List of property keys found
@@ -80,24 +82,34 @@ class MetadataService:
         try:
             validated_graph_name = validate_graph_name(graph_name)
             validated_label_name = validate_label_name(label_name)
-            safe_graph = escape_identifier(validated_graph_name)
-            safe_label = escape_identifier(validated_label_name)
+            limit = min(max(1, sample_size), 500)
 
-            # Use jsonb_object_keys to find all property keys in one query
-            query = f"""
-                SELECT DISTINCT jsonb_object_keys(properties) as prop_key
-                FROM {safe_graph}.{safe_label}
-                WHERE properties IS NOT NULL
-                ORDER BY prop_key
-            """
-            rows = await db_conn.execute_query(query)
-            properties = [row["prop_key"] for row in rows]
+            if label_kind == "v":
+                cypher = (
+                    f"MATCH (n:{validated_label_name}) RETURN keys(n) AS k LIMIT {limit}"
+                )
+            else:
+                cypher = (
+                    f"MATCH ()-[r:{validated_label_name}]->() RETURN keys(r) AS k LIMIT {limit}"
+                )
+
+            raw_rows = await db_conn.execute_cypher(
+                validated_graph_name, cypher, params=None
+            )
+            all_keys: set = set()
+            for row in raw_rows:
+                # execute_cypher returns one column (e.g. "k" from RETURN keys(n) AS k)
+                val = next(iter(row.values()), None) if row else None
+                parsed = AgTypeParser.parse(val)
+                if isinstance(parsed, list):
+                    for k in parsed:
+                        if isinstance(k, str):
+                            all_keys.add(k)
+            properties = sorted(all_keys)
             property_cache.set(graph_name, label_name, properties)
             return properties
 
         except Exception as e:
-            # Log at DEBUG when the relation is missing (common for catalog-only
-            # labels or graphs created outside AGE); WARNING for other errors.
             msg = f"Failed to discover properties for {graph_name}.{label_name}: {e}"
             if "does not exist" in str(e):
                 logger.debug(msg)
@@ -224,51 +236,35 @@ class MetadataService:
         try:
             validated_graph_name = validate_graph_name(graph_name)
             validated_label_name = validate_label_name(label_name)
+            limit = min(max(1, sample_size), 5000)
 
-            # Escape identifiers for safe use in SQL
-            safe_graph = escape_identifier(validated_graph_name)
-            safe_label = escape_identifier(validated_label_name)
-
-            # Build query to sample property values
+            # AGE uses agtype for properties; sample via Cypher with parameterized key
             if label_kind == "v":
-                query = f"""
-                    SELECT properties->>%(prop_name)s as prop_value
-                    FROM {safe_graph}.{safe_label}
-                    WHERE properties ? %(prop_name)s
-                    LIMIT %(limit)s
-                """
+                cypher = (
+                    f"MATCH (n:{validated_label_name}) RETURN n[$key] AS val LIMIT $limit"
+                )
             else:
-                query = f"""
-                    SELECT properties->>%(prop_name)s as prop_value
-                    FROM {safe_graph}.{safe_label}
-                    WHERE properties ? %(prop_name)s
-                    LIMIT %(limit)s
-                """
-
-            rows = await db_conn.execute_query(
-                query, {"prop_name": property_name, "limit": sample_size}
+                cypher = (
+                    f"MATCH ()-[r:{validated_label_name}]->() RETURN r[$key] AS val LIMIT $limit"
+                )
+            raw_rows = await db_conn.execute_cypher(
+                validated_graph_name,
+                cypher,
+                params={"key": property_name, "limit": limit},
             )
-
-            # Extract numeric values
             numeric_values = []
-            for row in rows:
-                prop_value = row.get("prop_value")
-                if prop_value is not None:
+            for row in raw_rows:
+                # execute_cypher returns one column (e.g. "val" from RETURN n[$key] AS val)
+                val = next(iter(row.values()), None) if row else None
+                parsed = AgTypeParser.parse(val)
+                if parsed is not None:
                     try:
-                        # Try to convert to float
-                        num_value = float(prop_value)
-                        numeric_values.append(num_value)
+                        numeric_values.append(float(parsed))
                     except (ValueError, TypeError):
-                        # Not numeric, skip
                         continue
-
-            if len(numeric_values) == 0:
+            if not numeric_values:
                 return {"min": None, "max": None}
-
-            return {
-                "min": min(numeric_values),
-                "max": max(numeric_values),
-            }
+            return {"min": min(numeric_values), "max": max(numeric_values)}
 
         except Exception as e:
             msg = f"Failed to get property statistics for {graph_name}.{label_name}.{property_name}: {e}"
@@ -285,43 +281,14 @@ class MetadataService:
         label_name: str,
     ) -> Dict[str, Dict[str, Optional[float]]]:
         """
-        Get min/max statistics for all numeric properties of a label in one query.
+        Get min/max statistics for all numeric properties of a label.
+
+        AGE stores properties as agtype, not jsonb, so we do not use raw SQL
+        with CROSS JOIN LATERAL jsonb_each_text. Callers can still get per-property
+        stats via get_property_statistics for each key from discover_properties.
         """
-        try:
-            validated_graph_name = validate_graph_name(graph_name)
-            validated_label_name = validate_label_name(label_name)
-
-            safe_graph = escape_identifier(validated_graph_name)
-            safe_label = escape_identifier(validated_label_name)
-
-            query = f"""
-                SELECT kv.key as property,
-                       MIN((kv.value)::double precision) as min,
-                       MAX((kv.value)::double precision) as max
-                FROM {safe_graph}.{safe_label} t
-                CROSS JOIN LATERAL jsonb_each_text(t.properties) kv
-                WHERE kv.value ~ '^-?[0-9]+(\\.[0-9]+)?$'
-                GROUP BY kv.key
-            """
-            rows = await db_conn.execute_query(query)
-            return {
-                row["property"]: {
-                    "min": float(row["min"]) if row.get("min") is not None else None,
-                    "max": float(row["max"]) if row.get("max") is not None else None,
-                }
-                for row in rows
-                if row.get("property")
-            }
-        except Exception as e:
-            msg = (
-                f"Failed to get numeric property statistics for "
-                f"{graph_name}.{label_name}: {e}"
-            )
-            if "does not exist" in str(e):
-                logger.debug(msg)
-            else:
-                logger.warning(msg)
-            return {}
+        # Return empty; per-property stats are available via get_property_statistics
+        return {}
 
     @staticmethod
     async def create_label_indices(

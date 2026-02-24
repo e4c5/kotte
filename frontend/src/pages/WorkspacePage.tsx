@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useSessionStore } from '../stores/sessionStore'
 import { useQueryStore } from '../stores/queryStore'
@@ -46,6 +46,7 @@ export default function WorkspacePage() {
   const { tablePageSize, defaultLayout } = useSettingsStore()
   const [showSettings, setShowSettings] = useState(false)
   const [expanding, setExpanding] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const {
     setSelectedNode,
     setSelectedEdge,
@@ -63,11 +64,15 @@ export default function WorkspacePage() {
     }
   }, [])
 
+  // Apply default layout only when the user changes it in Settings, not when they change the dropdown
+  const isFirstLayoutSync = useRef(true)
   useEffect(() => {
-    if (defaultLayout && layout !== defaultLayout) {
-      setLayout(defaultLayout)
+    if (isFirstLayoutSync.current) {
+      isFirstLayoutSync.current = false
+      return
     }
-  }, [defaultLayout, layout, setLayout])
+    setLayout(defaultLayout)
+  }, [defaultLayout, setLayout])
 
   useEffect(() => {
     checkAuth().then(() => {
@@ -218,7 +223,7 @@ export default function WorkspacePage() {
 
   if (!status || !status.connected) {
     return (
-      <div className="min-h-screen bg-zinc-950 flex items-center justify-center text-zinc-400">
+      <div className="h-screen bg-zinc-950 flex items-center justify-center text-zinc-400">
         Loading...
       </div>
     )
@@ -230,9 +235,14 @@ export default function WorkspacePage() {
   const inspectorOpen = !!selectedNode || !!selectedEdge
 
   return (
-    <div className="relative min-h-screen w-screen bg-zinc-950 text-zinc-100 overflow-hidden">
-      {/* Canvas layer: full-size result area (graph / table) */}
-      <div className="absolute inset-0 pt-12">
+    <div className="relative h-screen w-full bg-zinc-950 text-zinc-100 overflow-hidden">
+      {/* Canvas layer: full-size result area (graph / table) — offset left by sidebar width */}
+      <div
+        className={`absolute right-0 bottom-0 transition-[left] duration-300 ${
+          sidebarCollapsed ? 'left-12' : 'left-64'
+        }`}
+        style={{ top: '5.5rem' }}
+      >
         {activeTab ? (
           <ResultTab
             tab={activeTab}
@@ -251,8 +261,12 @@ export default function WorkspacePage() {
         )}
       </div>
 
-      {/* Header: slim, fixed */}
-      <header className="fixed top-0 left-0 right-0 h-12 flex items-center justify-between px-4 bg-zinc-900/95 border-b border-zinc-800 z-10 shrink-0">
+      {/* Header: slim, fixed — offset left by sidebar width so it does not sit under the sidebar */}
+      <header
+        className={`fixed top-0 right-0 h-12 flex items-center justify-between px-4 bg-zinc-900/95 border-b border-zinc-800 z-10 shrink-0 transition-[left] duration-300 ${
+          sidebarCollapsed ? 'left-12' : 'left-64'
+        }`}
+      >
         <div className="flex items-center gap-4 min-w-0">
           <span className="font-semibold text-zinc-100 shrink-0">Kotte</span>
           <span className="text-zinc-500 text-sm truncate">
@@ -280,17 +294,23 @@ export default function WorkspacePage() {
         </button>
       </header>
 
-      {/* Floating query bar */}
-      <QueryEditor
-        value={query}
-        onChange={setQuery}
-        params={params}
-        onParamsChange={setParams}
-        onExecute={handleExecute}
-        onCancel={() => activeTabId && cancelQuery(activeTabId)}
-        loading={loading}
-        history={history}
-      />
+      {/* Query bar */}
+      <div
+        className={`fixed top-12 right-0 h-10 transition-[left] duration-300 z-20 ${
+          sidebarCollapsed ? 'left-12' : 'left-64'
+        }`}
+      >
+        <QueryEditor
+          value={query}
+          onChange={setQuery}
+          params={params}
+          onParamsChange={setParams}
+          onExecute={handleExecute}
+          onCancel={() => activeTabId && cancelQuery(activeTabId)}
+          loading={loading}
+          history={history}
+        />
+      </div>
 
       {/* Error toast */}
       {error && (
@@ -309,11 +329,13 @@ export default function WorkspacePage() {
         </div>
       )}
 
-      {/* Left schema sidebar */}
+      {/* Left schema sidebar — controlled so layout stays in sync when e.g. Graph Controls open */}
       <MetadataSidebar
         currentGraph={currentGraph ?? undefined}
         onGraphSelect={handleGraphSelect}
         onQueryTemplate={handleQueryTemplate}
+        collapsed={sidebarCollapsed}
+        onCollapsedChange={setSidebarCollapsed}
       />
 
       {/* Right inspector panel */}

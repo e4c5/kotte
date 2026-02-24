@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect } from 'react'
+import { useState, useMemo, useRef, useLayoutEffect } from 'react'
 import GraphView, { type GraphNode, type GraphEdge, type PathHighlights } from './GraphView'
 import TableView from './TableView'
 import GraphControls from './GraphControls'
@@ -32,16 +32,40 @@ export default function ResultTab({
   const [graphSize, setGraphSize] = useState({ width: 800, height: 600 })
   const graphContainerRef = useRef<HTMLDivElement>(null)
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const el = graphContainerRef.current
     if (!el) return
+    const MIN_WIDTH = 400
+    const MIN_HEIGHT = 300
+    const applySize = (w: number, h: number) => {
+      if (w > 0 && h > 0) {
+        setGraphSize({
+          width: Math.max(MIN_WIDTH, w),
+          height: Math.max(MIN_HEIGHT, h),
+        })
+      }
+    }
     const ro = new ResizeObserver((entries) => {
-      const { width, height } = entries[0]?.contentRect ?? { width: 800, height: 600 }
-      setGraphSize({ width: Math.max(1, width), height: Math.max(1, height) })
+      const { width, height } = entries[0]?.contentRect ?? { width: 0, height: 0 }
+      applySize(width, height)
     })
     ro.observe(el)
-    return () => ro.disconnect()
-  }, [tab.viewMode])
+    // Initial size after layout (ResizeObserver can fire with 0 before layout completes)
+    const raf = requestAnimationFrame(() => {
+      const rect = el.getBoundingClientRect()
+      applySize(rect.width, rect.height)
+    })
+    const onWindowResize = () => {
+      const rect = el.getBoundingClientRect()
+      applySize(rect.width, rect.height)
+    }
+    window.addEventListener('resize', onWindowResize)
+    return () => {
+      cancelAnimationFrame(raf)
+      window.removeEventListener('resize', onWindowResize)
+      ro.disconnect()
+    }
+  }, [tab.viewMode, showControls])
 
   const result = tab.result
 
@@ -156,16 +180,7 @@ export default function ResultTab({
       )}
 
       <div className="flex-1 flex min-h-0 relative">
-        {showControls && tab.viewMode === 'graph' && (
-          <div className="w-72 shrink-0 border-r border-zinc-700 overflow-auto bg-zinc-800/50">
-            <GraphControls
-              availableNodeLabels={Array.from(new Set(result.graph_elements?.nodes?.map(n => n.label) || []))}
-              availableEdgeLabels={Array.from(new Set(result.graph_elements?.edges?.map(e => e.label) || []))}
-            />
-          </div>
-        )}
-
-        <div ref={graphContainerRef} className="flex-1 relative min-w-0 min-h-0">
+        <div ref={graphContainerRef} className="flex-1 relative min-w-0 min-h-0 flex flex-col overflow-hidden">
           {tab.viewMode === 'graph' && hasGraphData ? (
             <>
               <GraphView
@@ -200,12 +215,20 @@ export default function ResultTab({
                   onClose={() => setContextMenu(null)}
                 />
               )}
+              {showControls && (
+                <GraphControls
+                  availableNodeLabels={Array.from(new Set(result.graph_elements?.nodes?.map(n => n.label) || []))}
+                  availableEdgeLabels={Array.from(new Set(result.graph_elements?.edges?.map(e => e.label) || []))}
+                  onClose={() => setShowControls(false)}
+                />
+              )}
             </>
           ) : (
             <TableView
               columns={result.columns}
               rows={result.rows}
               pageSize={tablePageSize}
+              queriedGraph={tab.graph}
             />
           )}
         </div>
@@ -213,4 +236,3 @@ export default function ResultTab({
     </div>
   )
 }
-

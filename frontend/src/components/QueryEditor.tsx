@@ -84,13 +84,13 @@ export default function QueryEditor({
   }
 
   return (
-    <div ref={containerRef} className="absolute left-1/2 top-6 -translate-x-1/2 w-[55%] max-w-2xl z-20">
+    <div ref={containerRef} className="relative w-full h-full">
       <div
-        className={`bg-zinc-800 border border-zinc-600 rounded-lg shadow-xl overflow-hidden transition-all duration-300 ease-out ${
-          expanded ? 'ring-2 ring-blue-500/50' : ''
+        className={`absolute top-0 left-0 right-0 z-20 bg-zinc-950 border-y border-zinc-800 overflow-hidden ${
+          expanded ? 'shadow-xl border border-zinc-700 ring-2 ring-blue-500/50' : 'h-full'
         }`}
       >
-        <div className="flex items-center gap-2 px-4 py-2 border-b border-zinc-700">
+        <div className={`flex items-center gap-2 px-4 ${expanded ? 'py-2 border-b border-zinc-700' : 'h-full'}`}>
           <span className="text-zinc-500" aria-hidden="true">⌕</span>
           <label htmlFor="cypher-query" className="sr-only">Cypher query</label>
           <textarea
@@ -102,7 +102,9 @@ export default function QueryEditor({
             placeholder="Enter Cypher Query... (Shift+Enter to run)"
             aria-label="Cypher query editor"
             rows={expanded ? 6 : 1}
-            className="flex-1 min-w-0 bg-transparent text-zinc-100 placeholder-zinc-500 font-mono text-sm resize-none focus:outline-none py-1"
+            className={`flex-1 min-w-0 bg-transparent text-zinc-100 placeholder-zinc-500 font-mono text-sm resize-none focus:outline-none ${
+              expanded ? 'py-1' : 'py-0'
+            }`}
           />
         </div>
 
