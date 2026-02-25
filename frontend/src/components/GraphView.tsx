@@ -866,35 +866,27 @@ function initializeLayout(
         }
       })
 
-      const rootData: HierarchyNodeData = {
-        name: 'root',
-        children: Array.from(groups.entries()).map(([label, groupNodes]) => ({
-          name: label,
-          children: groupNodes.map((node) => ({
-            name: String(node.id),
-            node,
-          })),
-        })),
-      }
+      const entries = Array.from(groups.entries())
+      const numGroups = entries.length
+      const padding = 48
+      const usableWidth = width - 2 * padding
+      const usableHeight = height - 2 * padding
+      const colWidth = numGroups > 0 ? usableWidth / numGroups : usableWidth
 
-      const root = d3
-        .hierarchy<HierarchyNodeData>(rootData, (d) => d.children)
-        .sum((d) => (d.node ? 1 : 0))
+      entries.forEach(([, groupNodes], groupIdx) => {
+        const n = groupNodes.length
+        const rows = Math.max(1, Math.ceil(Math.sqrt(n)))
+        const cols = Math.max(1, Math.ceil(n / rows))
+        const cellW = colWidth / (cols + 1)
+        const cellH = usableHeight / (rows + 1)
+        const baseX = padding + groupIdx * colWidth
 
-      const radius = Math.min(width, height) * 0.4
-      const clusterLayout = d3.cluster<HierarchyNodeData>().size([2 * Math.PI, radius])
-      clusterLayout(root)
-
-      const byId = new Map(nodes.map((n) => [n.id, n]))
-      root.leaves().forEach((leaf) => {
-        const data = leaf.data.node
-        if (!data) return
-        const target = byId.get(data.id)
-        if (!target) return
-        const angle = leaf.x
-        const r = leaf.y
-        target.x = centerX + r * Math.cos(angle)
-        target.y = centerY + r * Math.sin(angle)
+        groupNodes.forEach((node, idx) => {
+          const row = Math.floor(idx / cols)
+          const col = idx % cols
+          node.x = baseX + (col + 1) * cellW
+          node.y = padding + (row + 1) * cellH
+        })
       })
 
       break
@@ -929,7 +921,11 @@ function initializeLayout(
         .hierarchy<HierarchyNodeData>(rootData, (d) => d.children)
         .sum((d) => (d.node ? 1 : 0))
 
-      const partitionLayout = d3.partition<HierarchyNodeData>().size([width, height])
+      // Sunburst: partition in polar space (angle, radius) then map to x,y
+      const radius = Math.min(width, height) / 2 - 24
+      const partitionLayout = d3
+        .partition<HierarchyNodeData>()
+        .size([2 * Math.PI, radius])
       partitionLayout(root)
 
       const byId = new Map(nodes.map((n) => [n.id, n]))
@@ -938,10 +934,10 @@ function initializeLayout(
         if (!data) return
         const target = byId.get(data.id)
         if (!target) return
-        const x = leaf.x0 + (leaf.x1 - leaf.x0) / 2
-        const y = leaf.y0 + (leaf.y1 - leaf.y0) / 2
-        target.x = x
-        target.y = y
+        const angle = (leaf.x0 + leaf.x1) / 2
+        const r = (leaf.y0 + leaf.y1) / 2
+        target.x = centerX + r * Math.cos(angle)
+        target.y = centerY + r * Math.sin(angle)
       })
 
       break
