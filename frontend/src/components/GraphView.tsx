@@ -323,21 +323,6 @@ export default function GraphView({
     // Create force simulation (or static "simulation" for rendering only)
     let simulation: d3.Simulation<GraphNode, GraphEdge>
 
-    const nodeCount = nodesWithPositions.length
-    const linkDistance =
-      layout === 'force' && hasEdges
-        ? (() => {
-            const minDist = 40
-            const maxDist = Math.min(viewportWidth, viewportHeight) * 0.55
-            const minNodes = 5
-            const maxNodes = 300
-            if (nodeCount <= minNodes) return maxDist
-            if (nodeCount >= maxNodes) return minDist
-            const t = (nodeCount - minNodes) / (maxNodes - minNodes)
-            return maxDist - t * (maxDist - minDist)
-          })()
-        : 90
-
     if (layout === 'force' && hasEdges) {
       // Run real force simulation: default alpha (1) and alphaDecay (~0.028) so it runs
       // enough ticks to reach equilibrium (D3 default ~300 iterations).
@@ -351,7 +336,7 @@ export default function GraphView({
           d3
             .forceLink<GraphNode, GraphEdge>(filteredEdges)
             .id((d) => d.id)
-            .distance(linkDistance)
+            .distance(90)
         )
         .force('charge', d3.forceManyBody().strength(-110))
         .force('center', d3.forceCenter(viewportWidth / 2, viewportHeight / 2))
@@ -518,8 +503,8 @@ export default function GraphView({
       const contentWidth = maxX - minX || 1
       const contentHeight = maxY - minY || 1
 
-      // Leave some margin around the graph
-      const margin = 40
+      // Leave some margin around the graph; use a slightly tighter margin for force layout
+      const margin = layout === 'force' ? 20 : 40
       const scaleX = (viewportWidth - 2 * margin) / contentWidth
       const scaleY = (viewportHeight - 2 * margin) / contentHeight
       const rawScale = 0.92 * Math.min(scaleX, scaleY)
