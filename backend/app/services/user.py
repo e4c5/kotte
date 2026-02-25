@@ -6,6 +6,7 @@ from typing import Optional
 
 import bcrypt
 
+from app.core.config import settings
 from app.core.errors import APIException, ErrorCode, ErrorCategory
 from fastapi import status
 
@@ -29,7 +30,7 @@ def _build_admin_user() -> dict:
     In production, this variable **must** be set to a strong secret.
     """
     admin_password = os.environ.get("ADMIN_PASSWORD", "admin")
-    if admin_password == "admin":
+    if admin_password == "admin" and settings.environment == "production":
         logger.warning(
             "Default admin password is in use. "
             "Set the ADMIN_PASSWORD environment variable in production!"
