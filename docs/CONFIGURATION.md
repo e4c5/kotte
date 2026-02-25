@@ -7,6 +7,7 @@ Configuration is done via environment variables. Create a `.env` file in the `ba
 | Variable | Description |
 |----------|-------------|
 | `SESSION_SECRET_KEY` | Secret key for session signing. Generate with `openssl rand -urlsafe 32`. Required in production. |
+| `ADMIN_PASSWORD` | Password for the built-in `admin` account. Defaults to `admin` **which must be changed in production**. |
 
 ## Database (Connection Defaults)
 
@@ -65,6 +66,39 @@ Configuration is done via environment variables. Create a `.env` file in the `ba
 | `CREDENTIAL_STORAGE_TYPE` | `json_file` | Storage type: `json_file`, `sqlite`, `postgresql`, `redis` |
 | `CREDENTIAL_STORAGE_PATH` | `./data/connections.json` | Path for `json_file` storage |
 | `MASTER_ENCRYPTION_KEY` | *(empty)* | Encryption key for stored credentials. **Development:** If unset, a key is auto-generated on first use and persisted to `.master_encryption_key` (next to the connections file). **Production:** Must be set—otherwise the app raises an error when using credential storage. |
+
+### Key Rotation
+
+There is currently **no automated re-encryption path**. If you rotate `MASTER_ENCRYPTION_KEY`, all
+saved connections encrypted with the old key will become unreadable.
+
+To safely rotate the key:
+1. Export all saved connections from the UI (or back up `connections.json` / the SQLite file).
+2. Update `MASTER_ENCRYPTION_KEY` to the new value.
+3. Re-import the saved connections (they will be re-encrypted with the new key).
+
+---
+
+## Default Admin Credentials
+
+> ⚠️ **Security Warning:** The default admin username is `admin` and the default password is also
+> `admin`. These credentials are intentionally weak for local development and **must be changed
+> before any production or publicly-accessible deployment.**
+
+Set the `ADMIN_PASSWORD` environment variable to override the default password:
+
+```bash
+# .env
+ADMIN_PASSWORD=a-long-random-secret-here
+```
+
+Alternatively, generate a strong random password and set it before starting the server:
+
+```bash
+export ADMIN_PASSWORD=$(openssl rand -base64 24)
+```
+
+The password is hashed with bcrypt on first use; the plaintext is never persisted.
 
 ---
 

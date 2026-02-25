@@ -1,6 +1,5 @@
 """Tests for authentication endpoints."""
 
-import hashlib
 import pytest
 import httpx
 from unittest.mock import patch, MagicMock

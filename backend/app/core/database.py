@@ -1,8 +1,10 @@
 """Database connection management."""
 
 import asyncio
+import json
 import re
 import logging
+import secrets
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -145,10 +147,6 @@ class DatabaseConnection:
         start_time = time.time()
         async with self.connection.cursor() as cur:
             try:
-                # Ensure AGE is loaded and search_path set for this connection (session).
-                # Required per Apache AGE docs; running here guarantees it's in effect for this query.
-                await cur.execute("LOAD 'age'")
-                await cur.execute('SET search_path = ag_catalog, "$user", public')
                 # Execute with timeout
                 await asyncio.wait_for(
                     cur.execute(query, params),
@@ -187,8 +185,6 @@ class DatabaseConnection:
         start_time = time.time()
         async with self.connection.cursor() as cur:
             try:
-                await cur.execute("LOAD 'age'")
-                await cur.execute('SET search_path = ag_catalog, "$user", public')
                 await asyncio.wait_for(
                     cur.execute(query, params),
                     timeout=timeout,
@@ -314,7 +310,6 @@ class DatabaseConnection:
             if tag not in cypher_query:
                 return tag
         # Fallback: use a tag with random suffix so it's unlikely to appear
-        import secrets
         return "$c" + secrets.token_hex(4) + "$"
 
     @staticmethod
@@ -441,8 +436,7 @@ class DatabaseConnection:
         graph_literal = validated_graph_name.replace("'", "''")
         cypher_literal = tag + cypher_normalized + tag
         has_params = bool(params)
-        json_mod = __import__("json")
-        params_json = json_mod.dumps(params) if has_params else "null"
+        params_json = json.dumps(params) if has_params else "null"
 
         # AGE requires AS (col1 agtype, ...) to match RETURN column count and names.
         # Use quoted identifiers for column names.

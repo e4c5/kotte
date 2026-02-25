@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, Query
 
 from app.core.auth import get_session
 from app.core.database import DatabaseConnection
+from app.core.deps import get_db_connection
 from app.core.errors import APIException, ErrorCode, ErrorCategory, translate_db_error
 from app.core.validation import validate_graph_name
 from app.core.metrics import metrics
@@ -15,12 +16,6 @@ from app.services.agtype import AgTypeParser
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-
-
-async def get_db_connection(session: dict = Depends(get_session)) -> DatabaseConnection:
-    """Get database connection from session."""
-    from app.api.v1.graph import get_db_connection as base_get_db_connection
-    return await base_get_db_connection(session)
 
 
 @router.delete("/{graph_name}/nodes/{node_id}", response_model=NodeDeleteResponse)
@@ -129,7 +124,7 @@ async def delete_node(
                 raise APIException(
                     code=ErrorCode.INTERNAL_ERROR,
                     message="Failed to delete node",
-                    category=ErrorCategory.SYSTEM,
+                    category=ErrorCategory.INTERNAL,
                     status_code=500,
                 )
 
@@ -148,7 +143,7 @@ async def delete_node(
                 raise APIException(
                     code=ErrorCode.INTERNAL_ERROR,
                     message="Node deletion failed or node has relationships (use detach=true to delete with relationships)",
-                    category=ErrorCategory.SYSTEM,
+                    category=ErrorCategory.INTERNAL,
                     status_code=500,
                 )
 

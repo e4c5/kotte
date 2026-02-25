@@ -28,32 +28,15 @@ export default function LoginPage() {
   }
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
-        minHeight: '100vh',
-        backgroundColor: '#f5f5f5',
-      }}
-    >
-      <div
-        style={{
-          backgroundColor: 'white',
-          padding: '2rem',
-          borderRadius: '8px',
-          boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-          width: '100%',
-          maxWidth: '400px',
-        }}
-      >
-        <h2 style={{ marginBottom: '1.5rem', textAlign: 'center' }}>
+    <div className="min-h-screen flex items-center justify-center bg-zinc-950">
+      <div className="w-full max-w-[400px] p-8 rounded-lg border border-zinc-800 bg-zinc-900 shadow-xl">
+        <h2 className="mb-6 text-center text-xl font-semibold text-zinc-100">
           Kotte - Login
         </h2>
-        <form onSubmit={handleSubmit}>
-          <div style={{ marginBottom: '1rem' }}>
-            <label htmlFor="login-username" style={{ display: 'block', marginBottom: '0.5rem' }}>
-              Username:
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label htmlFor="login-username" className="block text-sm font-medium text-zinc-300 mb-1">
+              Username
             </label>
             <input
               id="login-username"
@@ -62,18 +45,12 @@ export default function LoginPage() {
               onChange={(e) => setUsername(e.target.value)}
               required
               autoFocus
-              style={{
-                width: '100%',
-                padding: '0.5rem',
-                fontSize: '1rem',
-                border: '1px solid #ccc',
-                borderRadius: '4px',
-              }}
+              className="w-full px-3 py-2 text-sm bg-zinc-800 border border-zinc-600 rounded-lg text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
           </div>
-          <div style={{ marginBottom: '1.5rem' }}>
-            <label htmlFor="login-password" style={{ display: 'block', marginBottom: '0.5rem' }}>
-              Password:
+          <div>
+            <label htmlFor="login-password" className="block text-sm font-medium text-zinc-300 mb-1">
+              Password
             </label>
             <input
               id="login-password"
@@ -81,56 +58,25 @@ export default function LoginPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              style={{
-                width: '100%',
-                padding: '0.5rem',
-                fontSize: '1rem',
-                border: '1px solid #ccc',
-                borderRadius: '4px',
-              }}
+              className="w-full px-3 py-2 text-sm bg-zinc-800 border border-zinc-600 rounded-lg text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
           </div>
           {error && (
-            <div
-              style={{
-                color: 'red',
-                marginBottom: '1rem',
-                padding: '0.5rem',
-                backgroundColor: '#fee',
-                border: '1px solid #fcc',
-                borderRadius: '4px',
-              }}
-            >
+            <div className="p-3 mb-2 rounded-lg bg-red-900/90 border border-red-700 text-red-100 text-sm">
               {error}
             </div>
           )}
           <button
             type="submit"
             disabled={loading}
-            style={{
-              width: '100%',
-              padding: '0.75rem',
-              fontSize: '1rem',
-              cursor: loading ? 'not-allowed' : 'pointer',
-              backgroundColor: loading ? '#ccc' : '#007bff',
-              color: 'white',
-              border: 'none',
-              borderRadius: '4px',
-            }}
+            className="w-full py-3 text-sm font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {loading ? 'Logging in...' : 'Login'}
           </button>
         </form>
-        <div
-          style={{
-            marginTop: '1rem',
-            fontSize: '0.875rem',
-            color: '#666',
-            textAlign: 'center',
-          }}
-        >
+        <p className="mt-4 text-center text-sm text-zinc-500">
           Default: admin / admin
-        </div>
+        </p>
       </div>
     </div>
   )
