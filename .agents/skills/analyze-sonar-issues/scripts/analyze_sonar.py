@@ -290,6 +290,78 @@ def fetch_all_issues(initial_api_url: str) -> dict:
     return merged
 
 
+def fetch_duplication_details(base_url: str, file_key: str, pull_request: str | None = None, branch: str | None = None) -> dict:
+    """Fetch detailed duplication blocks for a specific file."""
+    params = {"key": file_key}
+    if pull_request:
+        params["pullRequest"] = pull_request
+    if branch:
+        params["branch"] = branch
+    
+    url = f"{base_url}/api/duplications/show?{urllib.parse.urlencode(params)}"
+    try:
+        return http_get_json(url)
+    except Exception:
+        return {}
+
+
+def fetch_duplications(base_url: str, component: str, pull_request: str | None = None, branch: str | None = None) -> dict:
+    # ... (same as before but passing parameters to fetch_duplication_details)
+    # I'll just replace the whole function to be safe.
+    """Fetch duplication measures for the component/PR."""
+    params = {
+        "component": component,
+        "metricKeys": "duplicated_lines,duplicated_blocks,duplicated_files,duplicated_lines_density,new_duplicated_lines,new_duplicated_blocks,new_duplicated_lines_density",
+    }
+    if pull_request:
+        params["pullRequest"] = pull_request
+    if branch:
+        params["branch"] = branch
+    
+    url = f"{base_url}/api/measures/component?{urllib.parse.urlencode(params)}"
+    try:
+        measures_data = http_get_json(url)
+    except Exception:
+        return {}
+
+    # Also fetch component tree to see which files have duplications
+    tree_params = {
+        "component": component,
+        "metricKeys": "duplicated_lines_density,new_duplicated_lines_density",
+        "qualifiers": "FIL",
+        "ps": "500",
+    }
+    if pull_request:
+        tree_params["pullRequest"] = pull_request
+    if branch:
+        tree_params["branch"] = branch
+    
+    tree_url = f"{base_url}/api/measures/component_tree?{urllib.parse.urlencode(tree_params)}"
+    try:
+        tree_data = http_get_json(tree_url)
+    except Exception:
+        tree_data = {}
+
+    files = tree_data.get("components", [])
+    for f in files:
+        density = 0.0
+        for m in f.get("measures", []):
+            if m.get("metric") in ["duplicated_lines_density", "new_duplicated_lines_density"]:
+                val = m.get("value") or (m.get("periods", [{}])[0].get("value") if m.get("periods") else "0")
+                try:
+                    density = max(density, float(val))
+                except ValueError:
+                    pass
+        
+        if density > 0:
+            f["duplication_details"] = fetch_duplication_details(base_url, f["key"], pull_request, branch)
+
+    return {
+        "summary": measures_data.get("component", {}).get("measures", []),
+        "files": files,
+    }
+
+
 def main() -> None:
     sonar_arg = None
     for a in sys.argv[1:]:
@@ -298,27 +370,36 @@ def main() -> None:
             break
 
     source = "cli"
-    resolved_url: str | None = sonar_arg
-
-    if not resolved_url:
-        pr_url = latest_open_pr_url()
+    resolved_url: str | None = None
+    
+    # If it's a GitHub URL, we need to resolve it to a Sonar link.
+    if sonar_arg and "github.com" not in sonar_arg:
+        resolved_url = sonar_arg
+    else:
+        pr_url = sonar_arg or latest_open_pr_url()
         if not pr_url:
             print("No open pull requests and no Sonar URL provided.", file=sys.stderr)
             sys.exit(1)
+        
         parsed = parse_github_pr(pr_url)
         if not parsed:
-            print(f"Could not parse PR URL: {pr_url}", file=sys.stderr)
-            sys.exit(1)
-        owner, repo, pr_number = parsed
-        resolved_url = gh_pr_comments_for_sonar(owner, repo, pr_number)
-        source = f"github_pr:{pr_url}"
-        if not resolved_url:
-            print(
-                "No Sonar link found in issue comments on the latest open PR. "
-                "Paste a Sonar dashboard or API URL, or ensure the bot left a link.",
-                file=sys.stderr,
-            )
-            sys.exit(1)
+            # If we couldn't parse it as a PR, but it's an HTTP link, maybe it's just a weird Sonar link?
+            if sonar_arg:
+                resolved_url = sonar_arg
+            else:
+                print(f"Could not parse PR URL: {pr_url}", file=sys.stderr)
+                sys.exit(1)
+        else:
+            owner, repo, pr_number = parsed
+            resolved_url = gh_pr_comments_for_sonar(owner, repo, pr_number)
+            source = f"github_pr:{pr_url}"
+            if not resolved_url:
+                print(
+                    f"No Sonar link found in comments on PR #{pr_number}. "
+                    "Paste a Sonar dashboard or API URL, or ensure the bot left a link.",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
 
     try:
         api_url = ensure_issues_search_url(resolved_url)
@@ -332,6 +413,18 @@ def main() -> None:
         print(str(e), file=sys.stderr)
         sys.exit(1)
 
+    # Extract component/PR/branch from resolved_url to fetch duplications
+    parsed_sonar = urllib.parse.urlparse(resolved_url)
+    qs = urllib.parse.parse_qs(parsed_sonar.query)
+    component = (qs.get("id") or qs.get("component") or qs.get("projectKey") or [None])[0]
+    pull_request = (qs.get("pullRequest") or [None])[0]
+    branch = (qs.get("branch") or [None])[0]
+    
+    duplications = {}
+    if component:
+        base_sonar_url = f"{parsed_sonar.scheme}://{parsed_sonar.netloc}".rstrip("/")
+        duplications = fetch_duplications(base_sonar_url, component, pull_request, branch)
+
     out_name = "sonar-context.json"
     out_path = os.path.join(os.path.dirname(__file__), out_name)
 
@@ -341,13 +434,15 @@ def main() -> None:
         "api_url_used": api_url,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "sonar_response": payload,
+        "duplications": duplications,
     }
 
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(envelope, f, indent=2)
 
     issues = payload.get("issues") or []
-    print(f"Saved {len(issues)} issue(s) to {out_path}")
+    dup_files = len([f for f in duplications.get("files", []) if any(m.get("metric") == "duplicated_lines_density" and float(m.get("value", 0)) > 0 for m in f.get("measures", []))])
+    print(f"Saved {len(issues)} issue(s) and duplication data for {dup_files} file(s) to {out_path}")
 
 
 if __name__ == "__main__":

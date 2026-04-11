@@ -6,13 +6,21 @@ from unittest.mock import patch
 
 from app.core.config import Settings
 
+# patch.dict(..., clear=True) removes keys set in conftest.py; include a dummy secret
+# so Settings() does not emit UserWarning (generation path is covered elsewhere).
+_TEST_SESSION_SECRET = "test-session-secret-key-for-config-tests-only-0123456789"
+
 
 class TestSettings:
     """Tests for application settings."""
 
     def test_default_settings(self):
         """Test default settings values."""
-        with patch.dict(os.environ, {}, clear=True):
+        with patch.dict(
+            os.environ,
+            {"SESSION_SECRET_KEY": _TEST_SESSION_SECRET},
+            clear=True,
+        ):
             settings = Settings()
             assert settings.environment == "development"
             assert settings.db_host == "localhost"
@@ -22,8 +30,9 @@ class TestSettings:
             assert settings.max_edges_for_graph == 10000
 
     def test_session_secret_key_generation(self):
-        """Test that session secret key is generated in development."""
-        with patch.dict(os.environ, {}, clear=True):
+        """Test that session secret key is generated when unset (non-production)."""
+        # ENVIRONMENT=test skips the dev UserWarning in Settings.__init__
+        with patch.dict(os.environ, {"ENVIRONMENT": "test"}, clear=True):
             settings = Settings()
             assert settings.session_secret_key is not None
             assert len(settings.session_secret_key) > 0
@@ -43,6 +52,7 @@ class TestSettings:
                 "DB_HOST": "test-host",
                 "DB_PORT": "5433",
                 "QUERY_TIMEOUT": "600",
+                "SESSION_SECRET_KEY": _TEST_SESSION_SECRET,
             },
             clear=True,
         ):
@@ -62,6 +72,7 @@ class TestSettings:
             {
                 "MAX_NODES_FOR_GRAPH": "10000",
                 "MAX_EDGES_FOR_GRAPH": "20000",
+                "SESSION_SECRET_KEY": _TEST_SESSION_SECRET,
             },
             clear=True,
         ):
@@ -71,7 +82,11 @@ class TestSettings:
 
     def test_pool_min_must_not_exceed_max(self):
         """Invalid pool bounds are rejected at settings load."""
-        with patch.dict(os.environ, {}, clear=True):
+        with patch.dict(
+            os.environ,
+            {"SESSION_SECRET_KEY": _TEST_SESSION_SECRET},
+            clear=True,
+        ):
             with pytest.raises(ValueError, match="db_pool_min_size"):
                 Settings(
                     db_pool_min_size=10,

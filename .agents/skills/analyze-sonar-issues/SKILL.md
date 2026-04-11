@@ -1,17 +1,16 @@
 ---
 name: analyze-sonar-issues
 description: >-
-  Fetches SonarQube/SonarCloud open issues via the Web API (from a dashboard or API URL, or by
+  Fetches SonarQube/SonarCloud open issues and duplication reports via the Web API (from a dashboard or API URL, or by
   discovering the Sonar link on the latest open PR), then builds a prioritized remediation plan.
-  Use when the user mentions Sonar, SonarCloud, SonarQube, quality gate failures, or wants to
-  address findings from a Sonar analysis without replying on GitHub.
+  Use when the user mentions Sonar, SonarCloud, SonarQube, quality gate failures, or code duplications.
 ---
 
 You take one optional argument: a Sonar **dashboard** or URL (SonarCloud or self-hosted SonarQube).
 
 ## Goal
 
-Produce an actionable list of Sonar findings: Write the findings to sonar-fixes.md 
+Produce an actionable list of Sonar findings (issues and duplications): Write the findings to sonar-fixes.md 
 
 ## Steps
 
@@ -28,14 +27,21 @@ Produce an actionable list of Sonar findings: Write the findings to sonar-fixes.
    - Private projects or token-only instances: set **`SONAR_TOKEN`** or **`SONARCLOUD_TOKEN`** in the environment (Sonar user token; passed as HTTP Basic with the token as username and an empty password, per Sonar’s usual convention). Public projects do not need a token.
    - Do not commit tokens or echo them in logs.
 
-3. **Analyze issues (AI)**
-   - Read `sonar-context.json`. Use `sonar_response.issues` as the primary list.
-   - For each issue, use fields such as `severity`, `type`, `message`, `component`, `line`, `rule`, `status`, and `tags` when present.
-   - **Prioritize:** Blocker/Critical first, then Major, then the rest; group by component/file when helpful.
-   - **Verify in repo:** Open the referenced paths when `component` maps cleanly to the workspace (strip project key prefix if needed); confirm the finding still applies to current code.
+3. **Analyze issues and duplications (AI)**
+   - Read `sonar-context.json`. 
+   - Use `sonar_response.issues` as the primary list of issues.
+   - Use `duplications` for code duplication findings:
+     - Check `duplications.summary` for overall project duplication metrics.
+     - Check `duplications.files` for specific files with duplication.
+     - For files with `duplication_details`, identify the specific blocks (line numbers and sizes) that are duplicated.
+   - For each issue and duplication finding:
+     - For issues, use fields such as `severity`, `type`, `message`, `component`, `line`, `rule`, etc.
+     - For duplications, identify the repeating logic and suggest a refactoring (e.g., extract to a helper function).
+   - **Prioritize:** Blocker/Critical issues first, then Major issues, then significant Duplications, then the rest. Group by component/file when helpful.
+   - **Verify in repo:** Open the referenced paths when `component` or `path` maps cleanly to the workspace; confirm the finding still applies to current code.
    - **Produce a remediation plan** (markdown):
-     - Summary counts by severity.
-     - Ordered list of items with file/line (or best available location), rule/message, and a concrete fix approach.
+     - Summary counts by severity and duplication overview.
+     - Ordered list of items with file/line, finding description, and a concrete fix approach.
      - Testing or verification notes where relevant.
 
 4. **output file**
