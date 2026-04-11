@@ -13,7 +13,7 @@
 ```
 kotte/
 ├── backend/app/
-│   ├── api/v1/          # Routes: session, graph, query, import_csv, health
+│   ├── api/v1/          # Routes: session, graph, query, import (csv_importer), health
 │   ├── core/            # auth, config, database, errors, logging, middleware, metrics
 │   │   └── database/    # Modular DB: connection (pool), cypher, manager, utils
 │   ├── models/          # Pydantic request/response models

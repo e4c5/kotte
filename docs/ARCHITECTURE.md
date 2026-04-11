@@ -63,7 +63,7 @@ backend/app/
 │   ├── session.py       # Session management (connect/disconnect)
 │   ├── graph.py         # Graph operations (list, metadata, meta-graph)
 │   ├── query.py         # Query execution and cancellation
-│   ├── import_csv.py    # CSV import endpoints
+│   ├── csv_importer.py  # CSV import endpoints (mounted via import_router.py)
 │   └── health.py        # Health check endpoints
 ├── core/                # Core functionality
 │   ├── auth.py          # Session authentication

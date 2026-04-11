@@ -49,9 +49,9 @@ This document captures findings from an internal review of the `avurudu` improve
 - Pool usage: no long-held idle transaction while other connections perform the real work.
 - Tests prove atomicity (e.g. failure mid-flow rolls back visible effects) where the product requires it.
 
-**Primary references:** `backend/app/core/database/connection.py`, `backend/app/core/database/cypher.py`, `backend/app/api/v1/graph_delete_node.py`, `backend/app/api/v1/csv_importer.py`, `backend/app/api/v1/import_csv.py`.
+**Primary references:** `backend/app/core/database/connection.py`, `backend/app/core/database/cypher.py`, `backend/app/api/v1/graph_delete_node.py`, `backend/app/api/v1/csv_importer.py`.
 
-**Status:** **Done** (2026-04-11). Optional keyword argument `conn` is implemented on `execute_query`, `execute_command`, `execute_scalar`, and `execute_cypher`; node delete, CSV import (both routers), and the simple CSV import insert loop pass the transaction connection. Idle second-connection misuse is removed for those paths. `execute_scalar` now honors `settings.query_timeout` via `asyncio.wait_for`; `execute_command` rolls back on failure/timeout like `execute_query`. Optional follow-up: an integration test with `USE_REAL_TEST_DB=true` that asserts rollback when a multi-step transactional flow fails mid-way.
+**Status:** **Done** (2026-04-11). Optional keyword argument `conn` is implemented on `execute_query`, `execute_command`, `execute_scalar`, and `execute_cypher`; node delete, CSV import (`csv_importer`), and the simple CSV import insert loop pass the transaction connection. Idle second-connection misuse is removed for those paths. `execute_scalar` now honors `settings.query_timeout` via `asyncio.wait_for`; `execute_command` rolls back on failure/timeout like `execute_query`. Optional follow-up: an integration test with `USE_REAL_TEST_DB=true` that asserts rollback when a multi-step transactional flow fails mid-way.
 
 ---
 

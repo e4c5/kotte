@@ -7,11 +7,11 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, UploadFile, File, Form
 
 from app.core.auth import get_session
-from app.services.metadata import MetadataService, invalidate_property_metadata_cache
 from app.core.config import settings
 from app.core.database import DatabaseConnection
 from app.core.errors import APIException, ErrorCode, ErrorCategory
 from app.core.validation import validate_graph_name, validate_label_name, escape_string_literal
+from app.services.metadata import MetadataService, invalidate_property_metadata_cache
 from app.models.import_models import (
     CSVImportResponse,
     ImportJobStatus,
