@@ -1,6 +1,43 @@
 # Performance Tuning
 
-This document describes performance optimizations for the Kotte Apache AGE visualizer, including database indexing, query optimization, and caching.
+This document describes performance optimizations for the Kotte Apache AGE visualizer, including database indexing, query optimization, caching, and connection management.
+
+## Database Connection Management
+
+### Connection Pooling
+
+Kotte uses `psycopg-pool` to manage asynchronous database connections efficiently.
+
+- **Per-Session Pool:** Each user session maintains its own connection pool.
+- **Configuration:**
+  - `db_pool_min_size`: Minimum connections to keep (default: 1)
+  - `db_pool_max_size`: Maximum connections (default: 10)
+  - `db_pool_max_idle`: Max idle time in seconds (default: 300)
+- **AGE Configuration:** Every connection in the pool is automatically initialized with `LOAD 'age'` and the correct `search_path` for AGE support.
+
+## Caching Strategy
+
+Kotte implements multi-level caching to reduce latency and database load.
+
+### Backend: InMemoryCache
+
+A TTL-based in-memory cache is used for expensive metadata operations.
+
+- **Metadata Cache:** Caches discovered properties and label counts.
+  - TTL for properties: 60 minutes.
+  - TTL for count estimates: 10 minutes.
+- **Invalidation:** Cache is automatically cleared when:
+  - CSV import adds new data.
+  - Indices are created.
+  - `ANALYZE` is manually triggered.
+
+### Frontend: apiCache
+
+The frontend API client (`apiClient`) includes a simple in-memory cache for GET requests.
+
+- **Graph Lists:** Cached for 5 minutes.
+- **Graph Metadata:** Cached for 60 minutes.
+- **Invalidation:** The frontend cache is cleared on logout or when a mutation (POST/PUT/DELETE) is performed on a related resource.
 
 ## Database Indexing
 
@@ -33,42 +70,20 @@ Indices are **not** created automatically. Use one of these approaches:
    await MetadataService.create_label_indices(db_conn, graph_name, label_name, "e")
    ```
 
-### Expected Impact
-
-- Node lookup by ID: ~125x faster (250ms → 2ms on large graphs)
-- Edge traversal: ~100x faster
-- Metadata discovery: ~50x faster with indices + ANALYZE
-
 ---
 
-## Query Optimization
+## Frontend Optimization
 
-### Meta-Graph Discovery
+### Code Splitting
 
-The meta-graph endpoint uses a single Cypher query instead of N+1 queries:
+Kotte uses route-based code splitting to reduce the initial bundle size. Pages like `LoginPage`, `ConnectionPage`, and `WorkspacePage` are lazy-loaded only when needed.
 
-```cypher
-MATCH (src)-[rel]->(dst)
-WITH labels(src)[0] as src_label, type(rel) as rel_type, labels(dst)[0] as dst_label
-RETURN src_label, rel_type, dst_label, COUNT(*) as edge_count
-ORDER BY edge_count DESC
-LIMIT 1000
-```
+### Memory Management
 
-### Property Discovery
-
-Property keys are discovered using PostgreSQL's `jsonb_object_keys()` for a single-pass scan of all properties, avoiding sampling and missing rare keys.
-
----
-
-## Caching
-
-### Property Cache
-
-Discovered properties are cached for 60 minutes to reduce repeated queries. Cache is invalidated when:
-
-- CSV import adds new data (per graph/label)
-- TTL expires
+Large D3.js graph visualizations can be memory-intensive. Kotte ensures efficient memory usage by:
+- **Explicit Cleanup:** Stopping force simulations and clearing SVG selections on component unmount.
+- **Filtering:** Users can filter labels or properties to reduce the number of rendered elements.
+- **Limits:** Hard caps on the number of nodes/edges rendered in the graph view.
 
 ---
 
@@ -77,22 +92,12 @@ Discovered properties are cached for 60 minutes to reduce repeated queries. Cach
 ### ANALYZE After Imports
 
 After CSV import, `ANALYZE` is run on the affected table to update PostgreSQL statistics. This ensures:
-
-- Accurate `reltuples` estimates for count display
-- Better query planning
+- Accurate `reltuples` estimates for count display.
+- Better query planning.
 
 ### Count Estimates
 
 Metadata uses `pg_class.reltuples` for fast approximate counts. For exact counts, use `MetadataService.get_exact_counts()`.
-
----
-
-## Visualization Limits
-
-- Maximum nodes for graph visualization: 5,000 (configurable via `max_nodes_for_graph`)
-- Maximum edges: 5,000 (configurable via `max_edges_for_graph`)
-
-When `for_visualization` is true on query execute, a `LIMIT` is automatically added to the Cypher query if not present, to avoid fetching huge result sets. Queries that exceed limits return a warning.
 
 ---
 
@@ -102,7 +107,6 @@ When `for_visualization` is true on query execute, a `LIMIT` is automatically ad
 
 - Use `LIMIT` in Cypher when exploring: `MATCH (n:Person) RETURN n LIMIT 100`
 - Prefer specific labels over `MATCH (n)`: `MATCH (n:Person)` is faster
-- Use indexes: queries that filter by `id(n) = $id` benefit from the `id` index
 - Variable-length paths `[*1..n]` can be slow; keep `n` small (e.g. ≤10)
 
 ### Configuration
