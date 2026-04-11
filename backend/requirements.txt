@@ -14,4 +14,9 @@ pytest-asyncio>=0.21.0
 pytest-cov>=4.1.0
 httpx>=0.25.0
 prometheus-client>=0.19.0
+# Security updates
+urllib3>=2.2.1
+cryptography>=42.0.5
+certifi>=2024.7.4
+pillow>=10.3.0
 
