@@ -290,8 +290,8 @@ export default function GraphView({
       // Explicitly release references
       simulation.nodes([]);
       if (hasEdges) {
-        const linkForce = simulation.force('link') as d3.ForceLink<GraphNode, GraphEdge>;
-        if (linkForce) linkForce.links([]);
+        const linkForce = simulation.force('link');
+        if (linkForce && 'links' in linkForce) (linkForce as any).links([]);
       }
       // Remove all elements and event listeners
       svg.on('.zoom', null);

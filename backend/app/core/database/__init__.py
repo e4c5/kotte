@@ -50,9 +50,9 @@ class DatabaseConnection(BaseConnection):
         """Cancel a PostgreSQL backend process."""
         return await self._query_manager.cancel_backend(pid)
 
-    async def get_query_pid(self, query_text: str) -> Optional[int]:
+    async def get_query_pid(self, query_text: Optional[str] = None) -> Optional[int]:
         """Get the backend PID for a running query."""
-        return await self._query_manager.get_query_pid(query_text)
+        return await self._query_manager.get_query_pid()
 
     async def execute_cypher(
         self,

@@ -6,6 +6,19 @@ interface UseGraphExportProps {
   height: number
 }
 
+const triggerDownload = (blob: Blob, url: string) => {
+  const downloadUrl = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = downloadUrl
+  link.download = `graph-export-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.png`
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  
+  URL.revokeObjectURL(url)
+  URL.revokeObjectURL(downloadUrl)
+}
+
 export function useGraphExport({ svgRef, width, height }: UseGraphExportProps) {
   const exportToPNG = async (): Promise<void> => {
     if (!svgRef.current) {
@@ -44,44 +57,28 @@ export function useGraphExport({ svgRef, width, height }: UseGraphExportProps) {
     return new Promise((resolve, reject) => {
       img.onload = () => {
         try {
-          // Create a canvas
           const canvas = document.createElement('canvas')
           canvas.width = width
           canvas.height = height
           const ctx = canvas.getContext('2d')
           
           if (!ctx) {
+            URL.revokeObjectURL(url)
             reject(new Error('Could not get canvas context'))
             return
           }
           
-          // Fill white background
           ctx.fillStyle = 'white'
           ctx.fillRect(0, 0, canvas.width, canvas.height)
-          
-          // Draw the image onto the canvas
           ctx.drawImage(img, 0, 0)
           
-          // Convert canvas to PNG blob
           canvas.toBlob((blob) => {
             if (!blob) {
+              URL.revokeObjectURL(url)
               reject(new Error('Failed to create PNG blob'))
               return
             }
-            
-            // Create download link
-            const downloadUrl = URL.createObjectURL(blob)
-            const link = document.createElement('a')
-            link.href = downloadUrl
-            link.download = `graph-export-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.png`
-            document.body.appendChild(link)
-            link.click()
-            document.body.removeChild(link)
-            
-            // Cleanup
-            URL.revokeObjectURL(url)
-            URL.revokeObjectURL(downloadUrl)
-            
+            triggerDownload(blob, url)
             resolve()
           }, 'image/png')
         } catch (error) {

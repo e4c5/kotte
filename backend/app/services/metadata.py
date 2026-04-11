@@ -26,7 +26,6 @@ class LegacyPropertyCache:
         metadata_cache.set_sync(key, properties)
 
     def invalidate(self, graph_name: str, label_name: Optional[str] = None) -> None:
-        import asyncio
         try:
             # Synchronous invalidate is tricky with the async lock
             # For tests, we'll just clear the dict directly if no loop is running
@@ -185,6 +184,13 @@ class MetadataService:
             return 0
 
     @staticmethod
+    def _build_stats_query(label_name: str, label_kind: str, limit: int) -> str:
+        """Helper to build statistics Cypher query."""
+        if label_kind == "v":
+            return f"MATCH (n:{label_name}) RETURN n[$key] AS val LIMIT {limit}"
+        return f"MATCH ()-[r:{label_name}]->() RETURN r[$key] AS val LIMIT {limit}"
+
+    @staticmethod
     async def get_property_statistics(
         db_conn: DatabaseConnection,
         graph_name: str,
@@ -206,19 +212,13 @@ class MetadataService:
             validated_label_name = validate_label_name(label_name)
             limit = min(max(1, sample_size), 5000)
 
-            if label_kind == "v":
-                cypher = (
-                    f"MATCH (n:{validated_label_name}) RETURN n[$key] AS val LIMIT $limit"
-                )
-            else:
-                cypher = (
-                    f"MATCH ()-[r:{validated_label_name}]->() RETURN r[$key] AS val LIMIT $limit"
-                )
+            cypher = MetadataService._build_stats_query(validated_label_name, label_kind, limit)
             raw_rows = await db_conn.execute_cypher(
                 validated_graph_name,
                 cypher,
-                params={"key": property_name, "limit": limit},
+                params={"key": property_name},
             )
+            
             numeric_values = []
             for row in raw_rows:
                 val = next(iter(row.values()), None) if row else None
@@ -289,10 +289,7 @@ class MetadataService:
                 f"Ensured indices on {table_name} for columns: {', '.join(columns)}"
             )
             # Invalidate count cache when schema changes
-            if label_name:
-                property_cache.invalidate(graph_name, label_name)
-            else:
-                property_cache.invalidate(graph_name)
+            property_cache.invalidate(graph_name)
         except Exception as e:
             logger.warning(
                 f"Failed to create indices for {graph_name}.{label_name} ({label_kind}): {e}"

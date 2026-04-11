@@ -95,18 +95,32 @@ def cypher_return_columns(cypher_query: str) -> List[str]:
     Infer RETURN column names from Cypher so we can build AS (col1 agtype, ...).
     AGE requires the AS clause to match the return column count and names.
     """
-    # Find RETURN ... up to ORDER BY, LIMIT, SKIP, or end
-    m = re.search(
-        r"\bRETURN\s+(.+?)(?=\s+ORDER\s+BY|\s+LIMIT|\s+SKIP|\s*;|\s*$)",
-        cypher_query,
+    # Find position of RETURN
+    return_match = re.search(r"\bRETURN\s+", cypher_query, re.IGNORECASE)
+    if not return_match:
+        return ["result"]
+    
+    start_pos = return_match.end()
+    
+    # Find position of next keyword that ends the RETURN clause
+    end_match = re.search(
+        r"\s+(ORDER\s+BY|LIMIT|SKIP)\b|;",
+        cypher_query[start_pos:],
         re.IGNORECASE | re.DOTALL,
     )
-    if not m:
+    
+    if end_match:
+        return_expr = cypher_query[start_pos : start_pos + end_match.start()].strip()
+    else:
+        return_expr = cypher_query[start_pos:].strip()
+
+    if not return_expr:
         return ["result"]
-    return_expr = m.group(1).strip()
+        
     parts = split_top_level_commas(return_expr)
     if parts is None:
         return ["result"]
+        
     names: List[str] = []
     for i, part in enumerate(parts):
         # Prefer "AS alias"
@@ -115,9 +129,12 @@ def cypher_return_columns(cypher_query: str) -> List[str]:
             name = as_match.group(1)
         else:
             name = f"c{i + 1}"
+        
         # Safe identifier: alphanumeric and underscore only
-        if re.match(r"^[a-zA-Z_][a-zA-Z0-9_]*$", name):
+        # \w matches [a-zA-Z0-9_] in Python 3 by default
+        if re.match(r"^[a-zA-Z_]\w*$", name):
             names.append(name)
         else:
             names.append(f"c{i + 1}")
+            
     return names if names else ["result"]

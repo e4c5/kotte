@@ -3,8 +3,8 @@ import { useGraphStore } from '../../stores/graphStore'
 import { inputClass, selectClass } from './styles'
 
 interface FilterTabProps {
-  availableNodeLabels: string[]
-  availableEdgeLabels: string[]
+  readonly availableNodeLabels: string[]
+  readonly availableEdgeLabels: string[]
 }
 
 export default function FilterTab({ availableNodeLabels, availableEdgeLabels }: FilterTabProps) {
@@ -107,7 +107,7 @@ export default function FilterTab({ availableNodeLabels, availableEdgeLabels }: 
           <div className="flex gap-2">
             <select
               value={newFilter.operator}
-              onChange={(e) => setNewFilter({ ...newFilter, operator: e.target.value as any })}
+              onChange={(e) => setNewFilter({ ...newFilter, operator: e.target.value as 'equals' | 'contains' | 'startsWith' | 'endsWith' })}
               className={`${selectClass} flex-1`}
             >
               <option value="equals">equals</option>

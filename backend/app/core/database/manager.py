@@ -56,7 +56,7 @@ class QueryManager:
             logger.error("Failed to cancel backend PID %s", pid)
             return False
 
-    async def get_query_pid(self, query_text: str) -> Optional[int]:
+    async def get_query_pid(self) -> Optional[int]:
         """
         Get the backend PID for a running query by matching its text in pg_stat_activity.
         """

@@ -2,8 +2,8 @@ import { useGraphStore } from '../../stores/graphStore'
 import { inputClass, selectClass } from './styles'
 
 interface StyleTabProps {
-  availableNodeLabels: string[]
-  availableEdgeLabels: string[]
+  readonly availableNodeLabels: string[]
+  readonly availableEdgeLabels: string[]
 }
 
 export default function StyleTab({ availableNodeLabels, availableEdgeLabels }: StyleTabProps) {
@@ -28,13 +28,15 @@ export default function StyleTab({ availableNodeLabels, availableEdgeLabels }: S
             captionField: 'label',
             showLabel: true,
           }
+          const idPrefix = `node-style-${label.replace(/\s+/g, '-')}`
           return (
             <div key={label} className="p-3 mb-2 rounded-lg border border-zinc-700 bg-zinc-800/50">
               <div className="font-semibold text-zinc-200 mb-2 text-sm">{label}</div>
               <div className="flex flex-col gap-2">
                 <div className="flex items-center gap-2">
-                  <label className="text-xs text-zinc-400 w-14 shrink-0">Color:</label>
+                  <label htmlFor={`${idPrefix}-color`} className="text-xs text-zinc-400 w-14 shrink-0">Color:</label>
                   <input
+                    id={`${idPrefix}-color`}
                     type="color"
                     value={style.color}
                     onChange={(e) => setNodeStyle(label, { ...style, color: e.target.value })}
@@ -42,8 +44,9 @@ export default function StyleTab({ availableNodeLabels, availableEdgeLabels }: S
                   />
                 </div>
                 <div className="flex items-center gap-2">
-                  <label className="text-xs text-zinc-400 w-14 shrink-0">Size:</label>
+                  <label htmlFor={`${idPrefix}-size`} className="text-xs text-zinc-400 w-14 shrink-0">Size:</label>
                   <input
+                    id={`${idPrefix}-size`}
                     type="range"
                     min="5"
                     max="30"
@@ -54,8 +57,9 @@ export default function StyleTab({ availableNodeLabels, availableEdgeLabels }: S
                   <span className="text-xs text-zinc-400 w-7">{style.size}</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <label className="text-xs text-zinc-400 w-14 shrink-0">Caption:</label>
+                  <label htmlFor={`${idPrefix}-caption`} className="text-xs text-zinc-400 w-14 shrink-0">Caption:</label>
                   <input
+                    id={`${idPrefix}-caption`}
                     type="text"
                     value={style.captionField || 'label'}
                     onChange={(e) => setNodeStyle(label, { ...style, captionField: e.target.value })}
@@ -64,8 +68,9 @@ export default function StyleTab({ availableNodeLabels, availableEdgeLabels }: S
                   />
                 </div>
                 <div className="flex items-center gap-2">
-                  <label className="text-xs text-zinc-400 w-14 shrink-0">Show:</label>
+                  <label htmlFor={`${idPrefix}-show`} className="text-xs text-zinc-400 w-14 shrink-0">Show:</label>
                   <input
+                    id={`${idPrefix}-show`}
                     type="checkbox"
                     checked={style.showLabel !== false}
                     onChange={(e) => setNodeStyle(label, { ...style, showLabel: e.target.checked })}
@@ -87,13 +92,15 @@ export default function StyleTab({ availableNodeLabels, availableEdgeLabels }: S
             captionField: 'label',
             showLabel: true,
           }
+          const idPrefix = `edge-style-${label.replace(/\s+/g, '-')}`
           return (
             <div key={label} className="p-3 mb-2 rounded-lg border border-zinc-700 bg-zinc-800/50">
               <div className="font-semibold text-zinc-200 mb-2 text-sm">{label}</div>
               <div className="flex flex-col gap-2">
                 <div className="flex items-center gap-2">
-                  <label className="text-xs text-zinc-400 w-14 shrink-0">Color:</label>
+                  <label htmlFor={`${idPrefix}-color`} className="text-xs text-zinc-400 w-14 shrink-0">Color:</label>
                   <input
+                    id={`${idPrefix}-color`}
                     type="color"
                     value={style.color}
                     onChange={(e) => setEdgeStyle(label, { ...style, color: e.target.value })}
@@ -101,8 +108,9 @@ export default function StyleTab({ availableNodeLabels, availableEdgeLabels }: S
                   />
                 </div>
                 <div className="flex items-center gap-2">
-                  <label className="text-xs text-zinc-400 w-14 shrink-0">Width:</label>
+                  <label htmlFor={`${idPrefix}-width`} className="text-xs text-zinc-400 w-14 shrink-0">Width:</label>
                   <input
+                    id={`${idPrefix}-width`}
                     type="range"
                     min="1"
                     max="10"
@@ -113,8 +121,9 @@ export default function StyleTab({ availableNodeLabels, availableEdgeLabels }: S
                   <span className="text-xs text-zinc-400 w-7">{style.size}</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <label className="text-xs text-zinc-400 w-14 shrink-0">Caption:</label>
+                  <label htmlFor={`${idPrefix}-caption`} className="text-xs text-zinc-400 w-14 shrink-0">Caption:</label>
                   <input
+                    id={`${idPrefix}-caption`}
                     type="text"
                     value={style.captionField || 'label'}
                     onChange={(e) => setEdgeStyle(label, { ...style, captionField: e.target.value })}
@@ -123,8 +132,9 @@ export default function StyleTab({ availableNodeLabels, availableEdgeLabels }: S
                   />
                 </div>
                 <div className="flex items-center gap-2">
-                  <label className="text-xs text-zinc-400 w-14 shrink-0">Show:</label>
+                  <label htmlFor={`${idPrefix}-show`} className="text-xs text-zinc-400 w-14 shrink-0">Show:</label>
                   <input
+                    id={`${idPrefix}-show`}
                     type="checkbox"
                     checked={style.showLabel !== false}
                     onChange={(e) => setEdgeStyle(label, { ...style, showLabel: e.target.checked })}
@@ -152,8 +162,9 @@ export default function StyleTab({ availableNodeLabels, availableEdgeLabels }: S
           {edgeWidthMapping.enabled && (
             <>
               <div>
-                <label className="block text-xs text-zinc-400 mb-1">Property:</label>
+                <label htmlFor="edge-width-property" className="block text-xs text-zinc-400 mb-1">Property:</label>
                 <input
+                  id="edge-width-property"
                   type="text"
                   value={edgeWidthMapping.property || ''}
                   onChange={(e) => setEdgeWidthMapping({ property: e.target.value || null })}
@@ -163,8 +174,9 @@ export default function StyleTab({ availableNodeLabels, availableEdgeLabels }: S
                 <p className="text-xs text-zinc-500 mt-1">Enter a numeric property name to map to edge width</p>
               </div>
               <div>
-                <label className="block text-xs text-zinc-400 mb-1">Scale Type:</label>
+                <label htmlFor="edge-width-scale" className="block text-xs text-zinc-400 mb-1">Scale Type:</label>
                 <select
+                  id="edge-width-scale"
                   value={edgeWidthMapping.scaleType}
                   onChange={(e) => setEdgeWidthMapping({ scaleType: e.target.value as any })}
                   className={selectClass}
@@ -175,26 +187,28 @@ export default function StyleTab({ availableNodeLabels, availableEdgeLabels }: S
               </div>
               <div className="flex gap-2">
                 <div className="flex-1">
-                  <label className="block text-xs text-zinc-400 mb-1">Min Width:</label>
+                  <label htmlFor="edge-width-min" className="block text-xs text-zinc-400 mb-1">Min Width:</label>
                   <input
+                    id="edge-width-min"
                     type="number"
                     min="0.5"
                     max="20"
                     step="0.5"
                     value={edgeWidthMapping.minWidth}
-                    onChange={(e) => setEdgeWidthMapping({ minWidth: parseFloat(e.target.value) || 1 })}
+                    onChange={(e) => setEdgeWidthMapping({ minWidth: Number.parseFloat(e.target.value) || 1 })}
                     className={inputClass}
                   />
                 </div>
                 <div className="flex-1">
-                  <label className="block text-xs text-zinc-400 mb-1">Max Width:</label>
+                  <label htmlFor="edge-width-max" className="block text-xs text-zinc-400 mb-1">Max Width:</label>
                   <input
+                    id="edge-width-max"
                     type="number"
                     min="0.5"
                     max="20"
                     step="0.5"
                     value={edgeWidthMapping.maxWidth}
-                    onChange={(e) => setEdgeWidthMapping({ maxWidth: parseFloat(e.target.value) || 10 })}
+                    onChange={(e) => setEdgeWidthMapping({ maxWidth: Number.parseFloat(e.target.value) || 10 })}
                     className={inputClass}
                   />
                 </div>

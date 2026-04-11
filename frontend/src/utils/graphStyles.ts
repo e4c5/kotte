@@ -34,17 +34,12 @@ export const getEdgeStyle = (
   if (edgeWidthScale && edgeWidthProperty) {
     const propValue = edge.properties[edgeWidthProperty]
     if (propValue !== undefined && propValue !== null) {
-      try {
-        const numValue = typeof propValue === 'number' ? propValue : parseFloat(String(propValue))
-        if (!isNaN(numValue)) {
-          const mappedWidth = edgeWidthScale(numValue)
-          return {
-            ...baseStyle,
-            size: mappedWidth,
-          }
+      const numValue = typeof propValue === 'number' ? propValue : Number.parseFloat(String(propValue))
+      if (!Number.isNaN(numValue)) {
+        return {
+          ...baseStyle,
+          size: edgeWidthScale(numValue),
         }
-      } catch (e) {
-        // If mapping fails, use base style
       }
     }
   }
@@ -52,35 +47,54 @@ export const getEdgeStyle = (
   return baseStyle
 }
 
+const getDescriptivePropertyValue = (properties: Record<string, unknown>): string | null => {
+  const nameKeys = ['name', 'title', 'fqn', 'signature']
+  for (const key of nameKeys) {
+    const value = properties[key]
+    if (value != null && String(value).trim() !== '') {
+      return String(value)
+    }
+  }
+  return null
+}
+
+const shortenLongIdentifier = (s: string): string => {
+  if (s.length > 40 && (s.includes('.') || s.includes('#'))) {
+    return s.includes('#') ? s.split('#').pop()! : s.split('.').pop()!
+  }
+  return s
+}
+
+const safeStringify = (value: unknown): string => {
+  if (value === null || value === undefined) return ''
+  if (typeof value === 'object') {
+    try {
+      return JSON.stringify(value)
+    } catch (e) {
+      return String(value)
+    }
+  }
+  return String(value)
+}
+
 export const getNodeCaption = (
   node: GraphNode,
   nodeStyles: Record<string, LabelStyle>
 ): string => {
   const style = getNodeStyle(node, nodeStyles)
-  if (style.showLabel === false) {
-    return ''
-  }
+  if (style.showLabel === false) return ''
+
   const field = style.captionField || 'label'
-  let caption: string
-  if (field === 'label') {
-    caption = node.label
-  } else {
-    caption = String(node.properties[field] ?? node.id)
-  }
-  // If caption is the graph label (e.g. "CodeElement") and we have properties, use a descriptive property
-  if (caption === node.label && node.properties && typeof node.properties === 'object') {
-    const p = node.properties as Record<string, unknown>
-    const name = p.name ?? p.title ?? p.fqn ?? p.signature
-    if (name != null && String(name).trim() !== '') {
-      const s = String(name)
-      // Shorten long FQN/signature: show last segment if longer than 40 chars
-      if (s.length > 40 && (s.includes('.') || s.includes('#'))) {
-        const last = s.includes('#') ? s.split('#').pop()! : s.split('.').pop()!
-        return last
-      }
-      return s
+  let caption = field === 'label' ? node.label : safeStringify(node.properties[field] ?? node.id)
+
+  // If caption is just the label, try to find a better property
+  if (caption === node.label && node.properties) {
+    const descriptive = getDescriptivePropertyValue(node.properties as Record<string, unknown>)
+    if (descriptive) {
+      caption = shortenLongIdentifier(descriptive)
     }
   }
+  
   return caption
 }
 
@@ -91,16 +105,11 @@ export const getEdgeCaption = (
   edgeWidthProperty?: string
 ): string => {
   const style = getEdgeStyle(edge, edgeStyles, edgeWidthScale, edgeWidthProperty)
-  if (style.showLabel === false) {
-    return ''
-  }
+  if (style.showLabel === false) return ''
+
   const field = style.captionField || 'label'
-  if (field === 'label') {
-    return edge.label
-  }
+  if (field === 'label') return edge.label
+
   const fromProperty = edge.properties?.[field]
-  if (fromProperty == null) {
-    return edge.label
-  }
-  return String(fromProperty)
+  return fromProperty != null ? safeStringify(fromProperty) : edge.label
 }

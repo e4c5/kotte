@@ -223,30 +223,29 @@ class DatabaseConnection:
         self, query: str, params: Optional[dict] = None
     ) -> Optional[any]:
         """Execute a query and return a single scalar value."""
-        try:
-            async with self.connection() as conn:
-                async with conn.cursor() as cur:
-                    await cur.execute(query, params)
-                    result = await cur.fetchone()
-                    return first_value(result)
-        except Exception:
-            raise
+        async with self.connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(query, params)
+                result = await cur.fetchone()
+                return first_value(result)
 
     @asynccontextmanager
     async def transaction(self, timeout: Optional[int] = None):
         """Context manager for database transactions."""
-        if timeout is None:
-            effective_timeout = 60
-        else:
-            effective_timeout = timeout
+        effective_timeout = timeout if timeout is not None else 60
             
         async with self.connection() as conn:
-            async with conn.transaction():
-                try:
-                    async with conn.cursor() as cur:
-                        await cur.execute(
-                            f"SET LOCAL statement_timeout = {effective_timeout * 1000}"
-                        )
-                except Exception as e:
-                    logger.warning(f"Failed to set transaction statement_timeout: {e}")
-                yield
+            try:
+                async with asyncio.timeout(effective_timeout):
+                    async with conn.transaction():
+                        try:
+                            async with conn.cursor() as cur:
+                                await cur.execute(
+                                    f"SET LOCAL statement_timeout = {effective_timeout * 1000}"
+                                )
+                        except Exception as e:
+                            logger.warning(f"Failed to set transaction statement_timeout: {e}")
+                        yield
+            except TimeoutError:
+                logger.warning(f"Transaction timeout after {effective_timeout} seconds")
+                raise
