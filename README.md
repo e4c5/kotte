@@ -54,3 +54,4 @@ Or run manually: [docs/QUICKSTART.md](docs/QUICKSTART.md)
 - [Configuration](docs/CONFIGURATION.md) — Environment variables and options
 - [Architecture](docs/ARCHITECTURE.md) — Technical design
 - [Contributing](docs/CONTRIBUTING.md) — Development guide
+- [Backlog](docs/BACKLOG.md) — Prioritized engineering follow-ups from internal review

@@ -8,10 +8,9 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, UploadFile, File, Form
-from fastapi.responses import JSONResponse
 
 from app.core.auth import get_session
-from app.services.metadata import MetadataService, property_cache
+from app.services.metadata import MetadataService, invalidate_property_metadata_cache
 from app.core.database import DatabaseConnection
 from app.core.deps import get_db_connection
 from app.core.errors import APIException, ErrorCode, ErrorCategory, translate_db_error
@@ -170,7 +169,7 @@ async def import_csv(
         rejected = 0
         errors = []
 
-        async with db_conn.transaction():
+        async with db_conn.transaction() as conn:
             for line_num, row_values in enumerate(rows[1:], start=2):
                 if not any(v.strip() for v in row_values):
                     continue
@@ -219,7 +218,7 @@ async def import_csv(
                     props_json = json.dumps(properties)
                     if label_kind == "v":
                         await db_conn.execute_query(
-                            insert_query, {"props": props_json}
+                            insert_query, {"props": props_json}, conn=conn
                         )
                     else:
                         await db_conn.execute_query(
@@ -229,6 +228,7 @@ async def import_csv(
                                 "target_id": properties["target"],
                                 "props": props_json,
                             },
+                            conn=conn,
                         )
                     inserted += 1
                 except Exception as e:
@@ -243,7 +243,7 @@ async def import_csv(
         job_status.progress = 1.0
 
         # Invalidate property cache so new properties are discovered
-        property_cache.invalidate(validated_graph_name, validated_label)
+        await invalidate_property_metadata_cache(validated_graph_name, validated_label)
 
         # Update table statistics for accurate count estimates
         await MetadataService.analyze_table(db_conn, validated_graph_name, validated_label)

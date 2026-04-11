@@ -71,3 +71,4 @@ kotte/
 - **Setup:** `docs/QUICKSTART.md`.
 - **Advanced:** `docs/ADVANCED_FEATURES.md`.
 - **Troubleshooting:** `docs/TROUBLESHOOTING.md`.
+- **Engineering backlog:** `docs/BACKLOG.md` (prioritized follow-ups).

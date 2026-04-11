@@ -1,9 +1,12 @@
 """Tests for metadata service."""
 
 import pytest
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
-from app.services.metadata import MetadataService
+from app.services.metadata import (
+    MetadataService,
+    invalidate_property_metadata_cache,
+)
 from app.services.cache import metadata_cache
 
 
@@ -92,8 +95,57 @@ class TestMetadataService:
 
     @pytest.mark.asyncio
     async def test_get_numeric_property_statistics_for_label(self, mock_db_connection):
-        """Numeric stats for label returns empty (agtype; no CROSS JOIN jsonb)."""
+        """Aggregates per-property min/max; skips non-numeric or empty stats."""
+        with patch.object(
+            MetadataService,
+            "get_property_statistics",
+            new=AsyncMock(
+                side_effect=[
+                    {"min": 1.0, "max": 3.0},
+                    {"min": None, "max": None},
+                ]
+            ),
+        ):
+            stats = await MetadataService.get_numeric_property_statistics_for_label(
+                mock_db_connection,
+                "test_graph",
+                "REL",
+                properties=["w", "note"],
+            )
+        assert stats == {"w": {"min": 1.0, "max": 3.0}}
+
+    @pytest.mark.asyncio
+    async def test_get_numeric_property_statistics_for_label_empty_props(self, mock_db_connection):
+        """No properties yields empty dict."""
         stats = await MetadataService.get_numeric_property_statistics_for_label(
-            mock_db_connection, "test_graph", "REL"
+            mock_db_connection, "test_graph", "REL", properties=[]
         )
         assert stats == {}
+
+
+class TestInvalidatePropertyMetadataCache:
+    """Lock-safe invalidation uses metadata_cache APIs."""
+
+    @pytest.mark.asyncio
+    async def test_clears_props_for_both_kinds_when_label_given(self):
+        await metadata_cache.clear()
+        await metadata_cache.set("props:g:L:v", ["a"], ttl_seconds=3600)
+        await metadata_cache.set("props:g:L:e", ["b"], ttl_seconds=3600)
+        await metadata_cache.set("props:g:Other:v", ["x"], ttl_seconds=3600)
+        await invalidate_property_metadata_cache("g", "L")
+        assert await metadata_cache.get("props:g:L:v") is None
+        assert await metadata_cache.get("props:g:L:e") is None
+        assert await metadata_cache.get("props:g:Other:v") is not None
+
+    @pytest.mark.asyncio
+    async def test_clears_props_counts_stats_prefixes_when_graph_only(self):
+        await metadata_cache.clear()
+        await metadata_cache.set("props:g:Person:v", [], ttl_seconds=3600)
+        await metadata_cache.set("counts:g:v", {}, ttl_seconds=600)
+        await metadata_cache.set("stats:g:L:v:age", {}, ttl_seconds=3600)
+        await metadata_cache.set("props:other:Person:v", [], ttl_seconds=3600)
+        await invalidate_property_metadata_cache("g")
+        assert await metadata_cache.get("props:g:Person:v") is None
+        assert await metadata_cache.get("counts:g:v") is None
+        assert await metadata_cache.get("stats:g:L:v:age") is None
+        assert await metadata_cache.get("props:other:Person:v") is not None

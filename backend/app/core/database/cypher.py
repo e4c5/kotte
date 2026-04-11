@@ -4,6 +4,8 @@ import hashlib
 import logging
 from typing import Optional
 
+import psycopg
+
 from app.core.database.utils import cypher_return_columns
 from app.core.validation import validate_graph_name
 
@@ -22,6 +24,8 @@ class CypherExecutor:
         cypher_query: str,
         params: Optional[dict] = None,
         timeout: Optional[int] = None,
+        *,
+        conn: Optional[psycopg.AsyncConnection] = None,
     ) -> list[dict]:
         """
         Execute a Cypher query via Apache AGE using parameterized SQL.
@@ -71,7 +75,9 @@ class CypherExecutor:
         )
 
         try:
-            return await self.db_conn.execute_query(runnable_sql, run_params, timeout=timeout)
+            return await self.db_conn.execute_query(
+                runnable_sql, run_params, timeout=timeout, conn=conn
+            )
         except Exception as e:
             logger.error(
                 "execute_cypher failed: graph=%s, query_hash=%s, error_type=%s",

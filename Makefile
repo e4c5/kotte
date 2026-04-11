@@ -7,7 +7,7 @@ help:
 	@echo "  dev-backend         - Run backend development server"
 	@echo "  dev-frontend        - Run frontend development server"
 	@echo "  test-backend        - Run backend tests"
-	@echo "  test-frontend       - Run frontend tests"
+	@echo "  test-frontend       - Run frontend tests once (vitest run, with timeout)"
 	@echo "  lint-backend        - Lint backend code"
 	@echo "  lint-frontend       - Lint frontend code"
 
@@ -26,8 +26,11 @@ dev-frontend:
 test-backend:
 	cd backend && . venv/bin/activate && pytest
 
+# Single run + wall-clock cap so CI/agents do not hang on watch mode or stuck workers.
+# Override: make test-frontend TEST_TIMEOUT=600s
+TEST_TIMEOUT ?= 180s
 test-frontend:
-	cd frontend && npm test
+	cd frontend && timeout $(TEST_TIMEOUT) npm run test:run
 
 lint-backend:
 	cd backend && . venv/bin/activate && ruff check . && black --check . && mypy app

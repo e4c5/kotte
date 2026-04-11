@@ -3,6 +3,8 @@
 import logging
 from typing import Optional
 
+import psycopg
+
 from app.core.database.connection import DatabaseConnection as BaseConnection
 from app.core.database.cypher import CypherExecutor
 from app.core.database.manager import QueryManager
@@ -60,8 +62,10 @@ class DatabaseConnection(BaseConnection):
         cypher_query: str,
         params: Optional[dict] = None,
         timeout: Optional[int] = None,
+        *,
+        conn: Optional[psycopg.AsyncConnection] = None,
     ) -> list[dict]:
         """Execute a Cypher query via Apache AGE."""
         return await self._cypher_executor.execute_cypher(
-            graph_name, cypher_query, params, timeout
+            graph_name, cypher_query, params, timeout, conn=conn
         )

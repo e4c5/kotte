@@ -35,7 +35,8 @@ class EdgeLabel(BaseModel):
     count: int
     properties: List[str] = Field(default_factory=list)
     property_statistics: List[PropertyStatistics] = Field(
-        default_factory=list, description="Statistics for numeric properties (min/max)"
+        default_factory=list,
+        description="Min/max for numeric edge properties when sample data yields values",
     )
 
 

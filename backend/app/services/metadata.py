@@ -1,5 +1,6 @@
 """Graph metadata discovery and indexing service."""
 
+import asyncio
 import logging
 from typing import Dict, List, Optional
 
@@ -11,38 +12,23 @@ from app.services.cache import metadata_cache
 logger = logging.getLogger(__name__)
 
 
-class LegacyPropertyCache:
+async def invalidate_property_metadata_cache(
+    graph_name: str, label_name: Optional[str] = None
+) -> None:
     """
-    Deprecated wrapper for metadata_cache to maintain backward compatibility
-    with synchronous code and tests.
+    Drop cached metadata for a graph (and optionally one label).
+
+    Uses ``metadata_cache`` APIs that hold the async lock (no direct ``_cache`` access).
+    Clears property discovery keys for both vertex and edge kinds when a label is given.
+    When only ``graph_name`` is given, clears property, count, and stats prefixes for that graph.
     """
-
-    def get(self, graph_name: str, label_name: str) -> Optional[List[str]]:
-        key = f"props:{graph_name}:{label_name}:v"
-        return metadata_cache.get_sync(key)
-
-    def set(self, graph_name: str, label_name: str, properties: List[str]) -> None:
-        key = f"props:{graph_name}:{label_name}:v"
-        metadata_cache.set_sync(key, properties)
-
-    def invalidate(self, graph_name: str, label_name: Optional[str] = None) -> None:
-        try:
-            # Synchronous invalidate is tricky with the async lock
-            # For tests, we'll just clear the dict directly if no loop is running
-            if label_name:
-                key = f"props:{graph_name}:{label_name}:v"
-                metadata_cache._cache.pop(key, None)
-            else:
-                prefix = f"props:{graph_name}"
-                keys_to_remove = [k for k in metadata_cache._cache if k.startswith(prefix)]
-                for k in keys_to_remove:
-                    metadata_cache._cache.pop(k, None)
-        except Exception:
-            pass
-
-
-# Deprecated: use metadata_cache directly (async)
-property_cache = LegacyPropertyCache()
+    if label_name:
+        for kind in ("v", "e"):
+            await metadata_cache.delete(f"props:{graph_name}:{label_name}:{kind}")
+    else:
+        await metadata_cache.clear(prefix=f"props:{graph_name}")
+        await metadata_cache.clear(prefix=f"counts:{graph_name}")
+        await metadata_cache.clear(prefix=f"stats:{graph_name}")
 
 
 class MetadataService:
@@ -249,11 +235,34 @@ class MetadataService:
         db_conn: DatabaseConnection,
         graph_name: str,
         label_name: str,
+        *,
+        properties: Optional[List[str]] = None,
     ) -> Dict[str, Dict[str, Optional[float]]]:
         """
-        Get min/max statistics for all numeric properties of a label.
+        Min/max statistics for each numeric edge property on a label.
+
+        If ``properties`` is omitted, discovers edge property keys first (extra round trip).
         """
-        return {}
+        props = properties
+        if props is None:
+            props = await MetadataService.discover_properties(
+                db_conn, graph_name, label_name, "e"
+            )
+        if not props:
+            return {}
+
+        async def stats_for(prop: str) -> tuple[str, Dict[str, Optional[float]]]:
+            s = await MetadataService.get_property_statistics(
+                db_conn, graph_name, label_name, "e", prop
+            )
+            return prop, s
+
+        pairs = await asyncio.gather(*[stats_for(p) for p in props])
+        out: Dict[str, Dict[str, Optional[float]]] = {}
+        for prop, stats in pairs:
+            if stats.get("min") is not None and stats.get("max") is not None:
+                out[prop] = stats
+        return out
 
     @staticmethod
     async def create_label_indices(
@@ -288,8 +297,7 @@ class MetadataService:
             logger.info(
                 f"Ensured indices on {table_name} for columns: {', '.join(columns)}"
             )
-            # Invalidate count cache when schema changes
-            property_cache.invalidate(graph_name)
+            await invalidate_property_metadata_cache(graph_name)
         except Exception as e:
             logger.warning(
                 f"Failed to create indices for {graph_name}.{label_name} ({label_kind}): {e}"
@@ -309,7 +317,6 @@ class MetadataService:
             safe_label = escape_identifier(validated_label_name)
             await db_conn.execute_command(f"ANALYZE {safe_graph}.{safe_label}")
             logger.info("Updated statistics for %s.%s", validated_graph_name, validated_label_name)
-            # Invalidate count cache
-            property_cache.invalidate(graph_name)
+            await invalidate_property_metadata_cache(graph_name)
         except Exception as e:
             logger.warning("Failed to analyze table %s.%s: %s", graph_name, label_name, e)

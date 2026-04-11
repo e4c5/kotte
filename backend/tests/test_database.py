@@ -205,3 +205,15 @@ class TestExecuteCypher:
         conn.execute_query = AsyncMock(return_value=expected)
         result = await conn.execute_cypher("g", "RETURN n AS node")
         assert result == expected
+
+    @pytest.mark.asyncio
+    async def test_execute_cypher_passes_conn_to_execute_query(self):
+        """Optional conn is forwarded for transactional execution."""
+        db = DatabaseConnection(
+            host="h", port=5432, database="d", user="u", password="p"
+        )
+        db.execute_query = AsyncMock(return_value=[])
+        mock_conn = object()
+        await db.execute_cypher("g", "RETURN 1 AS c1", conn=mock_conn)
+        _args, kwargs = db.execute_query.call_args
+        assert kwargs.get("conn") is mock_conn

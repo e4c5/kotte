@@ -6,17 +6,18 @@ interface UseGraphExportProps {
   height: number
 }
 
-const triggerDownload = (blob: Blob, url: string) => {
-  const downloadUrl = URL.createObjectURL(blob)
+const triggerDownload = (blob: Blob, svgObjectUrl: string) => {
+  const pngObjectUrl = URL.createObjectURL(blob)
   const link = document.createElement('a')
-  link.href = downloadUrl
+  link.href = pngObjectUrl
   link.download = `graph-export-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.png`
   document.body.appendChild(link)
   link.click()
   link.remove()
-  
-  URL.revokeObjectURL(url)
-  URL.revokeObjectURL(downloadUrl)
+
+  URL.revokeObjectURL(svgObjectUrl)
+  // Defer revoking the PNG blob URL so the download can start before revoke runs.
+  queueMicrotask(() => URL.revokeObjectURL(pngObjectUrl))
 }
 
 export function useGraphExport({ svgRef, width, height }: UseGraphExportProps) {
