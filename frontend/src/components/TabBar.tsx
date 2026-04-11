@@ -5,6 +5,7 @@ interface TabBarProps {
   activeTabId: string | null
   onTabClick: (tabId: string) => void
   onTabClose: (tabId: string, e: React.MouseEvent) => void
+  onTabPin?: (tabId: string, e: React.MouseEvent) => void
   onNewTab: () => void
 }
 
@@ -13,6 +14,7 @@ export default function TabBar({
   activeTabId,
   onTabClick,
   onTabClose,
+  onTabPin,
   onNewTab,
 }: TabBarProps) {
   const sortedTabs = [...tabs].sort((a, b) => {
@@ -65,13 +67,33 @@ export default function TabBar({
           `}
           title={tab.name}
         >
+          {tab.loading && (
+            <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" aria-label="Query running" />
+          )}
+          {tab.error && (
+            <div className="w-2 h-2 rounded-full bg-red-500 shrink-0" aria-label="Error in query" />
+          )}
+          {tab.pinned && (
+            <div className="text-[10px] text-emerald-400 shrink-0" aria-label="Pinned tab">📌</div>
+          )}
           <span className="flex-1 truncate">{tab.name}</span>
           <div className="flex items-center gap-0.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+            {onTabPin && (
+              <button
+                type="button"
+                onClick={(e) => onTabPin(tab.id, e)}
+                aria-label={tab.pinned ? `Unpin tab: ${tab.name}` : `Pin tab: ${tab.name}`}
+                className="p-0.5 rounded text-zinc-500 hover:text-emerald-400 text-[10px] leading-none"
+                title={tab.pinned ? "Unpin tab" : "Pin tab"}
+              >
+                {tab.pinned ? '📍' : '📌'}
+              </button>
+            )}
             <button
               type="button"
               onClick={(e) => onTabClose(tab.id, e)}
               aria-label={`Close tab: ${tab.name}`}
-              className="p-0.5 rounded text-zinc-400 text-sm leading-none"
+              className="p-0.5 rounded text-zinc-400 text-sm leading-none hover:text-zinc-100"
               title="Close tab"
             >
               ×

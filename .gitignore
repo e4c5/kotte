@@ -72,3 +72,4 @@ data/
 backend/data/connections.json
 **/.master_encryption_key
 
+frontend/coverage/
