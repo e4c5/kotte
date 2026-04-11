@@ -5,6 +5,33 @@ import type { LabelStyle } from '../stores/graphStore'
 // Color mapping for node labels
 const colorScale = d3.scaleOrdinal(d3.schemeCategory10)
 
+/** Parse a numeric edge-width property; objects/symbols do not stringify to useful numbers. */
+function coerceNumericFromProperty(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value
+  }
+  if (typeof value === 'bigint') {
+    const n = Number(value)
+    return Number.isFinite(n) ? n : null
+  }
+  if (typeof value === 'string') {
+    const n = Number.parseFloat(value.trim())
+    return Number.isNaN(n) ? null : n
+  }
+  return null
+}
+
+/** String form for non-object, non-null values (null/undefined handled by callers). */
+function stringFromNonObject(value: unknown): string {
+  if (typeof value === 'string') return value
+  if (typeof value === 'number') return String(value)
+  if (typeof value === 'boolean') return String(value)
+  if (typeof value === 'bigint') return String(value)
+  if (typeof value === 'symbol') return String(value)
+  if (typeof value === 'function') return String(value)
+  return ''
+}
+
 export function getDefaultNodeColor(label: string): string {
   return colorScale(label) || '#999'
 }
@@ -34,8 +61,8 @@ export const getEdgeStyle = (
   if (edgeWidthScale && edgeWidthProperty) {
     const propValue = edge.properties[edgeWidthProperty]
     if (propValue !== undefined && propValue !== null) {
-      const numValue = typeof propValue === 'number' ? propValue : Number.parseFloat(String(propValue))
-      if (!Number.isNaN(numValue)) {
+      const numValue = coerceNumericFromProperty(propValue)
+      if (numValue !== null) {
         return {
           ...baseStyle,
           size: edgeWidthScale(numValue),
@@ -65,7 +92,7 @@ const safeStringify = (value: unknown): string => {
       return '[unserializable]'
     }
   }
-  return String(value)
+  return stringFromNonObject(value)
 }
 
 const getDescriptivePropertyValue = (properties: Record<string, unknown>): string | null => {
@@ -80,7 +107,7 @@ const getDescriptivePropertyValue = (properties: Record<string, unknown>): strin
       }
       continue
     }
-    const s = String(value).trim()
+    const s = stringFromNonObject(value).trim()
     if (s !== '') {
       return s
     }
@@ -100,7 +127,7 @@ export const getNodeCaption = (
 
   // If caption is just the label, try to find a better property
   if (caption === node.label && node.properties) {
-    const descriptive = getDescriptivePropertyValue(node.properties as Record<string, unknown>)
+    const descriptive = getDescriptivePropertyValue(node.properties)
     if (descriptive) {
       caption = shortenLongIdentifier(descriptive)
     }

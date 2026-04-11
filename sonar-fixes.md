@@ -134,3 +134,55 @@ Counts unchanged: **31** open issues (Critical 3, Major 16, Minor 12), ~227 min 
 - **`backend/tests/test_query_stream.py` (~L103):** Async generator body still contains **`pass`** — **`python:S108`** still applies.
 
 Raw export used for this run was removed after analysis (`sonar-context.json` next to the analyze script).
+
+---
+
+## Re-export — 2026-04-11T15:15Z (API: 5 open issues)
+
+**Source:** `analyze_sonar.py` (latest open PR → SonarCloud PR #16)  
+**API:** `https://sonarcloud.io/api/issues/search?componentKeys=e4c5_kotte&resolved=false&ps=500&additionalFields=_all&pullRequest=16`  
+**Totals:** 5 open issues, **32 min** estimated debt (`effortTotal`).
+
+### Summary by severity
+
+| Severity  | Count |
+|-----------|-------|
+| Critical  | 1     |
+| Major     | 0     |
+| Minor     | 4     |
+
+---
+
+### Duplications and repeated patterns (focus)
+
+Sonar’s **“Duplicated blocks”** metric is separate from **Issues**; this export does not include duplication-density rows. Within the **issue list**, the clearest **duplication-related** work is:
+
+1. **`typescript:S6551` ×3 in one file** (`frontend/src/utils/graphStyles.ts`, lines **37**, **68**, **83**)  
+   Same rule, same maintenance theme: **coercing `unknown` values to strings** in a way that can produce `[object Object]`.
+
+   - **L37:** `Number.parseFloat(String(propValue))` — if `propValue` were ever a non-primitive object, stringification is wrong before `parseFloat`.
+   - **L68 / L83:** In `getDescriptivePropertyValue`, after the `typeof value === 'object'` branch, the `else` path still uses `String(value)`; TypeScript may not prove exhaustiveness, so the rule fires.
+
+   **Remediation (deduplicate behavior):** Add a single helper, e.g. `coerceNumericFromProperty(value: unknown): number | null` (only accept `number` or string-ish inputs; for objects return `null` or route through `safeStringify` + parse if that is intentional). For caption primitives, add `formatPrimitiveForCaption(value: unknown): string` that handles `string | number | boolean | bigint` explicitly and uses `safeStringify` for objects. Then **replace the three call sites** so string coercion is not repeated three ways. This addresses all three findings in one refactor and reduces future copy-paste.
+
+2. **`python:S3776` on `split_top_level_commas`** (`backend/app/core/database/utils.py`, **~L50**)  
+   Cognitive complexity **26** (limit 15). The function’s main loop contains **near-duplicate control flow** for single-quoted vs double-quoted string modes (`in_sq` / `in_dq` blocks mirror each other, as do the branches that enter those modes).
+
+   **Remediation:** Extract small helpers, e.g. `_handle_inside_single_quote`, `_handle_inside_double_quote`, or a parameterized `_handle_quote_state(...)`, so the **same logic is not written twice**. That directly targets **structural duplication** and should lower complexity enough to satisfy the rule. Keep behavior identical; extend tests for unbalanced quotes and nested delimiters if coverage is thin.
+
+---
+
+### Other issues in this export
+
+| File | Line | Rule | Message / fix |
+|------|------|------|----------------|
+| `frontend/src/utils/graphStyles.ts` | 103 | `typescript:S4325` | Redundant assertion on `node.properties as Record<string, unknown>` — remove or narrow types so the cast is unnecessary. |
+
+---
+
+### Verification
+
+- Frontend: `make test-frontend` after `graphStyles.ts` helper extraction.
+- Backend: `make test-backend` after `split_top_level_commas` refactor (any tests covering `split_top_level_commas` / Cypher column parsing).
+
+**Note:** An earlier snapshot listed **31** open issues on the same PR; this run returned **5**, so many findings may already be **resolved or outdated** on SonarCloud. For **duplicated lines %** and **duplicated blocks**, check the Sonar **Measures** / **Duplications** tab for component `e4c5_kotte` on PR 16; those values are not in `issues/search`.

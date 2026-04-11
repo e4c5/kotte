@@ -47,35 +47,30 @@ def _update_delimiter_depth(
     return depth_p, depth_b, depth_br
 
 
+def _unescaped_quote_closes(s: str, i: int, quote: str) -> bool:
+    """True if character at ``i`` is ``quote`` and not escaped by a backslash."""
+    c = s[i]
+    return c == quote and (i == 0 or s[i - 1] != "\\")
+
+
 def split_top_level_commas(s: str) -> Optional[List[str]]:
     """Split s by commas only at top level (not inside (), [], {}, or strings).
     Returns None if quotes or brackets are unbalanced (ambiguous input)."""
     parts: List[str] = []
     cur: List[str] = []
     depth_p, depth_b, depth_br = 0, 0, 0
-    in_sq, in_dq = False, False
+    in_quote: Optional[str] = None  # None, "'", or '"'
     i = 0
     while i < len(s):
         c = s[i]
-        if in_sq:
-            if c == "'" and (i == 0 or s[i - 1] != "\\"):
-                in_sq = False
+        if in_quote is not None:
+            if _unescaped_quote_closes(s, i, in_quote):
+                in_quote = None
             cur.append(c)
             i += 1
             continue
-        if in_dq:
-            if c == '"' and (i == 0 or s[i - 1] != "\\"):
-                in_dq = False
-            cur.append(c)
-            i += 1
-            continue
-        if c == "'":
-            in_sq = True
-            cur.append(c)
-            i += 1
-            continue
-        if c == '"':
-            in_dq = True
+        if c in ("'", '"'):
+            in_quote = c
             cur.append(c)
             i += 1
             continue
@@ -94,7 +89,7 @@ def split_top_level_commas(s: str) -> Optional[List[str]]:
         cur.append(c)
         i += 1
 
-    if in_sq or in_dq or depth_p != 0 or depth_b != 0 or depth_br != 0:
+    if in_quote is not None or depth_p != 0 or depth_b != 0 or depth_br != 0:
         return None
     parts.append("".join(cur).strip())
     return parts
