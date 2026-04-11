@@ -125,7 +125,8 @@ def cypher_return_columns(cypher_query: str) -> List[str]:
     names: List[str] = []
     for i, part in enumerate(parts):
         # Prefer "AS alias"
-        as_match = re.search(r"\s+AS\s+(\w+)\s*$", part, re.IGNORECASE)
+        # Using \b instead of \s+ to avoid unnecessary scanning/backtracking
+        as_match = re.search(r"\bAS\s+(\w+)\s*$", part, re.IGNORECASE)
         if as_match:
             name = as_match.group(1)
         else:
