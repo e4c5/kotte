@@ -80,13 +80,14 @@ class Settings(BaseSettings):
                     "SESSION_SECRET_KEY must be set in production environment"
                 )
             self.session_secret_key = secrets.token_urlsafe(32)
-            import warnings
+            if self.environment != "test":
+                import warnings
 
-            warnings.warn(
-                "SESSION_SECRET_KEY not set, using generated key. "
-                "Set SESSION_SECRET_KEY in production!",
-                UserWarning,
-            )
+                warnings.warn(
+                    "SESSION_SECRET_KEY not set, using generated key. "
+                    "Set SESSION_SECRET_KEY in production!",
+                    UserWarning,
+                )
 
 
 settings = Settings()

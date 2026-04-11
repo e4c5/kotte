@@ -70,11 +70,12 @@ class CredentialEncryption:
                         "MASTER_ENCRYPTION_KEY must be set in production environment"
                     )
                 key_str = _load_or_create_dev_key()
-                warnings.warn(
-                    "MASTER_ENCRYPTION_KEY not set, using persisted dev key. "
-                    "Set MASTER_ENCRYPTION_KEY in production!",
-                    UserWarning,
-                )
+                if settings.environment != "test":
+                    warnings.warn(
+                        "MASTER_ENCRYPTION_KEY not set, using persisted dev key. "
+                        "Set MASTER_ENCRYPTION_KEY in production!",
+                        UserWarning,
+                    )
             master_key = key_str.encode() if isinstance(key_str, str) else key_str
 
         if len(master_key) < 32:
