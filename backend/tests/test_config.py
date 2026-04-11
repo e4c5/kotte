@@ -12,13 +12,14 @@ class TestSettings:
 
     def test_default_settings(self):
         """Test default settings values."""
-        settings = Settings()
-        assert settings.environment == "development"
-        assert settings.db_host == "localhost"
-        assert settings.db_port == 5432
-        assert settings.query_timeout == 300
-        assert settings.max_nodes_for_graph == 5000
-        assert settings.max_edges_for_graph == 10000
+        with patch.dict(os.environ, {}, clear=True):
+            settings = Settings()
+            assert settings.environment == "development"
+            assert settings.db_host == "localhost"
+            assert settings.db_port == 5432
+            assert settings.query_timeout == 300
+            assert settings.max_nodes_for_graph == 5000
+            assert settings.max_edges_for_graph == 10000
 
     def test_session_secret_key_generation(self):
         """Test that session secret key is generated in development."""

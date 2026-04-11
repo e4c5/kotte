@@ -87,7 +87,7 @@ async def save_connection(
             code=ErrorCode.QUERY_VALIDATION_ERROR,
             message=str(e),
             category=ErrorCategory.VALIDATION,
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         )
     except Exception as e:
         logger.exception(f"Error saving connection: {e}")

@@ -115,7 +115,7 @@ def validate_query_length(cypher_query: str) -> str:
             code=ErrorCode.QUERY_VALIDATION_ERROR,
             message=f"Query exceeds maximum length of {MAX_QUERY_LENGTH} characters",
             category=ErrorCategory.VALIDATION,
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
         )
 
     return cypher_query
@@ -180,7 +180,7 @@ def validate_variable_length_traversal(
                     f"Use an explicit upper bound like [*1..{max_variable_hops}]."
                 ),
                 category=ErrorCategory.VALIDATION,
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             )
 
         if upper_bound is None:
@@ -192,7 +192,7 @@ def validate_variable_length_traversal(
                     f"Use an explicit upper bound <= {max_variable_hops}."
                 ),
                 category=ErrorCategory.VALIDATION,
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             )
 
         upper = int(upper_bound)
@@ -204,7 +204,7 @@ def validate_variable_length_traversal(
                     f"of {max_variable_hops}."
                 ),
                 category=ErrorCategory.VALIDATION,
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             )
 
     return cypher_query

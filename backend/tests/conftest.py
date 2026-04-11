@@ -1,12 +1,21 @@
 """Pytest configuration and fixtures."""
 
 import sys
+import os
 
 import pytest
 import pytest_asyncio
 import httpx
 from fastapi.testclient import TestClient
 from unittest.mock import Mock, AsyncMock
+
+def pytest_configure(config):
+    """Set up environment variables before tests run."""
+    os.environ["SESSION_SECRET_KEY"] = "test-secret-key-for-unit-tests"
+    os.environ["MASTER_ENCRYPTION_KEY"] = "test-master-key-must-be-32-bytes-long-12345"
+    os.environ["ENVIRONMENT"] = "test"
+    # Disable uvloop in tests to avoid issues with some transports
+    os.environ["USE_UVLOOP"] = "false"
 
 
 @pytest.fixture
@@ -17,8 +26,6 @@ def test_app(monkeypatch):
     """
     monkeypatch.setenv("CSRF_ENABLED", "false")
     monkeypatch.setenv("RATE_LIMIT_ENABLED", "false")
-    monkeypatch.setenv("SESSION_SECRET_KEY", "test-secret-key-for-unit-tests")
-    monkeypatch.setenv("ENVIRONMENT", "test")
     for mod in ("app.core.config", "app.main"):
         if mod in sys.modules:
             del sys.modules[mod]

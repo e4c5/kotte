@@ -116,7 +116,7 @@ class GraphConstraintViolation(APIException):
             code=ErrorCode.GRAPH_CONSTRAINT_VIOLATION,
             message=f"{constraint_type} constraint violated: {details}",
             category=ErrorCategory.VALIDATION,
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             details=extra_details or {},
         )
 
@@ -154,7 +154,7 @@ class GraphCypherSyntaxError(APIException):
             code=ErrorCode.CYPHER_SYNTAX_ERROR,
             message=friendly_message,
             category=ErrorCategory.VALIDATION,
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             details={"query": query[:200], "error": error_message},
         )
 
