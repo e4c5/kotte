@@ -98,7 +98,7 @@ Apache AGE Graph Visualizer Backend API.
     # Request ID middleware (added last so it runs first on requests)
     app.add_middleware(RequestIDMiddleware)
 
-    # Security headers middleware (added after Request ID so it runs first on requests and last on responses)
+    # Security headers: CSP differs by environment (dev allows Swagger/ReDoc CDNs); see middleware.
     app.add_middleware(SecurityHeadersMiddleware)
 
     # Error handlers

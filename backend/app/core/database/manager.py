@@ -11,6 +11,8 @@ from app.core.database.utils import first_value
 
 logger = logging.getLogger(__name__)
 
+_SQL_BACKEND_PID = "SELECT pg_backend_pid()"
+
 
 class QueryManager:
     """Manages database backend processes and query cancellation."""
@@ -25,16 +27,21 @@ class QueryManager:
         Return ``pg_backend_pid()`` for the given connection, or check out the pool
         when ``conn`` is omitted. Pass ``conn`` when it is the same handle used for
         the query being tracked or cancelled.
+
+        When ``conn`` is omitted, a pooled connection is borrowed briefly; the PID is
+        for that checkout, not a caller-specific “sticky” session. For cancellation
+        or correlation with an in-flight statement, pass the same ``AsyncConnection``
+        used for that work.
         """
         try:
             if conn is not None:
                 async with conn.cursor() as cur:
-                    await cur.execute("SELECT pg_backend_pid()")
+                    await cur.execute(_SQL_BACKEND_PID)
                     result = await cur.fetchone()
                     return first_value(result)
             async with self.db_conn.connection() as pooled:
                 async with pooled.cursor() as cur:
-                    await cur.execute("SELECT pg_backend_pid()")
+                    await cur.execute(_SQL_BACKEND_PID)
                     result = await cur.fetchone()
                     return first_value(result)
         except Exception as e:
@@ -77,7 +84,7 @@ class QueryManager:
         try:
             async with self.db_conn.connection() as conn:
                 async with conn.cursor() as cur:
-                    await cur.execute("SELECT pg_backend_pid()")
+                    await cur.execute(_SQL_BACKEND_PID)
                     result = await cur.fetchone()
                     current_pid = first_value(result)
                 if not current_pid:
