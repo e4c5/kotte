@@ -9,6 +9,7 @@ const apiProxyTarget = process.env.VITE_PROXY_TARGET || 'http://localhost:8000'
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   test: {
+    globals: true,
     environment: 'jsdom',
     setupFiles: ['src/test/setup.ts'],
     exclude: ['**/node_modules/**', '**/e2e/**'],

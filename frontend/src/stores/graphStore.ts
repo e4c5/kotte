@@ -26,7 +26,8 @@ export interface GraphFilters {
   nodeLabels: Set<string>
   edgeLabels: Set<string>
   propertyFilters: Array<{
-    label: string
+    id: string
+    label?: string
     property: string
     value: string
     operator: 'equals' | 'contains' | 'startsWith' | 'endsWith'
@@ -61,8 +62,10 @@ interface GraphState {
   filters: GraphFilters
   toggleNodeLabel: (label: string) => void
   toggleEdgeLabel: (label: string) => void
-  addPropertyFilter: (filter: GraphFilters['propertyFilters'][0]) => void
-  removePropertyFilter: (index: number) => void
+  addPropertyFilter: (
+    filter: Omit<GraphFilters['propertyFilters'][number], 'id'> & { id?: string }
+  ) => void
+  removePropertyFilter: (filterId: string) => void
   clearFilters: () => void
 
   // Graph state
@@ -189,16 +192,19 @@ export const useGraphStore = create<GraphState>()(
         set((state) => ({
           filters: {
             ...state.filters,
-            propertyFilters: [...state.filters.propertyFilters, filter],
+            propertyFilters: [
+              ...state.filters.propertyFilters,
+              { ...filter, id: filter.id ?? crypto.randomUUID() },
+            ],
           },
         })),
 
-      removePropertyFilter: (index) =>
+      removePropertyFilter: (filterId) =>
         set((state) => ({
           filters: {
             ...state.filters,
             propertyFilters: state.filters.propertyFilters.filter(
-              (_, i) => i !== index
+              (f) => f.id !== filterId
             ),
           },
         })),

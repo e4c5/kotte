@@ -88,7 +88,7 @@ describe('TabBar', () => {
     const tab1 = container.querySelector('#tab-1') as HTMLElement
     const pinBtn = within(tab1).getByRole('button', { name: 'Pin tab: Query 1' })
     fireEvent.click(pinBtn)
-    expect(onTabPin).toHaveBeenCalledWith('1')
+    expect(onTabPin).toHaveBeenCalledWith('1', expect.anything())
   })
 
   it('shows pinned indicator and unpin button for pinned tab', () => {

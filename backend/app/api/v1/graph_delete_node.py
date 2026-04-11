@@ -4,7 +4,6 @@ import logging
 
 from fastapi import APIRouter, Depends, Query
 
-from app.core.auth import get_session
 from app.core.database import DatabaseConnection
 from app.core.deps import get_db_connection
 from app.core.errors import APIException, ErrorCode, ErrorCategory, translate_db_error
@@ -52,30 +51,30 @@ async def delete_node(
                 status_code=422,
             )
         
-        # Verify graph exists
+        node_id_param = {"node_id": node_id_int}
         graph_check = """
             SELECT graphid FROM ag_catalog.ag_graph WHERE name = %(graph_name)s
         """
-        graph_id = await db_conn.execute_scalar(
-            graph_check, {"graph_name": validated_graph_name}
-        )
-        if not graph_id:
-            raise APIException(
-                code=ErrorCode.GRAPH_NOT_FOUND,
-                message=f"Graph '{validated_graph_name}' not found",
-                category=ErrorCategory.NOT_FOUND,
-                status_code=404,
-            )
-        
-        node_id_param = {"node_id": node_id_int}
 
-        # Wrap check + deletion in a single transaction for atomicity
-        async with db_conn.transaction():
+        # Graph existence, node checks, and delete run on one pooled connection
+        async with db_conn.transaction() as conn:
+            graph_id = await db_conn.execute_scalar(
+                graph_check, {"graph_name": validated_graph_name}, conn=conn
+            )
+            if not graph_id:
+                raise APIException(
+                    code=ErrorCode.GRAPH_NOT_FOUND,
+                    message=f"Graph '{validated_graph_name}' not found",
+                    category=ErrorCategory.NOT_FOUND,
+                    status_code=404,
+                )
+
             # Check if node exists
             node_check = await db_conn.execute_cypher(
                 validated_graph_name,
                 "MATCH (n) WHERE id(n) = $node_id RETURN n",
                 params=node_id_param,
+                conn=conn,
             )
             if not node_check:
                 raise APIException(
@@ -90,6 +89,7 @@ async def delete_node(
                 validated_graph_name,
                 "MATCH (n)-[r]-() WHERE id(n) = $node_id RETURN count(r) as edge_count",
                 params=node_id_param,
+                conn=conn,
             )
             edges_deleted = 0
             if edge_count_result:
@@ -117,7 +117,7 @@ async def delete_node(
             else:
                 delete_cypher = "MATCH (n) WHERE id(n) = $node_id DELETE n RETURN count(n) as deleted_count"
             delete_result = await db_conn.execute_cypher(
-                validated_graph_name, delete_cypher, params=node_id_param
+                validated_graph_name, delete_cypher, params=node_id_param, conn=conn
             )
 
             if not delete_result:

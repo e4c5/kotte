@@ -70,11 +70,20 @@ class CredentialEncryption:
                         "MASTER_ENCRYPTION_KEY must be set in production environment"
                     )
                 key_str = _load_or_create_dev_key()
-                warnings.warn(
-                    "MASTER_ENCRYPTION_KEY not set, using persisted dev key. "
-                    "Set MASTER_ENCRYPTION_KEY in production!",
-                    UserWarning,
-                )
+                if settings.environment != "test":
+                    logger.warning(
+                        "SECURITY: MASTER_ENCRYPTION_KEY not set; using persisted "
+                        "development encryption key. Set MASTER_ENCRYPTION_KEY in production.",
+                        extra={
+                            "event": "dev_encryption_key_fallback",
+                            "environment": settings.environment,
+                        },
+                    )
+                    warnings.warn(
+                        "MASTER_ENCRYPTION_KEY not set, using persisted dev key. "
+                        "Set MASTER_ENCRYPTION_KEY in production!",
+                        UserWarning,
+                    )
             master_key = key_str.encode() if isinstance(key_str, str) else key_str
 
         if len(master_key) < 32:

@@ -5,14 +5,13 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, UploadFile, File, Form
-from fastapi.responses import JSONResponse
 
 from app.core.auth import get_session
-from app.services.metadata import MetadataService, property_cache
 from app.core.config import settings
 from app.core.database import DatabaseConnection
 from app.core.errors import APIException, ErrorCode, ErrorCategory
 from app.core.validation import validate_graph_name, validate_label_name, escape_string_literal
+from app.services.metadata import MetadataService, invalidate_property_metadata_cache
 from app.models.import_models import (
     CSVImportResponse,
     ImportJobStatus,
@@ -168,13 +167,13 @@ async def import_csv(
         rejected = 0
         errors: list[str] = []
 
-        async with db_conn.transaction(timeout=300):
+        async with db_conn.transaction(time_limit_seconds=300) as conn:
             # Ensure graph exists inside transaction
             graph_check = """
                 SELECT graphid FROM ag_catalog.ag_graph WHERE name = %(graph_name)s
             """
             graph_id = await db_conn.execute_scalar(
-                graph_check, {"graph_name": validated_graph_name}
+                graph_check, {"graph_name": validated_graph_name}, conn=conn
             )
 
             if not graph_id:
@@ -182,7 +181,7 @@ async def import_csv(
                     SELECT * FROM ag_catalog.create_graph({graph_lit})
                 """
                 try:
-                    await db_conn.execute_query(create_graph_query)
+                    await db_conn.execute_query(create_graph_query, conn=conn)
                     logger.info(f"Created graph: {validated_graph_name}")
                 except Exception as e:
                     raise APIException(
@@ -198,7 +197,7 @@ async def import_csv(
                     SELECT * FROM ag_catalog.drop_label({graph_lit}, {label_lit}, {label_kind == 'v'})
                 """
                 try:
-                    await db_conn.execute_query(drop_query)
+                    await db_conn.execute_query(drop_query, conn=conn)
                 except Exception:
                     # Label might not exist; that's fine when dropping conditionally
                     pass
@@ -207,7 +206,7 @@ async def import_csv(
                 SELECT * FROM ag_catalog.create_label({graph_lit}, {label_lit}, {label_kind == 'v'})
             """
             try:
-                await db_conn.execute_query(create_label_query)
+                await db_conn.execute_query(create_label_query, conn=conn)
                 job_status.created_labels.append(validated_label_name)
             except Exception as e:
                 if "already exists" not in str(e).lower():
@@ -275,6 +274,7 @@ async def import_csv(
                 await db_conn.execute_query(
                     batch_query,
                     {"graph_name": validated_graph_name, "cypher": batch_cypher},
+                    conn=conn,
                 )
 
                 inserted += len(cypher_statements)
@@ -286,11 +286,31 @@ async def import_csv(
         job_status.completed_at = datetime.now(timezone.utc).isoformat()
         job_status.progress = 1.0
 
-        # Invalidate property cache so new properties are discovered
-        property_cache.invalidate(validated_graph_name, validated_label_name)
+        try:
+            await invalidate_property_metadata_cache(
+                validated_graph_name, validated_label_name
+            )
+        except Exception as e:
+            logger.warning(
+                "Post-import metadata cache invalidation failed for graph=%s label=%s: %s",
+                validated_graph_name,
+                validated_label_name,
+                e,
+                exc_info=True,
+            )
 
-        # Update table statistics for accurate count estimates
-        await MetadataService.analyze_table(db_conn, validated_graph_name, validated_label_name)
+        try:
+            await MetadataService.analyze_table(
+                db_conn, validated_graph_name, validated_label_name
+            )
+        except Exception as e:
+            logger.warning(
+                "Post-import ANALYZE failed for graph=%s label=%s: %s",
+                validated_graph_name,
+                validated_label_name,
+                e,
+                exc_info=True,
+            )
 
         return CSVImportResponse(
             job_id=job_id,

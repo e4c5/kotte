@@ -91,16 +91,6 @@ async def execute_query(
         query_text=request.cypher[:200],  # Store truncated query for logging
         user_id=user_id,
     )
-    
-    # Get backend PID for cancellation (before query execution)
-    # This PID will be used to cancel the query if needed
-    try:
-        backend_pid = await db_conn.get_backend_pid()
-        if backend_pid:
-            await query_tracker.set_backend_pid(request_id, backend_pid)
-            logger.debug(f"Tracking query {request_id[:8]}... with backend PID {backend_pid}")
-    except Exception as e:
-        logger.warning(f"Failed to get backend PID for query tracking: {e}")
 
     # Validate graph exists (using parameterized query)
     graph_check = """
@@ -156,12 +146,26 @@ async def execute_query(
     # parameter overload issues; params when present are passed as a single bind.
     query_start_time = time.time()
     try:
-        raw_rows = await db_conn.execute_cypher(
-            validated_graph_name,
-            cypher_to_execute,
-            params=request.params or None,
-            timeout=settings.query_timeout,
-        )
+        async with db_conn.connection() as exec_conn:
+            try:
+                backend_pid = await db_conn.get_backend_pid(conn=exec_conn)
+                if backend_pid:
+                    await query_tracker.set_backend_pid(request_id, backend_pid)
+                    logger.debug(
+                        "Tracking query %s... with backend PID %s",
+                        request_id[:8],
+                        backend_pid,
+                    )
+            except Exception as e:
+                logger.warning("Failed to get backend PID for query tracking: %s", e)
+
+            raw_rows = await db_conn.execute_cypher(
+                validated_graph_name,
+                cypher_to_execute,
+                params=request.params,
+                time_limit_seconds=settings.query_timeout,
+                conn=exec_conn,
+            )
         
         # Parse agtype results
         parsed_rows = []

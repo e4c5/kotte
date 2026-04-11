@@ -161,7 +161,7 @@ async def connected_client(authenticated_client):
         class _MockTransaction:
             async def __aenter__(self): return None
             async def __aexit__(self, *args): return None
-        mock_conn.transaction = lambda timeout=None: _MockTransaction()
+        mock_conn.transaction = lambda time_limit_seconds=None: _MockTransaction()
 
         # Patch DatabaseConnection for all modules that use it
         with patch('app.api.v1.session.DatabaseConnection') as mock_db_class, \

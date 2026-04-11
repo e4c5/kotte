@@ -153,7 +153,10 @@ async def get_graph_metadata(
             )
 
             numeric_stats = await MetadataService.get_numeric_property_statistics_for_label(
-                db_conn, validated_graph_name, validated_label_name
+                db_conn,
+                validated_graph_name,
+                validated_label_name,
+                properties=properties,
             )
 
             property_stats = [

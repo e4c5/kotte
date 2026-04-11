@@ -443,30 +443,10 @@ class AgTypeParser:
                 else:
                     other.append({"column": col_name, "value": parsed})
 
-        # If we have edges but no nodes (e.g. query was RETURN r), synthesize placeholder nodes
-        # from edge endpoints so the graph view can render
-        if edges and not nodes:
-            for e in edges:
-                sid = e.get("source")
-                tid = e.get("target")
-                if sid is not None and sid not in node_ids:
-                    nodes.append({
-                        "id": sid,
-                        "label": "",
-                        "properties": {},
-                        "type": "node",
-                    })
-                    node_ids.add(sid)
-                if tid is not None and tid not in node_ids:
-                    nodes.append({
-                        "id": tid,
-                        "label": "",
-                        "properties": {},
-                        "type": "node",
-                    })
-                    node_ids.add(tid)
-        elif edges:
-            # Ensure every edge source/target has a node (placeholder if missing)
+        # If we have edges, ensure every source/target has a node (placeholder if missing).
+        # When there were no nodes (e.g. query was RETURN r), this synthesizes endpoints
+        # so the graph view can render.
+        if edges:
             for e in edges:
                 sid = e.get("source")
                 tid = e.get("target")

@@ -33,6 +33,59 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
         return response
 
 
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Add security headers to all responses."""
+
+    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        response = await call_next(request)
+
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+
+        is_production = settings.environment == "production"
+
+        # HSTS only in production over HTTPS (avoid sending on plain HTTP dev servers)
+        if is_production and request.url.scheme == "https":
+            response.headers["Strict-Transport-Security"] = (
+                "max-age=31536000; includeSubDomains"
+            )
+
+        if is_production:
+            script_policy = "'self'"
+            style_policy = "'self' 'unsafe-inline'"
+        else:
+            # Development: allow Swagger UI / ReDoc assets from common CDNs when docs are enabled
+            script_policy = (
+                "'self' 'unsafe-inline' 'unsafe-eval' "
+                "https://cdn.jsdelivr.net https://unpkg.com"
+            )
+            style_policy = (
+                "'self' 'unsafe-inline' "
+                "https://cdn.jsdelivr.net https://unpkg.com"
+            )
+
+        csp = (
+            f"default-src 'self'; "
+            f"script-src {script_policy}; "
+            f"style-src {style_policy}; "
+            "img-src 'self' data: https://fastapi.tiangolo.com; "
+            "connect-src 'self'; "
+            "font-src 'self' https://cdn.jsdelivr.net; "
+            "frame-ancestors 'none'; "
+            "base-uri 'self'; "
+            "form-action 'self';"
+        )
+        response.headers["Content-Security-Policy"] = csp
+
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = (
+            "geolocation=(), microphone=(), camera=()"
+        )
+
+        return response
+
+
 class MetricsMiddleware(BaseHTTPMiddleware):
     """Collect HTTP request metrics for Prometheus."""
 
@@ -120,8 +173,14 @@ class CSRFMiddleware(BaseHTTPMiddleware):
 
         if not csrf_token or csrf_token != session_csrf:
             logger.warning(
-                f"CSRF token validation failed for {request.method} {request.url.path}",
-                extra={"request_id": getattr(request.state, "request_id", None)},
+                f"SECURITY: CSRF token validation failed for {request.method} {request.url.path} from IP {request.client.host if request.client else 'unknown'}",
+                extra={
+                    "request_id": getattr(request.state, "request_id", None),
+                    "event": "csrf_failure",
+                    "path": request.url.path,
+                    "method": request.method,
+                    "ip": request.client.host if request.client else "unknown",
+                },
             )
             raise APIException(
                 code=ErrorCode.INTERNAL_ERROR,
@@ -193,8 +252,13 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         if len(ip_requests) >= settings.rate_limit_per_minute:
             logger.warning(
-                f"Rate limit exceeded for IP {client_ip}",
-                extra={"request_id": getattr(request.state, "request_id", None)},
+                f"SECURITY: Rate limit exceeded for IP {client_ip} on {request.method} {request.url.path}",
+                extra={
+                    "request_id": getattr(request.state, "request_id", None),
+                    "event": "rate_limit_exceeded_ip",
+                    "ip": client_ip,
+                    "path": request.url.path,
+                },
             )
             raise APIException(
                 code=ErrorCode.RATE_LIMITED,
@@ -212,8 +276,14 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
             if len(user_requests) >= settings.rate_limit_per_user:
                 logger.warning(
-                    f"Rate limit exceeded for user {user_id}",
-                    extra={"request_id": getattr(request.state, "request_id", None)},
+                    f"SECURITY: Rate limit exceeded for user {user_id} from IP {client_ip} on {request.method} {request.url.path}",
+                    extra={
+                        "request_id": getattr(request.state, "request_id", None),
+                        "event": "rate_limit_exceeded_user",
+                        "user_id": user_id,
+                        "ip": client_ip,
+                        "path": request.url.path,
+                    },
                 )
                 raise APIException(
                     code=ErrorCode.RATE_LIMITED,

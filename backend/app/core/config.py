@@ -3,6 +3,7 @@
 import secrets
 from typing import List
 
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -33,6 +34,9 @@ class Settings(BaseSettings):
     db_user: str = "postgres"
     db_password: str = "postgres"
     db_connect_timeout: int = 10  # seconds
+    db_pool_min_size: int = Field(default=1, ge=0)
+    db_pool_max_size: int = Field(default=10, ge=1)
+    db_pool_max_idle: int = Field(default=300, ge=0)  # seconds
 
     # CORS
     cors_origins: List[str] = ["http://localhost:5173", "http://localhost:3000"]
@@ -55,6 +59,7 @@ class Settings(BaseSettings):
 
     # Logging
     log_level: str = "INFO"
+    structured_logging: bool = True
 
     # Credential Storage
     credential_storage_type: str = "json_file"  # json_file, sqlite, postgresql, redis
@@ -76,13 +81,22 @@ class Settings(BaseSettings):
                     "SESSION_SECRET_KEY must be set in production environment"
                 )
             self.session_secret_key = secrets.token_urlsafe(32)
-            import warnings
+            if self.environment != "test":
+                import warnings
 
-            warnings.warn(
-                "SESSION_SECRET_KEY not set, using generated key. "
-                "Set SESSION_SECRET_KEY in production!",
-                UserWarning,
+                warnings.warn(
+                    "SESSION_SECRET_KEY not set, using generated key. "
+                    "Set SESSION_SECRET_KEY in production!",
+                    UserWarning,
+                )
+
+    @model_validator(mode="after")
+    def validate_pool_sizes(self) -> "Settings":
+        if self.db_pool_min_size > self.db_pool_max_size:
+            raise ValueError(
+                "db_pool_min_size must be less than or equal to db_pool_max_size"
             )
+        return self
 
 
 settings = Settings()

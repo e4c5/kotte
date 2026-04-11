@@ -63,12 +63,12 @@ backend/app/
 │   ├── session.py       # Session management (connect/disconnect)
 │   ├── graph.py         # Graph operations (list, metadata, meta-graph)
 │   ├── query.py         # Query execution and cancellation
-│   ├── import_csv.py    # CSV import endpoints
+│   ├── csv_importer.py  # CSV import endpoints (mounted via import_router.py)
 │   └── health.py        # Health check endpoints
 ├── core/                # Core functionality
 │   ├── auth.py          # Session authentication
 │   ├── config.py        # Configuration management
-│   ├── database.py      # Database connection management
+│   ├── database/        # Modular DB: pool connection, Cypher executor, query manager
 │   ├── errors.py        # Error handling and definitions
 │   ├── middleware.py    # CORS, rate limiting, request ID
 │   └── security.py      # Security utilities (CSRF, encryption)
@@ -103,14 +103,13 @@ Handles user sessions with secure cookies:
 
 See [Contributing Guide](CONTRIBUTING.md#session-storage-production) for Redis configuration examples.
 
-#### Database Connection (`app/core/database.py`)
+#### Database layer (`app/core/database/`)
 
-Manages PostgreSQL connections per session:
+The `DatabaseConnection` facade composes a **pool** (`AsyncConnectionPool`), a **Cypher executor** (parameterized `ag_catalog.cypher` calls with validated graph names), and a **query manager** (backend PID / cancellation). Per-user sessions own a pool; connections load AGE and set `search_path` on checkout. Query execution paths that receive an explicit connection (e.g. inside `transaction()`) avoid rolling back the outer transaction on statement failure—errors are left to the transaction context.
 
-- **Connection Pool**: One connection per active session
-- **AGE Verification**: Ensures AGE extension is loaded
-- **Search Path**: Sets `ag_catalog` for AGE functions
-- **Connection Cleanup**: Closes connections on session disconnect
+#### Metadata cache (`app/services/cache.py` + `metadata.py`)
+
+Graph list, label counts, property discovery, and statistics are cached in memory with TTLs; invalidation runs after imports and schema-affecting operations, using validated graph/label identifiers in cache keys.
 
 #### Error Handling (`app/core/errors.py`)
 
@@ -173,6 +172,8 @@ Discovers graph metadata:
 ---
 
 ## Frontend Architecture
+
+Main routes (`LoginPage`, `ConnectionPage`, `WorkspacePage`) are **lazy-loaded** and wrapped in `Suspense` with an error boundary so a failed chunk load does not blank the entire app. The API client clears cached GET responses under `/graphs` after successful mutations to avoid stale graph lists and metadata.
 
 ### Technology Stack
 
@@ -383,6 +384,10 @@ User       Frontend     Backend      PostgreSQL
 ---
 
 ## Security Architecture
+
+### HTTP security headers
+
+`SecurityHeadersMiddleware` sets standard headers (e.g. `X-Content-Type-Options`, `X-Frame-Options`, CSP, `Referrer-Policy`). **HSTS** is sent only when `environment` is `production` and the request URL uses **HTTPS**, so local HTTP development is not forced onto HSTS. In **development**, the CSP allows Swagger UI / ReDoc static assets from common CDNs; **production** keeps a stricter script policy.
 
 ### Session Security
 

@@ -4,7 +4,7 @@
 
 ## Stack
 
-- **Backend:** Python 3.11+, FastAPI, Pydantic v2, psycopg (async), uvicorn
+- **Backend:** Python 3.11+, FastAPI, Pydantic v2, psycopg (async) with connection pooling, uvicorn
 - **Frontend:** React 18, TypeScript, Vite, Tailwind CSS, Zustand, React Router, D3.js (graph viz), Zod
 - **DB:** PostgreSQL 14+ with Apache AGE; Cypher via `cypher(graph_name, $$...$$)` and `agtype`
 
@@ -13,52 +13,62 @@
 ```
 kotte/
 ├── backend/app/
-│   ├── api/v1/          # Routes: session, graph, query, import_csv, health, graph_delete_node
-│   ├── core/            # auth, config, database, errors, middleware, security
+│   ├── api/v1/          # Routes: session, graph, query, import (csv_importer), health
+│   ├── core/            # auth, config, database, errors, logging, middleware, metrics
+│   │   └── database/    # Modular DB: connection (pool), cypher, manager, utils
 │   ├── models/          # Pydantic request/response models
-│   └── services/        # agtype (AGE parsing), metadata, connection_storage
+│   └── services/        # agtype (AGE), metadata, cache, user
 ├── frontend/src/
-│   ├── components/      # GraphView, TableView, QueryEditor, GraphControls, MetadataSidebar, etc.
-│   ├── pages/           # ConnectionPage, WorkspacePage
-│   ├── services/        # api, session, graph, query (API client)
-│   ├── stores/          # Zustand: sessionStore, graphStore, queryStore
-│   └── types/           # TypeScript types for graph, query, api
-├── docs/                # QUICKSTART, ARCHITECTURE, CONTRIBUTING, CONFIGURATION, ADVANCED_FEATURES
-├── deployment/          # Docker Compose
+│   ├── components/      # GraphView, TableView, GraphControls, TabBar, etc.
+│   │   └── GraphControls/ # Decomposed control tabs
+│   ├── hooks/           # useGraphExport, useCache, etc.
+│   ├── pages/           # ConnectionPage, LoginPage, WorkspacePage (Lazy loaded)
+│   ├── services/        # api (with caching), session, graph, query
+│   ├── stores/          # Zustand: sessionStore, graphStore, queryStore, settingsStore
+│   └── utils/           # graphLayouts, graphStyles, apiCache, nodeColors
+├── docs/                # Architecture, contributing, configuration, features
+├── deployment/          # Docker Compose and Dockerfiles
 └── Makefile             # install-*, dev-*, test-*, lint-*
 ```
 
-## Run, test, lint
+## Performance & Monitoring
 
-- **Run:** `make dev-backend` (port 8000) and `make dev-frontend` (port 5173). Or `cd deployment && docker compose up -d`.
-- **Test:** `make test-backend` (pytest), `make test-frontend` (vitest).
-- **Lint:** `make lint-backend` (ruff, black, mypy), `make lint-frontend` (eslint).
+- **Connection Pooling:** Uses `psycopg-pool` for efficient async database connections. Managed per-session.
+- **Caching:** 
+  - **Backend:** `InMemoryCache` with TTL for graph metadata and label counts.
+  - **Frontend:** `apiCache` for GET requests (metadata, graph lists) to reduce redundant API calls.
+- **Logging:** Structured JSON logging enabled by default in production. Includes `request_id` for tracing.
+- **Metrics:** Prometheus metrics exposed for HTTP requests, database queries, cache hits/misses, and pool status.
+- **Frontend Optimization:** Route-based code splitting (lazy loading), D3 memory management (explicit cleanup on unmount).
 
-Backend needs a venv and `pip install -r requirements-dev.txt` in `backend/`. Copy `backend/.env.example` to `backend/.env` and set `SESSION_SECRET_KEY` (and DB vars if not using Docker).
+## Development Workflow
+
+1. **Research:** Map the codebase and verify assumptions using `grep_search` and `read_file`.
+2. **Strategy:** Formulate a plan and share a concise summary.
+3. **Execution:**
+   - **Plan:** Define implementation and testing strategy.
+   - **Act:** Apply surgical changes. Use `replace` for large files.
+   - **Validate:** Run `make test-backend` and `make test-frontend`. **All tests must pass before commit.**
+4. **Documentation:** Update relevant `.md` files when changing architecture or adding features.
 
 ## Conventions
 
-- **Python:** PEP 8, line length 100, type hints on signatures, Google-style docstrings. Format with black, check with ruff, type-check with mypy. Use Pydantic for all API request/response and validation.
-- **TypeScript:** 2 spaces, single quotes, semicolons, explicit types (avoid `any`). ESLint with `@typescript-eslint`.
-- **Commits:** Conventional Commits (`feat:`, `fix:`, `docs:`, `test:`, `chore:`, etc.).
+- **Python:** PEP 8 (100 chars), type hints, Google-style docstrings. Black/Ruff/Mypy.
+- **TypeScript:** 2 spaces, single quotes, explicit types. ESLint/Vitest.
+- **Commits:** Conventional Commits (`feat:`, `fix:`, `docs:`, `test:`, `perf:`, `refactor:`).
 
-## Security (must follow)
+## Security (MANDATORY)
 
-- **No SQL from user input:** Never build Cypher or SQL with f-strings or concatenation. Always use **parameterized queries** with psycopg:
-  - `await conn.execute(query, params)` with `$1, $2` (or `%(name)s`) and a tuple/dict of parameters.
-- **Identifiers:** Validate graph names, labels, and other identifiers (e.g. `^[a-zA-Z_][a-zA-Z0-9_]{0,62}$`) before using in SQL; see `app/core` and CONTRIBUTING for patterns.
-- **Secrets:** No `.env` or `.master_encryption_key` in repo; credentials encrypted at rest (AES-256-GCM). See docs/CONFIGURATION.md and CONTRIBUTING.md for env and production session storage.
+- **Parameterized Queries:** Never use f-strings for Cypher/SQL. Use `%(name)s` with psycopg.
+- **Identifier Validation:** Always use `validate_graph_name` or `validate_label_name` for dynamic identifiers.
+- **Headers:** `SecurityHeadersMiddleware` provides HSTS, CSP (nosniff, frame-ancestors, etc.).
+- **Audit Logging:** Security events (CSRF failures, rate limits) are logged with `SECURITY:` prefix and extra context.
+- **Secrets:** Credentials encrypted at rest (AES-256-GCM). No secrets in repo.
 
-## API shape
+## API & Documentation
 
-- Base: `/api/v1`. Session: `POST /session/connect`, `POST /session/disconnect`. Graph: `GET /graphs`, `GET /graphs/{name}/metadata`, and graph/shortest-path/delete as in docs. Query: `POST /queries/execute`, `POST /queries/{request_id}/cancel`.
-- Errors are JSON with `code`, `category`, `message`, `details`, `request_id`, `retryable`. See ARCHITECTURE.md for full request/response examples.
-
-## Docs to use
-
-- **Setup and run:** docs/QUICKSTART.md, README.md.
-- **Design and API:** docs/ARCHITECTURE.md, docs/ADVANCED_FEATURES.md (shortest path, query templates, AGE Cypher).
-- **Contributing:** docs/CONTRIBUTING.md (coding standards, testing, security, PR process).
-- **Config:** docs/CONFIGURATION.md (env vars, limits, credential storage).
-
-When changing API or behavior, update the relevant doc (ARCHITECTURE, USER_GUIDE, QUICKSTART, CONTRIBUTING) and keep code examples in sync.
+- Base: `/api/v1`. Full specs in `docs/ARCHITECTURE.md`.
+- **Setup:** `docs/QUICKSTART.md`.
+- **Advanced:** `docs/ADVANCED_FEATURES.md`.
+- **Troubleshooting:** `docs/TROUBLESHOOTING.md`.
+- **Engineering backlog:** `docs/BACKLOG.md` (prioritized follow-ups).

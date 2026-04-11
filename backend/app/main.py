@@ -10,13 +10,16 @@ from starlette.middleware.sessions import SessionMiddleware
 from app.api.v1 import router as v1_router
 from app.core.config import settings
 from app.core.errors import setup_error_handlers
+from app.core.logging import setup_logging
 from app.core.middleware import (
     CSRFMiddleware,
     MetricsMiddleware,
     RateLimitMiddleware,
     RequestIDMiddleware,
+    SecurityHeadersMiddleware,
 )
 
+setup_logging()
 logger = logging.getLogger(__name__)
 
 
@@ -94,6 +97,9 @@ Apache AGE Graph Visualizer Backend API.
 
     # Request ID middleware (added last so it runs first on requests)
     app.add_middleware(RequestIDMiddleware)
+
+    # Security headers: CSP differs by environment (dev allows Swagger/ReDoc CDNs); see middleware.
+    app.add_middleware(SecurityHeadersMiddleware)
 
     # Error handlers
     setup_error_handlers(app)

@@ -2,6 +2,8 @@
  * API client for backend communication (fetch-based).
  */
 
+import { apiCache } from '../utils/apiCache'
+
 const BASE = '/api/v1'
 
 export interface APIError {
@@ -47,8 +49,15 @@ export async function ensureCsrfToken(): Promise<string | null> {
 
 type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
 
+/** Drop cached GET responses affected by graph/query mutations (prefix match on URL path). */
+function invalidateCachesAfterMutation(): void {
+  apiCache.clear('/graphs')
+  apiCache.clear('/queries')
+}
+
 interface RequestOptions {
   _csrfRetry?: boolean
+  cacheTtl?: number // TTL in milliseconds
 }
 
 async function request<T>(
@@ -57,6 +66,14 @@ async function request<T>(
   body?: unknown,
   options?: RequestOptions
 ): Promise<{ data: T }> {
+  // Check cache for GET requests
+  if (method === 'GET' && options?.cacheTtl) {
+    const cached = apiCache.get<T>(url)
+    if (cached !== null) {
+      return { data: cached }
+    }
+  }
+
   const needsCsrf = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)
   let csrfToken: string | null = null
   if (needsCsrf) {
@@ -80,13 +97,27 @@ async function request<T>(
     if (data.csrf_token != null) {
       sessionStorage.setItem('csrf_token', String(data.csrf_token))
     }
-    return { data: data as T }
+    
+    const resultData = data as T
+    
+    // Store in cache if requested
+    if (method === 'GET' && options?.cacheTtl) {
+      apiCache.set(url, resultData, options.cacheTtl)
+    }
+    
+    // Invalidate cached GETs after mutations (graph list, metadata, templates, etc.)
+    if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+      invalidateCachesAfterMutation()
+    }
+
+    return { data: resultData }
   }
 
   const apiError = (data as unknown as APIError).error
 
   if (res.status === 401) {
     sessionStorage.removeItem('csrf_token')
+    apiCache.clear()
     if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
       window.location.href = '/login'
     }
@@ -97,7 +128,7 @@ async function request<T>(
   if (isCsrfFailure && !options?._csrfRetry) {
     const token = await ensureCsrfToken()
     if (token) {
-      return request<T>(method, url, body, { _csrfRetry: true })
+      return request<T>(method, url, body, { ...options, _csrfRetry: true })
     }
   }
 
@@ -115,11 +146,11 @@ async function request<T>(
 }
 
 const apiClient = {
-  get: <T>(url: string) => request<T>('GET', url),
-  post: <T>(url: string, body?: unknown) => request<T>('POST', url, body),
-  put: <T>(url: string, body?: unknown) => request<T>('PUT', url, body),
-  patch: <T>(url: string, body?: unknown) => request<T>('PATCH', url, body),
-  delete: <T>(url: string) => request<T>('DELETE', url),
+  get: <T>(url: string, options?: RequestOptions) => request<T>('GET', url, undefined, options),
+  post: <T>(url: string, body?: unknown, options?: RequestOptions) => request<T>('POST', url, body, options),
+  put: <T>(url: string, body?: unknown, options?: RequestOptions) => request<T>('PUT', url, body, options),
+  patch: <T>(url: string, body?: unknown, options?: RequestOptions) => request<T>('PATCH', url, body, options),
+  delete: <T>(url: string, options?: RequestOptions) => request<T>('DELETE', url, undefined, options),
 }
 
 export default apiClient
