@@ -1,10 +1,11 @@
 """Core database connection management with pooling support."""
 
 import asyncio
+import hashlib
 import logging
 import time
 from contextlib import asynccontextmanager
-from typing import Optional
+from typing import Any, Optional
 
 import psycopg
 from psycopg.rows import dict_row
@@ -82,7 +83,6 @@ class DatabaseConnection:
             try:
                 stats = self._pool.get_stats()
                 # AsyncConnectionPool stats have different attributes than ConnectionPool
-                # We'll use the available info
                 total = stats.get("pool_size", 0)
                 available = stats.get("pool_available", 0)
                 in_use = total - available
@@ -188,11 +188,13 @@ class DatabaseConnection:
                 except asyncio.TimeoutError:
                     duration = time.time() - start_time
                     metrics.record_db_query(duration)
-                    logger.warning(f"Query timeout after {timeout} seconds")
+                    query_hash = hashlib.sha256(query.encode()).hexdigest()[:8]
+                    logger.warning(f"Query timeout (hash: {query_hash}) after {timeout} seconds")
                     await conn.rollback()
                     raise
                 except Exception:
-                    logger.error("execute_query failed; full SQL: %s", query, exc_info=True)
+                    query_hash = hashlib.sha256(query.encode()).hexdigest()[:8]
+                    logger.error("execute_query failed (hash: %s)", query_hash, exc_info=True)
                     await conn.rollback()
                     raise
 
@@ -216,12 +218,13 @@ class DatabaseConnection:
                 except asyncio.TimeoutError:
                     duration = time.time() - start_time
                     metrics.record_db_query(duration)
-                    logger.warning(f"Command timeout after {timeout} seconds")
+                    query_hash = hashlib.sha256(query.encode()).hexdigest()[:8]
+                    logger.warning(f"Command timeout (hash: {query_hash}) after {timeout} seconds")
                     raise
 
     async def execute_scalar(
         self, query: str, params: Optional[dict] = None
-    ) -> Optional[any]:
+    ) -> Optional[Any]:
         """Execute a query and return a single scalar value."""
         async with self.connection() as conn:
             async with conn.cursor() as cur:

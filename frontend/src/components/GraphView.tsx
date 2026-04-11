@@ -218,10 +218,21 @@ export default function GraphView({
       .attr('stroke-width', (d) => pathEdgeIds.has(String(d.id)) ? Math.max(3, getEdgeStyle(d, edgeStyles, edgeWidthScale, edgeWidthMapping.property).size) : getEdgeStyle(d, edgeStyles, edgeWidthScale, edgeWidthMapping.property).size)
 
     if (onEdgeClickRef.current) {
-      link.style('cursor', 'pointer').on('click', (event: MouseEvent, d: GraphEdge) => {
-        event.stopPropagation()
-        onEdgeClickRef.current?.(d)
-      })
+      link.style('cursor', 'pointer')
+        .attr('role', 'button')
+        .attr('tabindex', 0)
+        .attr('aria-label', (d) => `Edge: ${d.label}, ID: ${d.id}`)
+        .on('click', (event: MouseEvent, d: GraphEdge) => {
+          event.stopPropagation()
+          onEdgeClickRef.current?.(d)
+        })
+        .on('keydown', (event: KeyboardEvent, d: GraphEdge) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault()
+            event.stopPropagation()
+            onEdgeClickRef.current?.(d)
+          }
+        })
     }
 
     const node = container.append('g').attr('class', 'nodes').attr('role', 'group').attr('aria-label', 'Graph nodes').selectAll('circle').data(filteredNodes).enter().append('circle')
@@ -242,6 +253,13 @@ export default function GraphView({
       }))
       .on('click', (event, d) => { event.stopPropagation(); onNodeClickRef.current?.(d) })
       .on('contextmenu', (event, d) => { event.preventDefault(); onNodeRightClickRef.current?.(d, event) })
+      .on('keydown', (event: KeyboardEvent, d: GraphNode) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          event.stopPropagation()
+          onNodeClickRef.current?.(d)
+        }
+      })
 
     const labels = container.append('g').attr('class', 'labels').selectAll('text').data(filteredNodes).enter().append('text')
       .text((d) => getNodeCaption(d, nodeStyles)).attr('font-size', '12px').attr('dx', (d) => getNodeStyle(d, nodeStyles).size + 5).attr('dy', 4).style('pointer-events', 'none').style('fill', '#e4e4e7')

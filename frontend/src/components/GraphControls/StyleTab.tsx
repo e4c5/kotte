@@ -178,7 +178,7 @@ export default function StyleTab({ availableNodeLabels, availableEdgeLabels }: S
                 <select
                   id="edge-width-scale"
                   value={edgeWidthMapping.scaleType}
-                  onChange={(e) => setEdgeWidthMapping({ scaleType: e.target.value as any })}
+                  onChange={(e) => setEdgeWidthMapping({ scaleType: e.target.value as 'linear' | 'log' })}
                   className={selectClass}
                 >
                   <option value="linear">Linear</option>

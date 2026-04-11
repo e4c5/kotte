@@ -1,6 +1,7 @@
 """Prometheus metrics collection for observability."""
 
 import time
+import threading
 from typing import Optional
 
 from prometheus_client import (
@@ -22,62 +23,60 @@ http_request_duration_seconds = Histogram(
     "http_request_duration_seconds",
     "HTTP request duration in seconds",
     ["method", "endpoint"],
-    buckets=[0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0],
 )
 
 # Query Execution Metrics
 query_executions_total = Counter(
     "query_executions_total",
-    "Total number of query executions",
-    ["graph", "status"],
+    "Total number of Cypher query executions",
+    ["graph", "status"], # status: success, error
 )
 
 query_execution_duration_seconds = Histogram(
     "query_execution_duration_seconds",
-    "Query execution duration in seconds",
+    "Cypher query execution duration in seconds",
     ["graph"],
-    buckets=[0.1, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0],
 )
 
 query_result_rows = Histogram(
     "query_result_rows",
-    "Number of rows returned by queries",
+    "Number of rows returned by Cypher queries",
     ["graph"],
-    buckets=[10, 50, 100, 500, 1000, 5000, 10000, 50000, 100000],
+    buckets=[0, 1, 10, 50, 100, 500, 1000, 5000, 10000, float("inf")],
 )
 
 # Session Metrics
-active_sessions = Gauge(
-    "active_sessions",
-    "Number of active user sessions",
-)
-
 session_creations_total = Counter(
     "session_creations_total",
-    "Total number of session creations",
+    "Total number of sessions created",
 )
 
 session_destructions_total = Counter(
     "session_destructions_total",
-    "Total number of session destructions",
+    "Total number of sessions destroyed",
+)
+
+active_sessions = Gauge(
+    "active_sessions",
+    "Number of currently active sessions",
 )
 
 # Database Connection Metrics
 db_connection_attempts_total = Counter(
     "db_connection_attempts_total",
     "Total number of database connection attempts",
-    ["status"],
+    ["status"], # status: success, failure, disconnect
 )
 
 active_db_connections = Gauge(
     "active_db_connections",
-    "Number of active database connections",
+    "Number of currently active database connections",
 )
 
 db_query_duration_seconds = Histogram(
     "db_query_duration_seconds",
     "Database query duration in seconds",
-    buckets=[0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0],
+    buckets=[0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, float("inf")],
 )
 
 # Cache Metrics
@@ -101,14 +100,13 @@ errors_total = Counter(
     ["error_code", "error_category"],
 )
 
-# Graph Operations Metrics
+# Graph Operation Metrics
 graph_operations_total = Counter(
     "graph_operations_total",
     "Total number of graph operations",
     ["operation", "graph"],
 )
 
-# Node/Edge Operations
 node_operations_total = Counter(
     "node_operations_total",
     "Total number of node operations",
@@ -121,10 +119,6 @@ edge_operations_total = Counter(
     ["operation", "graph"],
 )
 
-
-import threading
-
-# ... existing code ...
 
 class MetricsCollector:
     """Helper class for collecting metrics."""
@@ -155,7 +149,7 @@ class MetricsCollector:
             self._known_databases.add(database)
             return database
 
-    def record_http_request(self, method: str, endpoint: str, status_code: int, duration: float):
+    def record_http_request(self, method: str, endpoint: str, status_code: int, duration: float) -> None:
         """Record HTTP request metrics."""
         http_requests_total.labels(method=method, endpoint=endpoint, status_code=status_code).inc()
         http_request_duration_seconds.labels(method=method, endpoint=endpoint).observe(duration)
@@ -166,7 +160,7 @@ class MetricsCollector:
         status: str,
         duration: float,
         row_count: Optional[int] = None,
-    ):
+    ) -> None:
         """Record query execution metrics."""
         safe_graph = self._sanitize_graph(graph)
         query_executions_total.labels(graph=safe_graph, status=status).inc()
@@ -175,19 +169,19 @@ class MetricsCollector:
             query_result_rows.labels(graph=safe_graph).observe(row_count)
 
     @staticmethod
-    def record_session_creation():
+    def record_session_creation() -> None:
         """Record session creation."""
         session_creations_total.inc()
         active_sessions.inc()
 
     @staticmethod
-    def record_session_destruction():
+    def record_session_destruction() -> None:
         """Record session destruction."""
         session_destructions_total.inc()
         active_sessions.dec()
 
     @staticmethod
-    def record_db_connection_attempt(status: str):
+    def record_db_connection_attempt(status: str) -> None:
         """Record database connection attempt."""
         db_connection_attempts_total.labels(status=status).inc()
         if status == "success":
@@ -196,36 +190,36 @@ class MetricsCollector:
             active_db_connections.dec()
 
     @staticmethod
-    def record_db_query(duration: float):
+    def record_db_query(duration: float) -> None:
         """Record database query duration."""
         db_query_duration_seconds.observe(duration)
 
     @staticmethod
-    def record_error(error_code: str, error_category: str):
+    def record_error(error_code: str, error_category: str) -> None:
         """Record error occurrence."""
         errors_total.labels(error_code=error_code, error_category=error_category).inc()
 
-    def record_graph_operation(self, operation: str, graph: str):
+    def record_graph_operation(self, operation: str, graph: str) -> None:
         """Record graph operation."""
         safe_graph = self._sanitize_graph(graph)
         graph_operations_total.labels(operation=operation, graph=safe_graph).inc()
 
-    def record_node_operation(self, operation: str, graph: str):
+    def record_node_operation(self, operation: str, graph: str) -> None:
         """Record node operation."""
         safe_graph = self._sanitize_graph(graph)
         node_operations_total.labels(operation=operation, graph=safe_graph).inc()
 
-    def record_edge_operation(self, operation: str, graph: str):
+    def record_edge_operation(self, operation: str, graph: str) -> None:
         """Record edge operation."""
         safe_graph = self._sanitize_graph(graph)
         edge_operations_total.labels(operation=operation, graph=safe_graph).inc()
 
     @staticmethod
-    def record_cache_request(cache_name: str, status: str):
+    def record_cache_request(cache_name: str, status: str) -> None:
         """Record cache hit/miss."""
         cache_requests_total.labels(cache_name=cache_name, status=status).inc()
 
-    def record_db_pool_stats(self, database: str, total: int, available: int, in_use: int):
+    def record_db_pool_stats(self, database: str, total: int, available: int, in_use: int) -> None:
         """Record database pool statistics."""
         safe_db = self._sanitize_database(database)
         db_pool_size.labels(database=safe_db, type="total").set(total)
@@ -240,5 +234,3 @@ class MetricsCollector:
 
 # Global instance
 metrics = MetricsCollector()
-
-

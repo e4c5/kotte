@@ -77,7 +77,11 @@ export default function TabBar({
             <div className="text-[10px] text-emerald-400 shrink-0" aria-label="Pinned tab">📌</div>
           )}
           <span className="flex-1 truncate">{tab.name}</span>
-          <div className="flex items-center gap-0.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="flex items-center gap-0.5 shrink-0"
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
+          >
             {onTabPin && (
               <button
                 type="button"

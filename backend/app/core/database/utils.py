@@ -2,10 +2,10 @@
 
 import re
 import secrets
-from typing import List, Optional
+from typing import Any, List, Optional
 
 
-def first_value(row: Optional[dict]) -> Optional[any]:
+def first_value(row: Optional[dict]) -> Optional[Any]:
     """Get the first value from a dict row (row_factory=dict_row)."""
     if not row:
         return None

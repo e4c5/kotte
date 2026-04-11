@@ -56,9 +56,10 @@ class QueryManager:
             logger.error("Failed to cancel backend PID %s", pid)
             return False
 
-    async def get_query_pid(self) -> Optional[int]:
+    async def get_query_pid(self, query_text: Optional[str] = None) -> Optional[int]:
         """
         Get the backend PID for a running query by matching its text in pg_stat_activity.
+        If query_text is None, returns the current backend PID if active.
         """
         try:
             # Get current backend PID
@@ -73,11 +74,19 @@ class QueryManager:
                 WHERE pid = %(pid)s
                   AND state = 'active'
                   AND query_start IS NOT NULL
-                LIMIT 1
             """
+            params = {"pid": current_pid}
+            
+            if query_text:
+                find_query += " AND query LIKE %(query_text)s"
+                # Use partial match as Cypher is often wrapped in SELECT * FROM ag_catalog.cypher(...)
+                params["query_text"] = f"%{query_text}%"
+                
+            find_query += " LIMIT 1"
+            
             async with self.db_conn.connection() as conn:
                 async with conn.cursor() as cur:
-                    await cur.execute(find_query, {"pid": current_pid})
+                    await cur.execute(find_query, params)
                     result = await cur.fetchone()
                     return first_value(result)
         except Exception as e:

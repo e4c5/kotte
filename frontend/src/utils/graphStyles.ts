@@ -60,7 +60,8 @@ const getDescriptivePropertyValue = (properties: Record<string, unknown>): strin
 
 const shortenLongIdentifier = (s: string): string => {
   if (s.length > 40 && (s.includes('.') || s.includes('#'))) {
-    return s.includes('#') ? s.split('#').pop()! : s.split('.').pop()!
+    const parts = s.includes('#') ? s.split('#') : s.split('.')
+    return parts.pop() || s
   }
   return s
 }

@@ -1,10 +1,10 @@
 """Cypher query execution logic for Apache AGE."""
 
-import json
+import hashlib
 import logging
 from typing import Optional
 
-from app.core.database.utils import dollar_quote_tag, cypher_return_columns
+from app.core.database.utils import cypher_return_columns
 from app.core.validation import validate_graph_name
 
 logger = logging.getLogger(__name__)
@@ -24,57 +24,60 @@ class CypherExecutor:
         timeout: Optional[int] = None,
     ) -> list[dict]:
         """
-        Execute a Cypher query via Apache AGE using literal SQL (graph and query as literals).
-        AGE's cypher() does not support bound (text, text) parameters; we pass validated
-        literals (dollar-quoted for cypher, escaped for graph name and params).
-        When there are no Cypher parameters we use the 2-arg cypher(graph, query) form;
-        when params are present we use the 3-arg form with a literal agtype.
-        A trailing semicolon is stripped before sending to AGE, which does not expect it.
+        Execute a Cypher query via Apache AGE using parameterized SQL.
+        A trailing semicolon is stripped before sending to AGE.
         """
         validated_graph_name = validate_graph_name(graph_name)
         cypher_normalized = cypher_query.rstrip()
         if cypher_normalized.endswith(";"):
             cypher_normalized = cypher_normalized[:-1].rstrip()
-        tag = dollar_quote_tag(cypher_normalized)
-        graph_literal = validated_graph_name.replace("'", "''")
-        cypher_literal = tag + cypher_normalized + tag
+        
         has_params = bool(params)
-        params_json = json.dumps(params) if has_params else "null"
-
+        
         # AGE requires AS (col1 agtype, ...) to match RETURN column count and names.
-        # Use quoted identifiers for column names.
         return_cols = cypher_return_columns(cypher_query)
         as_clause_str = ", ".join(f'"{c}" agtype' for c in return_cols)
 
+        # Build parameterized SQL
         if has_params:
-            params_literal = params_json.replace("'", "''")
             runnable_sql = (
                 f"SELECT * FROM ag_catalog.cypher("
-                f"'{graph_literal}', {cypher_literal}, '{params_literal}'::agtype"
+                f"%(graph_name)s::text, %(cypher_query)s::text, %(params)s::agtype"
                 f") AS ({as_clause_str})"
             )
-            run_params: Optional[dict] = None
+            run_params = {
+                "graph_name": validated_graph_name,
+                "cypher_query": cypher_normalized,
+                "params": params,
+            }
         else:
             runnable_sql = (
                 f"SELECT * FROM ag_catalog.cypher("
-                f"'{graph_literal}', {cypher_literal}"
+                f"%(graph_name)s::text, %(cypher_query)s::text"
                 f") AS ({as_clause_str})"
             )
-            run_params = None
+            run_params = {
+                "graph_name": validated_graph_name,
+                "cypher_query": cypher_normalized,
+            }
 
+        # Use hashes for logging to avoid exposing sensitive data
+        query_hash = hashlib.sha256(cypher_normalized.encode()).hexdigest()[:8]
         logger.info(
-            "execute_cypher: graph=%s, user cypher (verbatim): %s",
+            "execute_cypher: graph=%s, query_hash=%s, len=%d",
             validated_graph_name,
-            cypher_query,
+            query_hash,
+            len(cypher_normalized),
         )
-        logger.info("execute_cypher: generated SQL (template): %s", runnable_sql)
 
         try:
             return await self.db_conn.execute_query(runnable_sql, run_params, timeout=timeout)
-        except Exception:
+        except Exception as e:
             logger.error(
-                "execute_cypher: query failed; full generated SQL: %s",
-                runnable_sql,
+                "execute_cypher failed: graph=%s, query_hash=%s, error_type=%s",
+                validated_graph_name,
+                query_hash,
+                type(e).__name__,
                 exc_info=True,
             )
             raise
