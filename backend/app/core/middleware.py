@@ -53,11 +53,17 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
             
         # Content-Security-Policy (CSP)
-        # Note: In production this should be more restrictive
+        script_policy = "'self'"
+        style_policy = "'self' 'unsafe-inline'" # unsafe-inline often needed for CSS-in-JS or similar
+        
+        if settings.debug:
+            # Development mode often needs more permissive CSP for HMR, etc.
+            script_policy += " 'unsafe-inline' 'unsafe-eval'"
+            
         csp = (
-            "default-src 'self'; "
-            "script-src 'self' 'unsafe-inline' 'unsafe-eval'; " # unsafe-inline/eval often needed for React/Vite in some setups
-            "style-src 'self' 'unsafe-inline'; "
+            f"default-src 'self'; "
+            f"script-src {script_policy}; "
+            f"style-src {style_policy}; "
             "img-src 'self' data:; "
             "connect-src 'self'; "
             "font-src 'self'; "

@@ -125,24 +125,47 @@ edge_operations_total = Counter(
 class MetricsCollector:
     """Helper class for collecting metrics."""
 
-    @staticmethod
-    def record_http_request(method: str, endpoint: str, status_code: int, duration: float):
+    def __init__(self):
+        self._known_graphs = set()
+        self._known_databases = set()
+        self._max_labels = 100 # Maximum unique labels for graphs/databases to prevent explosion
+
+    def _sanitize_graph(self, graph: str) -> str:
+        """Limit cardinality of graph labels."""
+        if graph in self._known_graphs:
+            return graph
+        if len(self._known_graphs) >= self._max_labels:
+            return "other"
+        self._known_graphs.add(graph)
+        return graph
+
+    def _sanitize_database(self, database: str) -> str:
+        """Limit cardinality of database labels."""
+        if database in self._known_databases:
+            return database
+        if len(self._known_databases) >= self._max_labels:
+            return "other"
+        self._known_databases.add(database)
+        return database
+
+    def record_http_request(self, method: str, endpoint: str, status_code: int, duration: float):
         """Record HTTP request metrics."""
         http_requests_total.labels(method=method, endpoint=endpoint, status_code=status_code).inc()
         http_request_duration_seconds.labels(method=method, endpoint=endpoint).observe(duration)
 
-    @staticmethod
     def record_query_execution(
+        self,
         graph: str,
         status: str,
         duration: float,
         row_count: Optional[int] = None,
     ):
         """Record query execution metrics."""
-        query_executions_total.labels(graph=graph, status=status).inc()
-        query_execution_duration_seconds.labels(graph=graph).observe(duration)
+        safe_graph = self._sanitize_graph(graph)
+        query_executions_total.labels(graph=safe_graph, status=status).inc()
+        query_execution_duration_seconds.labels(graph=safe_graph).observe(duration)
         if row_count is not None:
-            query_result_rows.labels(graph=graph).observe(row_count)
+            query_result_rows.labels(graph=safe_graph).observe(row_count)
 
     @staticmethod
     def record_session_creation():
@@ -175,32 +198,32 @@ class MetricsCollector:
         """Record error occurrence."""
         errors_total.labels(error_code=error_code, error_category=error_category).inc()
 
-    @staticmethod
-    def record_graph_operation(operation: str, graph: str):
+    def record_graph_operation(self, operation: str, graph: str):
         """Record graph operation."""
-        graph_operations_total.labels(operation=operation, graph=graph).inc()
+        safe_graph = self._sanitize_graph(graph)
+        graph_operations_total.labels(operation=operation, graph=safe_graph).inc()
 
-    @staticmethod
-    def record_node_operation(operation: str, graph: str):
+    def record_node_operation(self, operation: str, graph: str):
         """Record node operation."""
-        node_operations_total.labels(operation=operation, graph=graph).inc()
+        safe_graph = self._sanitize_graph(graph)
+        node_operations_total.labels(operation=operation, graph=safe_graph).inc()
 
-    @staticmethod
-    def record_edge_operation(operation: str, graph: str):
+    def record_edge_operation(self, operation: str, graph: str):
         """Record edge operation."""
-        edge_operations_total.labels(operation=operation, graph=graph).inc()
+        safe_graph = self._sanitize_graph(graph)
+        edge_operations_total.labels(operation=operation, graph=safe_graph).inc()
 
     @staticmethod
     def record_cache_request(cache_name: str, status: str):
         """Record cache hit/miss."""
         cache_requests_total.labels(cache_name=cache_name, status=status).inc()
 
-    @staticmethod
-    def record_db_pool_stats(database: str, total: int, available: int, in_use: int):
+    def record_db_pool_stats(self, database: str, total: int, available: int, in_use: int):
         """Record database pool statistics."""
-        db_pool_size.labels(database=database, type="total").set(total)
-        db_pool_size.labels(database=database, type="available").set(available)
-        db_pool_size.labels(database=database, type="in_use").set(in_use)
+        safe_db = self._sanitize_database(database)
+        db_pool_size.labels(database=safe_db, type="total").set(total)
+        db_pool_size.labels(database=safe_db, type="available").set(available)
+        db_pool_size.labels(database=safe_db, type="in_use").set(in_use)
 
     @staticmethod
     def get_metrics() -> bytes:
