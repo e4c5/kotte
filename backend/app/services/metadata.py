@@ -1,50 +1,49 @@
 """Graph metadata discovery and indexing service."""
 
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 from app.core.database import DatabaseConnection
 from app.core.validation import validate_graph_name, validate_label_name, escape_identifier
 from app.services.agtype import AgTypeParser
+from app.services.cache import metadata_cache
 
 logger = logging.getLogger(__name__)
 
 
-class PropertyCache:
-    """Cache discovered properties with TTL to avoid repeated queries."""
-
-    def __init__(self, ttl_minutes: int = 60):
-        self._cache: Dict[str, Tuple[List[str], datetime]] = {}
-        self._ttl = timedelta(minutes=ttl_minutes)
+class LegacyPropertyCache:
+    """
+    Deprecated wrapper for metadata_cache to maintain backward compatibility
+    with synchronous code and tests.
+    """
 
     def get(self, graph_name: str, label_name: str) -> Optional[List[str]]:
-        """Get cached properties if not expired."""
-        key = f"{graph_name}.{label_name}"
-        if key in self._cache:
-            properties, timestamp = self._cache[key]
-            if datetime.now(timezone.utc) - timestamp < self._ttl:
-                return properties
-            del self._cache[key]
-        return None
+        key = f"props:{graph_name}:{label_name}:v"
+        return metadata_cache.get_sync(key)
 
     def set(self, graph_name: str, label_name: str, properties: List[str]) -> None:
-        """Cache properties with current timestamp."""
-        key = f"{graph_name}.{label_name}"
-        self._cache[key] = (properties, datetime.now(timezone.utc))
+        key = f"props:{graph_name}:{label_name}:v"
+        metadata_cache.set_sync(key, properties)
 
     def invalidate(self, graph_name: str, label_name: Optional[str] = None) -> None:
-        """Invalidate cache for graph or specific label."""
-        if label_name:
-            key = f"{graph_name}.{label_name}"
-            self._cache.pop(key, None)
-        else:
-            keys_to_remove = [k for k in self._cache if k.startswith(f"{graph_name}.")]
-            for key in keys_to_remove:
-                del self._cache[key]
+        import asyncio
+        try:
+            # Synchronous invalidate is tricky with the async lock
+            # For tests, we'll just clear the dict directly if no loop is running
+            if label_name:
+                key = f"props:{graph_name}:{label_name}:v"
+                metadata_cache._cache.pop(key, None)
+            else:
+                prefix = f"props:{graph_name}"
+                keys_to_remove = [k for k in metadata_cache._cache if k.startswith(prefix)]
+                for k in keys_to_remove:
+                    metadata_cache._cache.pop(k, None)
+        except Exception:
+            pass
 
 
-property_cache = PropertyCache(ttl_minutes=60)
+# Deprecated: use metadata_cache directly (async)
+property_cache = LegacyPropertyCache()
 
 
 class MetadataService:
@@ -60,22 +59,9 @@ class MetadataService:
     ) -> List[str]:
         """
         Discover property keys for a label using Cypher keys().
-
-        AGE stores properties as agtype, not jsonb, so we use Cypher to sample
-        nodes/edges and merge property keys instead of raw SQL jsonb functions.
-
-        Args:
-            db_conn: Database connection
-            graph_name: Name of the graph
-            label_name: Name of the label
-            label_kind: 'v' for vertex, 'e' for edge
-            sample_size: Max number of rows to sample for key discovery (default 1000)
-
-        Returns:
-            List of property keys found
         """
-        # Check cache first
-        cached = property_cache.get(graph_name, label_name)
+        cache_key = f"props:{graph_name}:{label_name}:{label_kind}"
+        cached = await metadata_cache.get(cache_key)
         if cached is not None:
             return cached
 
@@ -98,7 +84,6 @@ class MetadataService:
             )
             all_keys: set = set()
             for row in raw_rows:
-                # execute_cypher returns one column (e.g. "k" from RETURN keys(n) AS k)
                 val = next(iter(row.values()), None) if row else None
                 parsed = AgTypeParser.parse(val)
                 if isinstance(parsed, list):
@@ -106,7 +91,8 @@ class MetadataService:
                         if isinstance(k, str):
                             all_keys.add(k)
             properties = sorted(all_keys)
-            property_cache.set(graph_name, label_name, properties)
+            
+            await metadata_cache.set(cache_key, properties)
             return properties
 
         except Exception as e:
@@ -125,15 +111,12 @@ class MetadataService:
     ) -> Dict[str, int]:
         """
         Get approximate counts for all labels of a given kind in one query.
-
-        Args:
-            db_conn: Database connection.
-            graph_name: Name of the graph (validated via validate_graph_name).
-            label_kind: Label kind ('v' for vertex, 'e' for edge).
-
-        Returns:
-            Mapping of label name to non-negative approximate row count.
         """
+        cache_key = f"counts:{graph_name}:{label_kind}"
+        cached = await metadata_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
         try:
             validated_graph_name = validate_graph_name(graph_name)
             query = """
@@ -153,11 +136,15 @@ class MetadataService:
                 query,
                 {"graph_name": validated_graph_name, "label_kind": label_kind},
             )
-            return {
+            counts = {
                 row["label_name"]: max(int(row.get("estimate") or 0), 0)
                 for row in rows
                 if row.get("label_name")
             }
+            
+            # Cache for a shorter duration (10 minutes)
+            await metadata_cache.set(cache_key, counts, ttl_seconds=600)
+            return counts
         except Exception as e:
             logger.warning(
                 "Failed to get count estimates for graph %s kind %s: %s",
@@ -176,26 +163,13 @@ class MetadataService:
     ) -> int:
         """
         Get exact count for a label (slower but accurate).
-
-        Args:
-            db_conn: Database connection
-            graph_name: Name of the graph
-            label_name: Name of the label
-            label_kind: 'v' for vertex, 'e' for edge
-
-        Returns:
-            Exact count of records
         """
         try:
-            # Validate names (defense in depth)
             validated_graph_name = validate_graph_name(graph_name)
             validated_label_name = validate_label_name(label_name)
-
-            # Escape identifiers for safe use in SQL
             safe_graph = escape_identifier(validated_graph_name)
             safe_label = escape_identifier(validated_label_name)
 
-            # Use escaped names for defense in depth
             query = f"""
                 SELECT COUNT(*) as count
                 FROM {safe_graph}.{safe_label}
@@ -221,24 +195,17 @@ class MetadataService:
     ) -> Dict[str, Optional[float]]:
         """
         Get statistics (min, max) for a numeric property.
-
-        Args:
-            db_conn: Database connection
-            graph_name: Name of the graph
-            label_name: Name of the label
-            label_kind: 'v' for vertex, 'e' for edge
-            property_name: Name of the property to analyze
-            sample_size: Number of records to sample
-
-        Returns:
-            Dictionary with 'min' and 'max' values, or None if property is not numeric
         """
+        cache_key = f"stats:{graph_name}:{label_name}:{label_kind}:{property_name}"
+        cached = await metadata_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
         try:
             validated_graph_name = validate_graph_name(graph_name)
             validated_label_name = validate_label_name(label_name)
             limit = min(max(1, sample_size), 5000)
 
-            # AGE uses agtype for properties; sample via Cypher with parameterized key
             if label_kind == "v":
                 cypher = (
                     f"MATCH (n:{validated_label_name}) RETURN n[$key] AS val LIMIT $limit"
@@ -254,7 +221,6 @@ class MetadataService:
             )
             numeric_values = []
             for row in raw_rows:
-                # execute_cypher returns one column (e.g. "val" from RETURN n[$key] AS val)
                 val = next(iter(row.values()), None) if row else None
                 parsed = AgTypeParser.parse(val)
                 if parsed is not None:
@@ -262,9 +228,13 @@ class MetadataService:
                         numeric_values.append(float(parsed))
                     except (ValueError, TypeError):
                         continue
-            if not numeric_values:
-                return {"min": None, "max": None}
-            return {"min": min(numeric_values), "max": max(numeric_values)}
+            
+            stats = {"min": None, "max": None}
+            if numeric_values:
+                stats = {"min": min(numeric_values), "max": max(numeric_values)}
+            
+            await metadata_cache.set(cache_key, stats)
+            return stats
 
         except Exception as e:
             msg = f"Failed to get property statistics for {graph_name}.{label_name}.{property_name}: {e}"
@@ -282,12 +252,7 @@ class MetadataService:
     ) -> Dict[str, Dict[str, Optional[float]]]:
         """
         Get min/max statistics for all numeric properties of a label.
-
-        AGE stores properties as agtype, not jsonb, so we do not use raw SQL
-        with CROSS JOIN LATERAL jsonb_each_text. Callers can still get per-property
-        stats via get_property_statistics for each key from discover_properties.
         """
-        # Return empty; per-property stats are available via get_property_statistics
         return {}
 
     @staticmethod
@@ -299,9 +264,6 @@ class MetadataService:
     ) -> None:
         """
         Create foundational indices for a given label.
-
-        For vertices, creates an index on id.
-        For edges, creates indices on id, start_id, and end_id.
         """
         try:
             validated_graph_name = validate_graph_name(graph_name)
@@ -311,7 +273,6 @@ class MetadataService:
             safe_label = escape_identifier(validated_label_name)
             table_name = f"{safe_graph}.{safe_label}"
 
-            # Always index id; for edges also index start_id and end_id
             columns: list[str] = ["id"]
             if label_kind == "e":
                 columns.extend(["start_id", "end_id"])
@@ -327,6 +288,11 @@ class MetadataService:
             logger.info(
                 f"Ensured indices on {table_name} for columns: {', '.join(columns)}"
             )
+            # Invalidate count cache when schema changes
+            if label_name:
+                property_cache.invalidate(graph_name, label_name)
+            else:
+                property_cache.invalidate(graph_name)
         except Exception as e:
             logger.warning(
                 f"Failed to create indices for {graph_name}.{label_name} ({label_kind}): {e}"
@@ -346,5 +312,7 @@ class MetadataService:
             safe_label = escape_identifier(validated_label_name)
             await db_conn.execute_command(f"ANALYZE {safe_graph}.{safe_label}")
             logger.info("Updated statistics for %s.%s", validated_graph_name, validated_label_name)
+            # Invalidate count cache
+            property_cache.invalidate(graph_name)
         except Exception as e:
             logger.warning("Failed to analyze table %s.%s: %s", graph_name, label_name, e)

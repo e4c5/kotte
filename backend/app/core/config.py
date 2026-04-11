@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     db_user: str = "postgres"
     db_password: str = "postgres"
     db_connect_timeout: int = 10  # seconds
+    db_pool_min_size: int = 1
+    db_pool_max_size: int = 10
+    db_pool_max_idle: int = 300  # seconds
 
     # CORS
     cors_origins: List[str] = ["http://localhost:5173", "http://localhost:3000"]
@@ -55,6 +58,7 @@ class Settings(BaseSettings):
 
     # Logging
     log_level: str = "INFO"
+    structured_logging: bool = True
 
     # Credential Storage
     credential_storage_type: str = "json_file"  # json_file, sqlite, postgresql, redis

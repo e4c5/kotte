@@ -10,6 +10,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from app.api.v1 import router as v1_router
 from app.core.config import settings
 from app.core.errors import setup_error_handlers
+from app.core.logging import setup_logging
 from app.core.middleware import (
     CSRFMiddleware,
     MetricsMiddleware,
@@ -18,6 +19,7 @@ from app.core.middleware import (
     SecurityHeadersMiddleware,
 )
 
+setup_logging()
 logger = logging.getLogger(__name__)
 
 

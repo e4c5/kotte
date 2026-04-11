@@ -6,6 +6,41 @@ vi.mock('d3', async (importOriginal) => {
   const actual = await importOriginal<typeof import('d3')>()
   
   const createMockSelection = () => {
+    const simulation: any = {
+      alpha: vi.fn(),
+      alphaDecay: vi.fn(),
+      velocityDecay: vi.fn(),
+      force: vi.fn(),
+      on: vi.fn(),
+      stop: vi.fn(),
+      tick: vi.fn(),
+      alphaTarget: vi.fn(),
+      restart: vi.fn(),
+      nodes: vi.fn(),
+    }
+
+    const forceObj = {
+      id: vi.fn().mockReturnThis(),
+      distance: vi.fn().mockReturnThis(),
+      strength: vi.fn().mockReturnThis(),
+      radius: vi.fn().mockReturnThis(),
+      links: vi.fn().mockReturnThis(),
+    }
+
+    simulation.alpha.mockReturnThis()
+    simulation.alphaDecay.mockReturnThis()
+    simulation.velocityDecay.mockReturnThis()
+    simulation.force.mockImplementation((name: string, arg?: any) => {
+      if (arg === undefined) return forceObj
+      return simulation
+    })
+    simulation.on.mockReturnThis()
+    simulation.stop.mockReturnThis()
+    simulation.tick.mockReturnThis()
+    simulation.alphaTarget.mockReturnThis()
+    simulation.restart.mockReturnThis()
+    simulation.nodes.mockReturnThis()
+
     const selection: any = {
       selectAll: vi.fn(),
       remove: vi.fn(),
@@ -41,10 +76,10 @@ vi.mock('d3', async (importOriginal) => {
     selection.duration.mockReturnValue(selection)
     selection.tick.mockReturnValue(selection)
 
-    return selection
+    return { selection, simulation }
   }
 
-  const mockSelection = createMockSelection()
+  const { selection: mockSelection, simulation: mockSimulation } = createMockSelection()
   return {
     ...actual,
     select: vi.fn().mockReturnValue(mockSelection),
@@ -58,15 +93,7 @@ vi.mock('d3', async (importOriginal) => {
       translate: vi.fn().mockReturnThis(),
       scale: vi.fn().mockReturnThis(),
     },
-    forceSimulation: vi.fn().mockReturnValue({
-      alpha: vi.fn().mockReturnThis(),
-      alphaDecay: vi.fn().mockReturnThis(),
-      velocityDecay: vi.fn().mockReturnThis(),
-      force: vi.fn().mockReturnThis(),
-      on: vi.fn().mockReturnThis(),
-      stop: vi.fn().mockReturnThis(),
-      tick: vi.fn().mockReturnThis(),
-    }),
+    forceSimulation: vi.fn().mockReturnValue(mockSimulation),
     drag: vi.fn().mockReturnValue({
       on: vi.fn().mockReturnThis(),
     }),

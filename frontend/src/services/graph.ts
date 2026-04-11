@@ -62,8 +62,8 @@ export interface GraphNode {
 export interface GraphEdge {
   id: string
   label: string
-  source: string
-  target: string
+  source: string | GraphNode
+  target: string | GraphNode
   properties: Record<string, unknown>
   type: string
 }
@@ -85,22 +85,29 @@ export interface NodeDeleteResponse {
   edges_deleted: number
 }
 
+const CACHE_TTL_METADATA = 3600 * 1000 // 1 hour
+const CACHE_TTL_GRAPHS = 300 * 1000 // 5 minutes
+
 export const graphAPI = {
   listGraphs: async (): Promise<GraphInfo[]> => {
-    const response = await apiClient.get<GraphInfo[]>('/graphs')
+    const response = await apiClient.get<GraphInfo[]>('/graphs', {
+      cacheTtl: CACHE_TTL_GRAPHS
+    })
     return response.data
   },
 
   getMetadata: async (graphName: string): Promise<GraphMetadata> => {
     const response = await apiClient.get<GraphMetadata>(
-      `/graphs/${encodeURIComponent(graphName)}/metadata`
+      `/graphs/${encodeURIComponent(graphName)}/metadata`,
+      { cacheTtl: CACHE_TTL_METADATA }
     )
     return response.data
   },
 
   getMetaGraph: async (graphName: string): Promise<MetaGraphResponse> => {
     const response = await apiClient.get<MetaGraphResponse>(
-      `/graphs/${encodeURIComponent(graphName)}/meta-graph`
+      `/graphs/${encodeURIComponent(graphName)}/meta-graph`,
+      { cacheTtl: CACHE_TTL_METADATA }
     )
     return response.data
   },
@@ -122,7 +129,6 @@ export const graphAPI = {
     nodeId: string,
     request: NodeDeleteRequest = {}
   ): Promise<NodeDeleteResponse> => {
-    // Use query params for the detach option (FastAPI DELETE endpoints accept query params)
     const params = new URLSearchParams()
     if (request.detach !== undefined) {
       params.append('detach', String(request.detach))
@@ -134,4 +140,3 @@ export const graphAPI = {
     return response.data
   },
 }
-

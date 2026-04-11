@@ -21,10 +21,11 @@ class QueryManager:
     async def get_backend_pid(self) -> Optional[int]:
         """Get the backend PID for the current connection."""
         try:
-            async with self.db_conn.connection.cursor() as cur:
-                await cur.execute("SELECT pg_backend_pid()")
-                result = await cur.fetchone()
-                return first_value(result)
+            async with self.db_conn.connection() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute("SELECT pg_backend_pid()")
+                    result = await cur.fetchone()
+                    return first_value(result)
         except Exception as e:
             logger.warning(f"Failed to get backend PID: {e}")
             return None
@@ -74,10 +75,11 @@ class QueryManager:
                   AND query_start IS NOT NULL
                 LIMIT 1
             """
-            async with self.db_conn.connection.cursor() as cur:
-                await cur.execute(find_query, {"pid": current_pid})
-                result = await cur.fetchone()
-                return first_value(result)
+            async with self.db_conn.connection() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute(find_query, {"pid": current_pid})
+                    result = await cur.fetchone()
+                    return first_value(result)
         except Exception as e:
             logger.warning(f"Failed to get query PID: {e}")
             return None

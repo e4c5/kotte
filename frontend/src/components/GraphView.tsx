@@ -283,7 +283,20 @@ export default function GraphView({
     if (layout !== 'force' || !hasEdges) simulation.tick()
     if (userZoomedRef.current) { applyingAutoTransformRef.current = true; svg.call(zoom.transform, zoomTransformRef.current); applyingAutoTransformRef.current = false }
     else fitToView(false)
-    return () => { fitToViewRef.current = null; simulation.stop() }
+    
+    return () => { 
+      fitToViewRef.current = null; 
+      simulation.stop();
+      // Explicitly release references
+      simulation.nodes([]);
+      if (hasEdges) {
+        const linkForce = simulation.force('link') as d3.ForceLink<GraphNode, GraphEdge>;
+        if (linkForce) linkForce.links([]);
+      }
+      // Remove all elements and event listeners
+      svg.on('.zoom', null);
+      svg.selectAll('*').remove();
+    }
   }, [filteredNodes, filteredEdges, pathNodeIds, pathEdgeIds, width, height, layout, nodeStyles, edgeStyles, selectedNode, pinnedNodes, edgeWidthScale, edgeWidthMapping.property])
 
   const zoomBy = (factor: number) => {

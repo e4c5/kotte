@@ -3,7 +3,8 @@
 import pytest
 from unittest.mock import AsyncMock
 
-from app.services.metadata import MetadataService, property_cache
+from app.services.metadata import MetadataService
+from app.services.cache import metadata_cache
 
 
 class TestMetadataService:
@@ -12,10 +13,10 @@ class TestMetadataService:
     @pytest.mark.asyncio
     async def test_discover_properties_node_label(self, mock_db_connection):
         """Test discovering properties for a node label (Cypher keys() format)."""
-        property_cache.invalidate("test_graph", "Person")
+        await metadata_cache.clear()
         # execute_cypher returns AS (k agtype); k is list of keys from keys(n)
         mock_result = [
-            {"k": ["age", "city", "name"]},
+            {"k": '["age", "city", "name"]'}, # Parser expects AgType string in some mocks, or list
         ]
         mock_db_connection.execute_cypher = AsyncMock(return_value=mock_result)
 
@@ -31,9 +32,9 @@ class TestMetadataService:
     @pytest.mark.asyncio
     async def test_discover_properties_edge_label(self, mock_db_connection):
         """Test discovering properties for an edge label (Cypher keys() format)."""
-        property_cache.invalidate("test_graph", "KNOWS")
+        await metadata_cache.clear()
         mock_result = [
-            {"k": ["since", "weight"]},
+            {"k": '["since", "weight"]'},
         ]
         mock_db_connection.execute_cypher = AsyncMock(return_value=mock_result)
 
@@ -48,7 +49,7 @@ class TestMetadataService:
     @pytest.mark.asyncio
     async def test_discover_properties_empty_result(self, mock_db_connection):
         """Test discovering properties when no data exists."""
-        property_cache.invalidate("test_graph", "EmptyLabel")
+        await metadata_cache.clear()
         mock_db_connection.execute_cypher = AsyncMock(return_value=[])
 
         properties = await MetadataService.discover_properties(
@@ -61,7 +62,7 @@ class TestMetadataService:
     @pytest.mark.asyncio
     async def test_discover_properties_no_properties(self, mock_db_connection):
         """Test discovering properties when nodes have no properties."""
-        property_cache.invalidate("test_graph", "NoPropsLabel")
+        await metadata_cache.clear()
         mock_db_connection.execute_cypher = AsyncMock(return_value=[])
 
         properties = await MetadataService.discover_properties(
@@ -74,6 +75,7 @@ class TestMetadataService:
     @pytest.mark.asyncio
     async def test_get_label_count_estimates(self, mock_db_connection):
         """Test fetching label count estimates in one query."""
+        await metadata_cache.clear()
         mock_db_connection.execute_query = AsyncMock(
             return_value=[
                 {"label_name": "Person", "estimate": 123},
@@ -95,4 +97,3 @@ class TestMetadataService:
             mock_db_connection, "test_graph", "REL"
         )
         assert stats == {}
-

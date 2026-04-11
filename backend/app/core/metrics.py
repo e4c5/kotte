@@ -80,6 +80,20 @@ db_query_duration_seconds = Histogram(
     buckets=[0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0],
 )
 
+# Cache Metrics
+cache_requests_total = Counter(
+    "cache_requests_total",
+    "Total number of cache requests",
+    ["cache_name", "status"], # status: hit, miss
+)
+
+# Database Connection Pool Metrics
+db_pool_size = Gauge(
+    "db_pool_size",
+    "Number of connections in the pool",
+    ["database", "type"], # type: total, available, in_use
+)
+
 # Error Metrics
 errors_total = Counter(
     "errors_total",
@@ -175,6 +189,18 @@ class MetricsCollector:
     def record_edge_operation(operation: str, graph: str):
         """Record edge operation."""
         edge_operations_total.labels(operation=operation, graph=graph).inc()
+
+    @staticmethod
+    def record_cache_request(cache_name: str, status: str):
+        """Record cache hit/miss."""
+        cache_requests_total.labels(cache_name=cache_name, status=status).inc()
+
+    @staticmethod
+    def record_db_pool_stats(database: str, total: int, available: int, in_use: int):
+        """Record database pool statistics."""
+        db_pool_size.labels(database=database, type="total").set(total)
+        db_pool_size.labels(database=database, type="available").set(available)
+        db_pool_size.labels(database=database, type="in_use").set(in_use)
 
     @staticmethod
     def get_metrics() -> bytes:
