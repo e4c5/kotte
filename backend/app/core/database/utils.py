@@ -22,6 +22,31 @@ def dollar_quote_tag(cypher_query: str) -> str:
     return "$c" + secrets.token_hex(4) + "$"
 
 
+def _update_delimiter_depth(
+    c: str, depth_p: int, depth_b: int, depth_br: int
+) -> Optional[tuple[int, int, int]]:
+    """Adjust delimiter depths for ``c``; return None if a closing bracket has no opener."""
+    if c == "(":
+        return depth_p + 1, depth_b, depth_br
+    if c == ")":
+        if depth_p < 1:
+            return None
+        return depth_p - 1, depth_b, depth_br
+    if c == "[":
+        return depth_p, depth_b + 1, depth_br
+    if c == "]":
+        if depth_b < 1:
+            return None
+        return depth_p, depth_b - 1, depth_br
+    if c == "{":
+        return depth_p, depth_b, depth_br + 1
+    if c == "}":
+        if depth_br < 1:
+            return None
+        return depth_p, depth_b, depth_br - 1
+    return depth_p, depth_b, depth_br
+
+
 def split_top_level_commas(s: str) -> Optional[List[str]]:
     """Split s by commas only at top level (not inside (), [], {}, or strings).
     Returns None if quotes or brackets are unbalanced (ambiguous input)."""
@@ -54,36 +79,21 @@ def split_top_level_commas(s: str) -> Optional[List[str]]:
             cur.append(c)
             i += 1
             continue
-        if c == "(":
-            depth_p += 1
-        elif c == ")":
-            depth_p -= 1
-            if depth_p < 0:
-                return None
-        elif c == "[":
-            depth_b += 1
-        elif c == "]":
-            depth_b -= 1
-            if depth_b < 0:
-                return None
-        elif c == "{":
-            depth_br += 1
-        elif c == "}":
-            depth_br -= 1
-            if depth_br < 0:
-                return None
-        elif (
-            c == ","
-            and depth_p == 0
-            and depth_b == 0
-            and depth_br == 0
-        ):
+
+        new_depths = _update_delimiter_depth(c, depth_p, depth_b, depth_br)
+        if new_depths is None:
+            return None
+        depth_p, depth_b, depth_br = new_depths
+
+        if c == "," and depth_p == 0 and depth_b == 0 and depth_br == 0:
             parts.append("".join(cur).strip())
             cur = []
             i += 1
             continue
+
         cur.append(c)
         i += 1
+
     if in_sq or in_dq or depth_p != 0 or depth_b != 0 or depth_br != 0:
         return None
     parts.append("".join(cur).strip())

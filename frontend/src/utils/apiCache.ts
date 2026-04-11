@@ -9,7 +9,7 @@ interface CacheEntry<T> {
 }
 
 class ApiCache {
-  private cache: Map<string, CacheEntry<any>> = new Map()
+  private readonly cache: Map<string, CacheEntry<any>> = new Map()
 
   get<T>(key: string): T | null {
     const entry = this.cache.get(key)

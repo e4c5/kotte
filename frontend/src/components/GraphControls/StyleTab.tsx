@@ -51,7 +51,7 @@ export default function StyleTab({ availableNodeLabels, availableEdgeLabels }: S
                     min="5"
                     max="30"
                     value={style.size}
-                    onChange={(e) => setNodeStyle(label, { ...style, size: parseInt(e.target.value) })}
+                    onChange={(e) => setNodeStyle(label, { ...style, size: Number.parseInt(e.target.value, 10) })}
                     className="flex-1 accent-blue-500"
                   />
                   <span className="text-xs text-zinc-400 w-7">{style.size}</span>
@@ -115,7 +115,7 @@ export default function StyleTab({ availableNodeLabels, availableEdgeLabels }: S
                     min="1"
                     max="10"
                     value={style.size}
-                    onChange={(e) => setEdgeStyle(label, { ...style, size: parseInt(e.target.value) })}
+                    onChange={(e) => setEdgeStyle(label, { ...style, size: Number.parseInt(e.target.value, 10) })}
                     className="flex-1 accent-blue-500"
                   />
                   <span className="text-xs text-zinc-400 w-7">{style.size}</span>

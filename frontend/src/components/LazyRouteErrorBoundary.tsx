@@ -32,7 +32,7 @@ export class LazyRouteErrorBoundary extends Component<Props, State> {
             className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
             onClick={() => {
               this.setState({ hasError: false })
-              window.location.reload()
+              globalThis.location.reload()
             }}
           >
             Retry

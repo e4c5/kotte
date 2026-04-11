@@ -91,7 +91,8 @@ async def test_stream_query_empty_params_dict_reaches_execute_cypher():
         user_id="test-user",
     )
 
-    async for _ in stream_query_results(
+    ndjson_lines = 0
+    async for _chunk in stream_query_results(
         graph_name="test_graph",
         cypher_query="RETURN 1 AS x LIMIT 1",
         chunk_size=100,
@@ -100,6 +101,7 @@ async def test_stream_query_empty_params_dict_reaches_execute_cypher():
         request_id=request_id,
         params={},
     ):
-        pass
+        ndjson_lines += 1
 
+    assert ndjson_lines == 0
     assert mock_db.execute_cypher.call_args.kwargs["params"] == {}

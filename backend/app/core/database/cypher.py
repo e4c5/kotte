@@ -28,7 +28,7 @@ class CypherExecutor:
         graph_name: str,
         cypher_query: str,
         params: Optional[dict] = None,
-        timeout: Optional[int] = None,
+        time_limit_seconds: Optional[int] = None,
         *,
         conn: Optional[psycopg.AsyncConnection] = None,
     ) -> list[dict]:
@@ -82,7 +82,7 @@ class CypherExecutor:
 
         try:
             return await self.db_conn.execute_query(
-                runnable_sql, run_params, timeout=timeout, conn=conn
+                runnable_sql, run_params, time_limit_seconds=time_limit_seconds, conn=conn
             )
         except Exception as e:
             logger.error(

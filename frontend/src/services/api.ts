@@ -49,6 +49,12 @@ export async function ensureCsrfToken(): Promise<string | null> {
 
 type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
 
+/** Drop cached GET responses affected by graph/query mutations (prefix match on URL path). */
+function invalidateCachesAfterMutation(): void {
+  apiCache.clear('/graphs')
+  apiCache.clear('/queries')
+}
+
 interface RequestOptions {
   _csrfRetry?: boolean
   cacheTtl?: number // TTL in milliseconds
@@ -99,9 +105,9 @@ async function request<T>(
       apiCache.set(url, resultData, options.cacheTtl)
     }
     
-    // Invalidate cached GETs after mutations (graph list, metadata, meta-graph, etc.)
+    // Invalidate cached GETs after mutations (graph list, metadata, templates, etc.)
     if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
-      apiCache.clear('/graphs')
+      invalidateCachesAfterMutation()
     }
 
     return { data: resultData }

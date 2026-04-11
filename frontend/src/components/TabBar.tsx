@@ -77,15 +77,14 @@ export default function TabBar({
             <div className="text-[10px] text-emerald-400 shrink-0" aria-label="Pinned tab">📌</div>
           )}
           <span className="flex-1 truncate">{tab.name}</span>
-          <div
-            className="flex items-center gap-0.5 shrink-0"
-            onClick={(e) => e.stopPropagation()}
-            onKeyDown={(e) => e.stopPropagation()}
-          >
+          <div className="flex items-center gap-0.5 shrink-0">
             {onTabPin && (
               <button
                 type="button"
-                onClick={(e) => onTabPin(tab.id, e)}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onTabPin(tab.id, e)
+                }}
                 aria-label={tab.pinned ? `Unpin tab: ${tab.name}` : `Pin tab: ${tab.name}`}
                 className="p-0.5 rounded text-zinc-500 hover:text-emerald-400 text-[10px] leading-none"
                 title={tab.pinned ? "Unpin tab" : "Pin tab"}
@@ -95,7 +94,10 @@ export default function TabBar({
             )}
             <button
               type="button"
-              onClick={(e) => onTabClose(tab.id, e)}
+              onClick={(e) => {
+                e.stopPropagation()
+                onTabClose(tab.id, e)
+              }}
               aria-label={`Close tab: ${tab.name}`}
               className="p-0.5 rounded text-zinc-400 text-sm leading-none hover:text-zinc-100"
               title="Close tab"

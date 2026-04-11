@@ -20,6 +20,73 @@ const triggerDownload = (blob: Blob, svgObjectUrl: string) => {
   queueMicrotask(() => URL.revokeObjectURL(pngObjectUrl))
 }
 
+function finalizePngBlob(
+  blob: Blob | null,
+  svgObjectUrl: string,
+  resolve: () => void,
+  reject: (reason?: unknown) => void,
+): void {
+  if (!blob) {
+    URL.revokeObjectURL(svgObjectUrl)
+    reject(new Error('Failed to create PNG blob'))
+    return
+  }
+  triggerDownload(blob, svgObjectUrl)
+  resolve()
+}
+
+function drawSvgToPngBlob(
+  img: HTMLImageElement,
+  svgObjectUrl: string,
+  width: number,
+  height: number,
+  resolve: () => void,
+  reject: (reason?: unknown) => void,
+): void {
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = height
+  const ctx = canvas.getContext('2d')
+
+  if (!ctx) {
+    URL.revokeObjectURL(svgObjectUrl)
+    reject(new Error('Could not get canvas context'))
+    return
+  }
+
+  ctx.fillStyle = 'white'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+  ctx.drawImage(img, 0, 0)
+
+  canvas.toBlob(
+    (blob) => finalizePngBlob(blob, svgObjectUrl, resolve, reject),
+    'image/png',
+  )
+}
+
+function attachSvgExportHandlers(
+  img: HTMLImageElement,
+  svgObjectUrl: string,
+  width: number,
+  height: number,
+  resolve: () => void,
+  reject: (reason?: unknown) => void,
+): void {
+  img.onload = () => {
+    try {
+      drawSvgToPngBlob(img, svgObjectUrl, width, height, resolve, reject)
+    } catch (error) {
+      URL.revokeObjectURL(svgObjectUrl)
+      reject(error)
+    }
+  }
+
+  img.onerror = () => {
+    URL.revokeObjectURL(svgObjectUrl)
+    reject(new Error('Failed to load SVG image'))
+  }
+}
+
 export function useGraphExport({ svgRef, width, height }: UseGraphExportProps) {
   const exportToPNG = useCallback(async (): Promise<void> => {
     if (!svgRef.current) {
@@ -27,10 +94,10 @@ export function useGraphExport({ svgRef, width, height }: UseGraphExportProps) {
     }
 
     const svg = svgRef.current
-    
+
     // Clone the SVG to avoid modifying the original
     const clonedSvg = svg.cloneNode(true) as SVGSVGElement
-    
+
     // Get the transform from the zoom container
     const container = svg.querySelector('g')
     if (container) {
@@ -43,56 +110,19 @@ export function useGraphExport({ svgRef, width, height }: UseGraphExportProps) {
         }
       }
     }
-    
+
     // Serialize SVG to string
     const serializer = new XMLSerializer()
     const svgString = serializer.serializeToString(clonedSvg)
-    
+
     // Create a data URL
     const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' })
     const url = URL.createObjectURL(svgBlob)
-    
-    // Create an image element
+
     const img = new Image()
-    
+
     return new Promise((resolve, reject) => {
-      img.onload = () => {
-        try {
-          const canvas = document.createElement('canvas')
-          canvas.width = width
-          canvas.height = height
-          const ctx = canvas.getContext('2d')
-          
-          if (!ctx) {
-            URL.revokeObjectURL(url)
-            reject(new Error('Could not get canvas context'))
-            return
-          }
-          
-          ctx.fillStyle = 'white'
-          ctx.fillRect(0, 0, canvas.width, canvas.height)
-          ctx.drawImage(img, 0, 0)
-          
-          canvas.toBlob((blob) => {
-            if (!blob) {
-              URL.revokeObjectURL(url)
-              reject(new Error('Failed to create PNG blob'))
-              return
-            }
-            triggerDownload(blob, url)
-            resolve()
-          }, 'image/png')
-        } catch (error) {
-          URL.revokeObjectURL(url)
-          reject(error)
-        }
-      }
-      
-      img.onerror = () => {
-        URL.revokeObjectURL(url)
-        reject(new Error('Failed to load SVG image'))
-      }
-      
+      attachSvgExportHandlers(img, url, width, height, resolve, reject)
       img.src = url
     })
   }, [svgRef, width, height])

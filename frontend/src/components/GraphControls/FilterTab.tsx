@@ -77,15 +77,18 @@ export default function FilterTab({ availableNodeLabels, availableEdgeLabels }: 
 
       <div>
         <h4 className="text-sm font-semibold text-zinc-300 mb-2">Property Filters</h4>
-        {filters.propertyFilters.map((filter, idx) => (
-          <div key={idx} className="flex justify-between items-center gap-2 p-2 mb-2 rounded-lg bg-zinc-800 border border-zinc-700">
+        {filters.propertyFilters.map((filter) => (
+          <div
+            key={filter.id}
+            className="flex justify-between items-center gap-2 p-2 mb-2 rounded-lg bg-zinc-800 border border-zinc-700"
+          >
             <span className="text-xs text-zinc-300 truncate min-w-0">
               {filter.label ? `${filter.label}.` : ''}
               {filter.property} {filter.operator} &quot;{filter.value}&quot;
             </span>
             <button
               type="button"
-              onClick={() => removePropertyFilter(idx)}
+              onClick={() => removePropertyFilter(filter.id)}
               className="shrink-0 px-2 py-1 text-xs rounded border border-zinc-600 text-zinc-300 hover:bg-zinc-700"
             >
               Remove

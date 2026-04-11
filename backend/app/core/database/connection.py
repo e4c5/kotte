@@ -201,7 +201,7 @@ class DatabaseConnection:
         conn: psycopg.AsyncConnection,
         query: str,
         params: Optional[dict],
-        timeout: int,
+        time_limit_seconds: int,
         start_time: float,
         *,
         rollback_on_error: bool = True,
@@ -210,7 +210,7 @@ class DatabaseConnection:
             try:
                 await asyncio.wait_for(
                     cur.execute(query, params),
-                    timeout=timeout,
+                    timeout=time_limit_seconds,
                 )
                 result = await cur.fetchall()
                 duration = time.time() - start_time
@@ -223,7 +223,7 @@ class DatabaseConnection:
                 logger.warning(
                     "Query timeout (hash: %s) after %s seconds",
                     query_hash,
-                    timeout,
+                    time_limit_seconds,
                 )
                 if rollback_on_error:
                     await conn.rollback()
@@ -239,7 +239,7 @@ class DatabaseConnection:
         self,
         query: str,
         params: Optional[dict] = None,
-        timeout: Optional[int] = None,
+        time_limit_seconds: Optional[int] = None,
         *,
         conn: Optional[psycopg.AsyncConnection] = None,
     ) -> list[dict]:
@@ -247,16 +247,16 @@ class DatabaseConnection:
         Execute a query. Uses ``conn`` when provided (e.g. inside ``transaction()``);
         otherwise checks out a connection from the pool.
         """
-        if timeout is None:
-            timeout = settings.query_timeout
+        if time_limit_seconds is None:
+            time_limit_seconds = settings.query_timeout
         start_time = time.time()
         if conn is not None:
             return await self._execute_query_on_conn(
-                conn, query, params, timeout, start_time, rollback_on_error=False
+                conn, query, params, time_limit_seconds, start_time, rollback_on_error=False
             )
         async with self.connection() as ac:
             return await self._execute_query_on_conn(
-                ac, query, params, timeout, start_time
+                ac, query, params, time_limit_seconds, start_time
             )
 
     async def _execute_command_on_conn(
@@ -264,7 +264,7 @@ class DatabaseConnection:
         conn: psycopg.AsyncConnection,
         query: str,
         params: Optional[dict],
-        timeout: int,
+        time_limit_seconds: int,
         start_time: float,
         *,
         rollback_on_error: bool = True,
@@ -273,7 +273,7 @@ class DatabaseConnection:
             try:
                 await asyncio.wait_for(
                     cur.execute(query, params),
-                    timeout=timeout,
+                    timeout=time_limit_seconds,
                 )
                 duration = time.time() - start_time
                 metrics.record_db_query(duration)
@@ -284,7 +284,7 @@ class DatabaseConnection:
                 logger.warning(
                     "Command timeout (hash: %s) after %s seconds",
                     query_hash,
-                    timeout,
+                    time_limit_seconds,
                 )
                 if rollback_on_error:
                     await conn.rollback()
@@ -302,35 +302,37 @@ class DatabaseConnection:
         self,
         query: str,
         params: Optional[dict] = None,
-        timeout: Optional[int] = None,
+        time_limit_seconds: Optional[int] = None,
         *,
         conn: Optional[psycopg.AsyncConnection] = None,
     ) -> None:
         """Execute a command (no result set). Pass ``conn`` to join an open transaction."""
-        if timeout is None:
-            timeout = settings.query_timeout
+        if time_limit_seconds is None:
+            time_limit_seconds = settings.query_timeout
         start_time = time.time()
         if conn is not None:
             await self._execute_command_on_conn(
-                conn, query, params, timeout, start_time, rollback_on_error=False
+                conn, query, params, time_limit_seconds, start_time, rollback_on_error=False
             )
             return
         async with self.connection() as ac:
-            await self._execute_command_on_conn(ac, query, params, timeout, start_time)
+            await self._execute_command_on_conn(ac, query, params, time_limit_seconds, start_time)
 
     async def _execute_scalar_on_conn(
         self,
         conn: psycopg.AsyncConnection,
         query: str,
         params: Optional[dict],
-        timeout: int,
+        time_limit_seconds: int,
         *,
         rollback_on_error: bool = True,
     ) -> Optional[Any]:
         start_clock = time.time()
         async with conn.cursor() as cur:
             try:
-                await asyncio.wait_for(cur.execute(query, params), timeout=timeout)
+                await asyncio.wait_for(
+                    cur.execute(query, params), timeout=time_limit_seconds
+                )
                 result = await cur.fetchone()
                 metrics.record_db_query(time.time() - start_clock)
                 return first_value(result)
@@ -344,30 +346,32 @@ class DatabaseConnection:
         query: str,
         params: Optional[dict] = None,
         *,
-        timeout: Optional[int] = None,
+        time_limit_seconds: Optional[int] = None,
         conn: Optional[psycopg.AsyncConnection] = None,
     ) -> Optional[Any]:
         """Execute a query and return a single scalar value."""
-        if timeout is None:
-            timeout = settings.query_timeout
+        if time_limit_seconds is None:
+            time_limit_seconds = settings.query_timeout
         if conn is not None:
             return await self._execute_scalar_on_conn(
-                conn, query, params, timeout, rollback_on_error=False
+                conn, query, params, time_limit_seconds, rollback_on_error=False
             )
         async with self.connection() as ac:
             try:
-                return await self._execute_scalar_on_conn(ac, query, params, timeout)
+                return await self._execute_scalar_on_conn(
+                    ac, query, params, time_limit_seconds
+                )
             except Exception:
                 await ac.rollback()
                 raise
 
     @asynccontextmanager
-    async def transaction(self, timeout: Optional[int] = None):
+    async def transaction(self, time_limit_seconds: Optional[int] = None):
         """
         Context manager for database transactions with guaranteed resource cleanup.
         """
-        effective_timeout = timeout if timeout is not None else 60
-        
+        effective_timeout = time_limit_seconds if time_limit_seconds is not None else 60
+
         try:
             async with asyncio.timeout(effective_timeout):
                 async with self.connection() as conn:
@@ -381,11 +385,11 @@ class DatabaseConnection:
                                 )
                         except Exception as e:
                             logger.warning(f"Failed to set transaction statement_timeout: {e}")
-                        
+
                         yield conn
         except TimeoutError:
-            logger.warning(f"Transaction or connection acquisition timed out after {effective_timeout} seconds")
-            raise
-        except Exception:
-            # Re-raise other exceptions; conn.transaction() handles the rollback
+            logger.warning(
+                "Transaction or connection acquisition timed out after %s seconds",
+                effective_timeout,
+            )
             raise

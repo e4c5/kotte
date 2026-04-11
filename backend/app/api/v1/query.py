@@ -163,7 +163,7 @@ async def execute_query(
                 validated_graph_name,
                 cypher_to_execute,
                 params=request.params,
-                timeout=settings.query_timeout,
+                time_limit_seconds=settings.query_timeout,
                 conn=exec_conn,
             )
         

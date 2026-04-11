@@ -47,17 +47,6 @@ export const getEdgeStyle = (
   return baseStyle
 }
 
-const getDescriptivePropertyValue = (properties: Record<string, unknown>): string | null => {
-  const nameKeys = ['name', 'title', 'fqn', 'signature']
-  for (const key of nameKeys) {
-    const value = properties[key]
-    if (value != null && String(value).trim() !== '') {
-      return String(value)
-    }
-  }
-  return null
-}
-
 const shortenLongIdentifier = (s: string): string => {
   if (s.length > 40 && (s.includes('.') || s.includes('#'))) {
     const parts = s.includes('#') ? s.split('#') : s.split('.')
@@ -72,10 +61,31 @@ const safeStringify = (value: unknown): string => {
     try {
       return JSON.stringify(value)
     } catch (e) {
-      return String(value)
+      console.warn('JSON.stringify failed for graph style value', e)
+      return '[unserializable]'
     }
   }
   return String(value)
+}
+
+const getDescriptivePropertyValue = (properties: Record<string, unknown>): string | null => {
+  const nameKeys = ['name', 'title', 'fqn', 'signature']
+  for (const key of nameKeys) {
+    const value = properties[key]
+    if (value === null || value === undefined) continue
+    if (typeof value === 'object') {
+      const s = safeStringify(value).trim()
+      if (s !== '' && s !== '{}') {
+        return s
+      }
+      continue
+    }
+    const s = String(value).trim()
+    if (s !== '') {
+      return s
+    }
+  }
+  return null
 }
 
 export const getNodeCaption = (
@@ -112,5 +122,8 @@ export const getEdgeCaption = (
   if (field === 'label') return edge.label
 
   const fromProperty = edge.properties?.[field]
-  return fromProperty != null ? safeStringify(fromProperty) : edge.label
+  if (fromProperty == null) {
+    return edge.label
+  }
+  return safeStringify(fromProperty)
 }

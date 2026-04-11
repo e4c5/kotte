@@ -212,6 +212,12 @@ export default function GraphView({
     })
     simulationRef.current = simulation
 
+    const nodeStrokeColor = (d: GraphNode) => {
+      if (selectedNode === d.id) return '#ff0000'
+      if (pathNodeIds.has(d.id)) return '#004499'
+      return '#fff'
+    }
+
     const link = container.append('g').attr('class', 'links').selectAll('line').data(filteredEdges).enter().append('line')
       .attr('stroke', (d) => pathEdgeIds.has(String(d.id)) ? '#0066cc' : getEdgeStyle(d, edgeStyles, edgeWidthScale, edgeWidthMapping.property).color)
       .attr('stroke-opacity', (d) => pathEdgeIds.has(String(d.id)) ? 1 : 0.6)
@@ -238,7 +244,7 @@ export default function GraphView({
     const node = container.append('g').attr('class', 'nodes').attr('role', 'group').attr('aria-label', 'Graph nodes').selectAll('circle').data(filteredNodes).enter().append('circle')
       .attr('r', (d) => getNodeStyle(d, nodeStyles).size)
       .attr('fill', (d) => pathNodeIds.has(d.id) ? '#0066cc' : getNodeStyle(d, nodeStyles).color)
-      .attr('stroke', (d) => selectedNode === d.id ? '#ff0000' : (pathNodeIds.has(d.id) ? '#004499' : '#fff'))
+      .attr('stroke', (d) => nodeStrokeColor(d))
       .attr('stroke-width', (d) => selectedNode === d.id || pathNodeIds.has(d.id) ? 3 : 2)
       .style('cursor', 'pointer').attr('role', 'button').attr('tabindex', 0).attr('aria-label', (d) => `Node: ${d.label}, ID: ${d.id}`).attr('aria-pressed', (d) => selectedNode === d.id)
       .call(d3.drag<SVGCircleElement, GraphNode>().on('start', (event, d) => {
@@ -249,7 +255,16 @@ export default function GraphView({
         if (layout === 'force') { d.fx = event.x; d.fy = event.y } else { d.x = event.x; d.y = event.y }
         applyPositions()
       }).on('end', (event, d) => {
-        if (layout === 'force') { if (!event.active) simulation.alphaTarget(0); if (!pinnedNodes.has(d.id)) { d.fx = null; d.fy = null } }
+        if (layout !== 'force') {
+          return
+        }
+        if (!event.active) {
+          simulation.alphaTarget(0)
+        }
+        if (!pinnedNodes.has(d.id)) {
+          d.fx = null
+          d.fy = null
+        }
       }))
       .on('click', (event, d) => { event.stopPropagation(); onNodeClickRef.current?.(d) })
       .on('contextmenu', (event, d) => { event.preventDefault(); onNodeRightClickRef.current?.(d, event) })
@@ -320,7 +335,9 @@ export default function GraphView({
   const zoomBy = (factor: number) => {
     const svg = svgSelectionRef.current, zoom = zoomBehaviorRef.current
     if (!svg || !zoom) return
-    const current = d3.zoomTransform(svg.node()!), nextScale = Math.max(0.05, Math.min(20, current.k * factor))
+    const el = svg.node()
+    if (!el) return
+    const current = d3.zoomTransform(el), nextScale = Math.max(0.05, Math.min(20, current.k * factor))
     svg.call(zoom.scaleTo, nextScale, [resolvedSize.width / 2, resolvedSize.height / 2])
   }
 

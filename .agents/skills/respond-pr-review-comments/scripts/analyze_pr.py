@@ -23,7 +23,7 @@ query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
           id
           isResolved
           isOutdated
-          comments(first: 50) {
+          comments(first: 100) {
             nodes {
               id
               url

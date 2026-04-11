@@ -63,11 +63,11 @@ class DatabaseConnection(BaseConnection):
         graph_name: str,
         cypher_query: str,
         params: Optional[dict] = None,
-        timeout: Optional[int] = None,
+        time_limit_seconds: Optional[int] = None,
         *,
         conn: Optional[psycopg.AsyncConnection] = None,
     ) -> list[dict]:
         """Execute a Cypher query via Apache AGE."""
         return await self._cypher_executor.execute_cypher(
-            graph_name, cypher_query, params, timeout, conn=conn
+            graph_name, cypher_query, params, time_limit_seconds, conn=conn
         )

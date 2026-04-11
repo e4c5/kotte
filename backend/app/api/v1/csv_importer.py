@@ -167,7 +167,7 @@ async def import_csv(
         rejected = 0
         errors: list[str] = []
 
-        async with db_conn.transaction(timeout=300) as conn:
+        async with db_conn.transaction(time_limit_seconds=300) as conn:
             # Ensure graph exists inside transaction
             graph_check = """
                 SELECT graphid FROM ag_catalog.ag_graph WHERE name = %(graph_name)s

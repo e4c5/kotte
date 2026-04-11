@@ -116,7 +116,7 @@ async def stream_query_results(
                     validated_graph_name,
                     cypher_query,
                     params=params,
-                    timeout=settings.query_timeout,
+                    time_limit_seconds=settings.query_timeout,
                     conn=exec_conn,
                 )
 
@@ -170,7 +170,7 @@ async def stream_query_results(
                     validated_graph_name,
                     modified_cypher,
                     params=params,
-                    timeout=settings.query_timeout,
+                    time_limit_seconds=settings.query_timeout,
                     conn=exec_conn,
                 )
 
