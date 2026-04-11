@@ -122,6 +122,10 @@ edge_operations_total = Counter(
 )
 
 
+import threading
+
+# ... existing code ...
+
 class MetricsCollector:
     """Helper class for collecting metrics."""
 
@@ -129,24 +133,27 @@ class MetricsCollector:
         self._known_graphs = set()
         self._known_databases = set()
         self._max_labels = 100 # Maximum unique labels for graphs/databases to prevent explosion
+        self._lock = threading.Lock()
 
     def _sanitize_graph(self, graph: str) -> str:
-        """Limit cardinality of graph labels."""
-        if graph in self._known_graphs:
+        """Limit cardinality of graph labels. Thread-safe."""
+        with self._lock:
+            if graph in self._known_graphs:
+                return graph
+            if len(self._known_graphs) >= self._max_labels:
+                return "other"
+            self._known_graphs.add(graph)
             return graph
-        if len(self._known_graphs) >= self._max_labels:
-            return "other"
-        self._known_graphs.add(graph)
-        return graph
 
     def _sanitize_database(self, database: str) -> str:
-        """Limit cardinality of database labels."""
-        if database in self._known_databases:
+        """Limit cardinality of database labels. Thread-safe."""
+        with self._lock:
+            if database in self._known_databases:
+                return database
+            if len(self._known_databases) >= self._max_labels:
+                return "other"
+            self._known_databases.add(database)
             return database
-        if len(self._known_databases) >= self._max_labels:
-            return "other"
-        self._known_databases.add(database)
-        return database
 
     def record_http_request(self, method: str, endpoint: str, status_code: int, duration: float):
         """Record HTTP request metrics."""

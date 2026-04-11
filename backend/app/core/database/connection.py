@@ -231,21 +231,29 @@ class DatabaseConnection:
 
     @asynccontextmanager
     async def transaction(self, timeout: Optional[int] = None):
-        """Context manager for database transactions."""
+        """
+        Context manager for database transactions with guaranteed resource cleanup.
+        """
         effective_timeout = timeout if timeout is not None else 60
-            
-        async with self.connection() as conn:
-            try:
-                async with asyncio.timeout(effective_timeout):
+        
+        try:
+            async with asyncio.timeout(effective_timeout):
+                async with self.connection() as conn:
+                    # psycopg's transaction() context manager handles BEGIN/COMMIT/ROLLBACK
                     async with conn.transaction():
                         try:
                             async with conn.cursor() as cur:
+                                # Also set a server-side timeout as a second line of defense
                                 await cur.execute(
                                     f"SET LOCAL statement_timeout = {effective_timeout * 1000}"
                                 )
                         except Exception as e:
                             logger.warning(f"Failed to set transaction statement_timeout: {e}")
-                        yield
-            except TimeoutError:
-                logger.warning(f"Transaction timeout after {effective_timeout} seconds")
-                raise
+                        
+                        yield conn
+        except TimeoutError:
+            logger.warning(f"Transaction or connection acquisition timed out after {effective_timeout} seconds")
+            raise
+        except Exception:
+            # Re-raise other exceptions; conn.transaction() handles the rollback
+            raise
