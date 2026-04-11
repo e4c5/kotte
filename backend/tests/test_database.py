@@ -151,6 +151,19 @@ class TestExecuteCypher:
         assert params["cypher_query"] == "MATCH (n) RETURN n AS node"
 
     @pytest.mark.asyncio
+    async def test_execute_cypher_empty_params_dict_uses_three_arg_form(self):
+        """Explicit params={} must use 3-arg cypher(..., params), not 2-arg."""
+        conn = DatabaseConnection(
+            host="h", port=5432, database="d", user="u", password="p"
+        )
+        conn.execute_query = AsyncMock(return_value=[])
+        await conn.execute_cypher("g", "RETURN 1 AS c1", params={})
+        sql_str = conn.execute_query.call_args[0][0]
+        params = conn.execute_query.call_args[0][1]
+        assert "%(params)s" in sql_str
+        assert params["params"] == {}
+
+    @pytest.mark.asyncio
     async def test_execute_cypher_three_arg_form_with_params(self):
         """With params set, uses 3-arg cypher(..., params) with placeholders."""
         conn = DatabaseConnection(

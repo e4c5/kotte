@@ -18,18 +18,22 @@ class QueryManager:
     def __init__(self, db_conn):
         self.db_conn = db_conn
 
-    async def get_backend_pid(self) -> Optional[int]:
+    async def get_backend_pid(
+        self, conn: Optional[psycopg.AsyncConnection] = None
+    ) -> Optional[int]:
         """
-        Return the backend PID for a connection checked out from the pool.
-
-        Each call uses a pooled connection; the PID identifies that checkout, not
-        necessarily the same physical session as another operation. For cancellation
-        or correlation, pair with the connection used for the active query when
-        possible.
+        Return ``pg_backend_pid()`` for the given connection, or check out the pool
+        when ``conn`` is omitted. Pass ``conn`` when it is the same handle used for
+        the query being tracked or cancelled.
         """
         try:
-            async with self.db_conn.connection() as conn:
+            if conn is not None:
                 async with conn.cursor() as cur:
+                    await cur.execute("SELECT pg_backend_pid()")
+                    result = await cur.fetchone()
+                    return first_value(result)
+            async with self.db_conn.connection() as pooled:
+                async with pooled.cursor() as cur:
                     await cur.execute("SELECT pg_backend_pid()")
                     result = await cur.fetchone()
                     return first_value(result)
@@ -65,33 +69,35 @@ class QueryManager:
 
     async def get_query_pid(self, query_text: Optional[str] = None) -> Optional[int]:
         """
-        Get the backend PID for a running query by matching its text in pg_stat_activity.
-        If query_text is None, returns the current backend PID if active.
+        Match a running query in ``pg_stat_activity`` for this session.
+
+        Uses one pooled connection for both ``pg_backend_pid()`` and the activity
+        lookup so the PID corresponds to the same backend session.
         """
         try:
-            # Get current backend PID
-            current_pid = await self.get_backend_pid()
-            if not current_pid:
-                return None
-
-            # Query pg_stat_activity for this PID
-            find_query = """
-                SELECT pid
-                FROM pg_stat_activity
-                WHERE pid = %(pid)s
-                  AND state = 'active'
-                  AND query_start IS NOT NULL
-            """
-            params = {"pid": current_pid}
-            
-            if query_text:
-                find_query += " AND query LIKE %(query_text)s"
-                # Use partial match as Cypher is often wrapped in SELECT * FROM ag_catalog.cypher(...)
-                params["query_text"] = f"%{query_text}%"
-                
-            find_query += " LIMIT 1"
-            
             async with self.db_conn.connection() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute("SELECT pg_backend_pid()")
+                    result = await cur.fetchone()
+                    current_pid = first_value(result)
+                if not current_pid:
+                    return None
+
+                find_query = """
+                    SELECT pid
+                    FROM pg_stat_activity
+                    WHERE pid = %(pid)s
+                      AND state = 'active'
+                      AND query_start IS NOT NULL
+                """
+                params: dict = {"pid": current_pid}
+
+                if query_text:
+                    find_query += " AND query LIKE %(query_text)s"
+                    params["query_text"] = f"%{query_text}%"
+
+                find_query += " LIMIT 1"
+
                 async with conn.cursor() as cur:
                     await cur.execute(find_query, params)
                     result = await cur.fetchone()

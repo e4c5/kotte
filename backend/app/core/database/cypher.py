@@ -41,7 +41,8 @@ class CypherExecutor:
         if cypher_normalized.endswith(";"):
             cypher_normalized = cypher_normalized[:-1].rstrip()
         
-        has_params = bool(params)
+        # Empty dict {} must use 3-arg cypher() when caller passed params= explicitly
+        has_params = params is not None
         
         # AGE requires AS (col1 agtype, ...) to match RETURN column count and names.
         return_cols = cypher_return_columns(cypher_query)

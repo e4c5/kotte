@@ -327,10 +327,12 @@ class DatabaseConnection:
         *,
         rollback_on_error: bool = True,
     ) -> Optional[Any]:
+        start_clock = time.time()
         async with conn.cursor() as cur:
             try:
                 await asyncio.wait_for(cur.execute(query, params), timeout=timeout)
                 result = await cur.fetchone()
+                metrics.record_db_query(time.time() - start_clock)
                 return first_value(result)
             except Exception:
                 if rollback_on_error:

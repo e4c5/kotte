@@ -22,7 +22,8 @@ Automate the analysis of pull request comments. Use a Python script to gather ac
    - Read the context file.
    - For each comment in the `comments` list:
      - **Analyze & Verify:** 
-       - Read the file content at `path` around the `line` provided to verify the finding. 
+       - For `type: "thread"` entries, read the file at `path` near `line` when `path` is present.
+       - For `type: "general"` entries (issue comments), there is often no `path`/`line`; rely on `body`, `title`, and repository state instead.
        - Check if the issue is still present and if the suggested fix makes sense in the current context.
        - For bot findings, look for "Prompt for AI Agents" or "Committable suggestion" blocks in the comment body.
      - **If no code change is needed:**

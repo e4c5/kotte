@@ -78,156 +78,166 @@ async def stream_query_results(
                 category=ErrorCategory.NOT_FOUND,
                 status_code=404,
             )
-        
-        cypher_params = params or {}
-        has_params = bool(cypher_params)
-        
-        # Build SQL query with LIMIT and OFFSET for pagination
-        # Note: We need to wrap the original query in a subquery to add LIMIT/OFFSET
-        # This is a simplified approach - for complex queries, we might need to parse the Cypher
-        # and inject LIMIT/OFFSET at the Cypher level
-        # For now, we'll use a cursor-based approach by modifying the Cypher query
-        # to add LIMIT and SKIP clauses
-        
-        # Check if query already has LIMIT/SKIP
-        cypher_upper = cypher_query.upper()
-        has_limit = "LIMIT" in cypher_upper
-        has_skip = "SKIP" in cypher_upper or "OFFSET" in cypher_upper
-        
-        # We'll stream by fetching chunks with LIMIT/SKIP and enforce a max result cap.
-        current_offset = offset
-        all_columns = None
-        max_rows = settings.query_max_result_rows
-        emitted_rows = 0
 
-        if has_limit or has_skip:
-            # Query already controls result window; execute once and stream in-memory chunks.
-            # Ignore request offset here to avoid double-applying SKIP/OFFSET.
-            stream_offset = 0
-            raw_rows = await db_conn.execute_cypher(
-                validated_graph_name,
-                cypher_query,
-                params=cypher_params if has_params else None,
-                timeout=settings.query_timeout,
-            )
+        async with db_conn.connection() as exec_conn:
+            try:
+                backend_pid = await db_conn.get_backend_pid(conn=exec_conn)
+                if backend_pid:
+                    await query_tracker.set_backend_pid(request_id, backend_pid)
+            except Exception as e:
+                logger.warning("Failed to get backend PID for stream tracking: %s", e)
 
-            parsed_rows = []
-            columns = set()
-            for raw_row in raw_rows:
-                parsed_row = {}
-                for col_name, agtype_value in raw_row.items():
-                    columns.add(col_name)
-                    parsed_row[col_name] = AgTypeParser.parse(agtype_value)
-                parsed_rows.append(parsed_row)
+            cypher_params = params or {}
+            has_params = bool(cypher_params)
 
-            all_columns = sorted(list(columns))
-            capped_rows = parsed_rows[stream_offset : stream_offset + max_rows]
-            for start in range(0, len(capped_rows), chunk_size):
-                chunk_rows = capped_rows[start : start + chunk_size]
-                result_rows = [QueryResultRow(data=row) for row in chunk_rows]
-                has_more = start + chunk_size < len(capped_rows)
+            # Build SQL query with LIMIT and OFFSET for pagination
+            # Note: We need to wrap the original query in a subquery to add LIMIT/OFFSET
+            # This is a simplified approach - for complex queries, we might need to parse the Cypher
+            # and inject LIMIT/OFFSET at the Cypher level
+            # For now, we'll use a cursor-based approach by modifying the Cypher query
+            # to add LIMIT and SKIP clauses
+
+            # Check if query already has LIMIT/SKIP
+            cypher_upper = cypher_query.upper()
+            has_limit = "LIMIT" in cypher_upper
+            has_skip = "SKIP" in cypher_upper or "OFFSET" in cypher_upper
+
+            # We'll stream by fetching chunks with LIMIT/SKIP and enforce a max result cap.
+            current_offset = offset
+            all_columns = None
+            max_rows = settings.query_max_result_rows
+            emitted_rows = 0
+
+            if has_limit or has_skip:
+                # Query already controls result window; execute once and stream in-memory chunks.
+                # Ignore request offset here to avoid double-applying SKIP/OFFSET.
+                stream_offset = 0
+                raw_rows = await db_conn.execute_cypher(
+                    validated_graph_name,
+                    cypher_query,
+                    params=cypher_params if has_params else None,
+                    timeout=settings.query_timeout,
+                    conn=exec_conn,
+                )
+
+                parsed_rows = []
+                columns = set()
+                for raw_row in raw_rows:
+                    parsed_row = {}
+                    for col_name, agtype_value in raw_row.items():
+                        columns.add(col_name)
+                        parsed_row[col_name] = AgTypeParser.parse(agtype_value)
+                    parsed_rows.append(parsed_row)
+
+                all_columns = sorted(list(columns))
+                capped_rows = parsed_rows[stream_offset : stream_offset + max_rows]
+                for start in range(0, len(capped_rows), chunk_size):
+                    chunk_rows = capped_rows[start : start + chunk_size]
+                    result_rows = [QueryResultRow(data=row) for row in chunk_rows]
+                    has_more = start + chunk_size < len(capped_rows)
+                    chunk = QueryStreamChunk(
+                        columns=all_columns,
+                        rows=result_rows,
+                        chunk_size=len(result_rows),
+                        offset=stream_offset + start,
+                        has_more=has_more,
+                        total_rows=None,
+                    )
+                    yield json.dumps(chunk.model_dump(), default=str) + "\n"
+
+                if len(parsed_rows) - stream_offset > max_rows:
+                    error_chunk = {
+                        "error": {
+                            "code": ErrorCode.QUERY_VALIDATION_ERROR,
+                            "message": (
+                                f"Stream result cap reached ({max_rows} rows). "
+                                "Refine query with WHERE/LIMIT."
+                            ),
+                        }
+                    }
+                    yield json.dumps(error_chunk) + "\n"
+                return
+
+            while True:
+                # Add SKIP and LIMIT to the query (strip trailing ; so we don't produce "...; SKIP")
+                cypher_base = cypher_query.rstrip()
+                if cypher_base.endswith(";"):
+                    cypher_base = cypher_base[:-1].rstrip()
+                modified_cypher = f"{cypher_base} SKIP {current_offset} LIMIT {chunk_size}"
+
+                # Execute via literal SQL (execute_cypher) to avoid cypher() overload issues
+                raw_rows = await db_conn.execute_cypher(
+                    validated_graph_name,
+                    modified_cypher,
+                    params=cypher_params if has_params else None,
+                    timeout=settings.query_timeout,
+                    conn=exec_conn,
+                )
+
+                # Parse agtype results
+                parsed_rows = []
+                chunk_columns = set()
+
+                for raw_row in raw_rows:
+                    parsed_row = {}
+                    for col_name, agtype_value in raw_row.items():
+                        chunk_columns.add(col_name)
+                        parsed_value = AgTypeParser.parse(agtype_value)
+                        parsed_row[col_name] = parsed_value
+                    parsed_rows.append(parsed_row)
+
+                # Set columns from first chunk
+                if all_columns is None:
+                    all_columns = sorted(list(chunk_columns))
+
+                # Convert to QueryResultRow format
+                result_rows = [
+                    QueryResultRow(data=row) for row in parsed_rows
+                ]
+
+                # Determine if there are more rows
+                has_more = len(parsed_rows) == chunk_size
+
+                # Create chunk response
                 chunk = QueryStreamChunk(
                     columns=all_columns,
                     rows=result_rows,
                     chunk_size=len(result_rows),
-                    offset=stream_offset + start,
+                    offset=current_offset,
                     has_more=has_more,
-                    total_rows=None,
+                    total_rows=None,  # We don't know total without COUNT query
                 )
-                yield json.dumps(chunk.model_dump(), default=str) + "\n"
 
-            if len(parsed_rows) - stream_offset > max_rows:
-                error_chunk = {
-                    "error": {
-                        "code": ErrorCode.QUERY_VALIDATION_ERROR,
-                        "message": (
-                            f"Stream result cap reached ({max_rows} rows). "
-                            "Refine query with WHERE/LIMIT."
-                        ),
+                # Yield chunk as JSON line
+                yield json.dumps(chunk.model_dump(), default=str) + "\n"
+                emitted_rows += len(result_rows)
+
+                # If this was the last chunk or we got fewer rows than requested, we're done
+                if not has_more or len(parsed_rows) < chunk_size:
+                    break
+                if emitted_rows >= max_rows:
+                    error_chunk = {
+                        "error": {
+                            "code": ErrorCode.QUERY_VALIDATION_ERROR,
+                            "message": (
+                                f"Stream result cap reached ({max_rows} rows). "
+                                "Refine query with WHERE/LIMIT."
+                            ),
+                        }
                     }
-                }
-                yield json.dumps(error_chunk) + "\n"
-            return
-        
-        while True:
-            # Add SKIP and LIMIT to the query (strip trailing ; so we don't produce "...; SKIP")
-            cypher_base = cypher_query.rstrip()
-            if cypher_base.endswith(";"):
-                cypher_base = cypher_base[:-1].rstrip()
-            modified_cypher = f"{cypher_base} SKIP {current_offset} LIMIT {chunk_size}"
-            
-            # Execute via literal SQL (execute_cypher) to avoid cypher() overload issues
-            raw_rows = await db_conn.execute_cypher(
-                validated_graph_name,
-                modified_cypher,
-                params=cypher_params if has_params else None,
-                timeout=settings.query_timeout,
-            )
-            
-            # Parse agtype results
-            parsed_rows = []
-            chunk_columns = set()
-            
-            for raw_row in raw_rows:
-                parsed_row = {}
-                for col_name, agtype_value in raw_row.items():
-                    chunk_columns.add(col_name)
-                    parsed_value = AgTypeParser.parse(agtype_value)
-                    parsed_row[col_name] = parsed_value
-                parsed_rows.append(parsed_row)
-            
-            # Set columns from first chunk
-            if all_columns is None:
-                all_columns = sorted(list(chunk_columns))
-            
-            # Convert to QueryResultRow format
-            result_rows = [
-                QueryResultRow(data=row) for row in parsed_rows
-            ]
-            
-            # Determine if there are more rows
-            has_more = len(parsed_rows) == chunk_size
-            
-            # Create chunk response
-            chunk = QueryStreamChunk(
-                columns=all_columns,
-                rows=result_rows,
-                chunk_size=len(result_rows),
-                offset=current_offset,
-                has_more=has_more,
-                total_rows=None,  # We don't know total without COUNT query
-            )
-            
-            # Yield chunk as JSON line
-            yield json.dumps(chunk.model_dump(), default=str) + "\n"
-            emitted_rows += len(result_rows)
-            
-            # If this was the last chunk or we got fewer rows than requested, we're done
-            if not has_more or len(parsed_rows) < chunk_size:
-                break
-            if emitted_rows >= max_rows:
-                error_chunk = {
-                    "error": {
-                        "code": ErrorCode.QUERY_VALIDATION_ERROR,
-                        "message": (
-                            f"Stream result cap reached ({max_rows} rows). "
-                            "Refine query with WHERE/LIMIT."
-                        ),
-                    }
-                }
-                yield json.dumps(error_chunk) + "\n"
-                break
-            
-            # Move to next chunk
-            current_offset += chunk_size
-            
-            # Safety fallback
-            if current_offset >= 1_000_000:
-                logger.warning(
-                    f"Streaming stopped at {current_offset} rows (safety limit)"
-                )
-                break
-    
+                    yield json.dumps(error_chunk) + "\n"
+                    break
+
+                # Move to next chunk
+                current_offset += chunk_size
+
+                # Safety fallback
+                if current_offset >= 1_000_000:
+                    logger.warning(
+                        f"Streaming stopped at {current_offset} rows (safety limit)"
+                    )
+                    break
+
     except APIException:
         raise
     except Exception as e:
@@ -272,15 +282,7 @@ async def stream_query(
         query_text=request.cypher[:200],
         user_id=user_id,
     )
-    
-    try:
-        # Get backend PID for cancellation
-        backend_pid = await db_conn.get_backend_pid()
-        if backend_pid:
-            await query_tracker.set_backend_pid(request_id, backend_pid)
-    except Exception as e:
-        logger.warning(f"Failed to get backend PID for query tracking: {e}")
-    
+
     # Create streaming response
     return StreamingResponse(
         stream_query_results(

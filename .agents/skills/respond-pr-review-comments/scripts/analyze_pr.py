@@ -76,7 +76,7 @@ query($owner: String!, $repo: String!, $number: Int!) {
 """
 
 
-def run_gh_graphql(payload: dict) -> dict | None:
+def run_gh_graphql(payload: dict) -> dict:
     try:
         result = subprocess.run(
             ["gh", "api", "graphql", "--input", "-"],
@@ -86,13 +86,16 @@ def run_gh_graphql(payload: dict) -> dict | None:
             check=True,
             timeout=TIMEOUT_S,
         )
-        return json.loads(result.stdout)
+        data = json.loads(result.stdout)
     except subprocess.CalledProcessError as e:
-        print(f"Error running gh graphql: {e.stderr}", file=sys.stderr)
-        return None
-    except subprocess.TimeoutExpired:
-        print("gh graphql timed out.", file=sys.stderr)
-        return None
+        raise RuntimeError(f"gh graphql failed: {e.stderr}") from e
+    except subprocess.TimeoutExpired as e:
+        raise RuntimeError("gh graphql timed out") from e
+    if data.get("errors"):
+        raise RuntimeError(f"GitHub GraphQL errors: {data['errors']}")
+    if "data" not in data:
+        raise RuntimeError("GitHub GraphQL response missing data key")
+    return data
 
 
 def fetch_review_threads(owner: str, repo: str, pr_number: int) -> list[dict]:
@@ -106,8 +109,6 @@ def fetch_review_threads(owner: str, repo: str, pr_number: int) -> list[dict]:
             "cursor": cursor,
         }
         data = run_gh_graphql({"query": THREAD_QUERY, "variables": variables})
-        if not data or "data" not in data:
-            break
         pr = (data["data"].get("repository") or {}).get("pullRequest") or {}
         conn = pr.get("reviewThreads") or {}
         all_nodes.extend(conn.get("nodes") or [])
@@ -131,8 +132,6 @@ def fetch_issue_comments(owner: str, repo: str, pr_number: int) -> list[dict]:
             "cursor": cursor,
         }
         data = run_gh_graphql({"query": COMMENTS_QUERY, "variables": variables})
-        if not data or "data" not in data:
-            break
         pr = (data["data"].get("repository") or {}).get("pullRequest") or {}
         conn = pr.get("comments") or {}
         all_nodes.extend(conn.get("nodes") or [])
@@ -156,8 +155,6 @@ def fetch_pr_base(owner: str, repo: str, pr_number: int) -> dict | None:
             },
         }
     )
-    if not data or "data" not in data:
-        return None
     repo_data = data["data"].get("repository")
     if not repo_data:
         return None

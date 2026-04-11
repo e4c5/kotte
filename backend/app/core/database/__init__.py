@@ -44,9 +44,11 @@ class DatabaseConnection(BaseConnection):
         """Backward compatible access to split_top_level_commas."""
         return _stlc(s)
 
-    async def get_backend_pid(self) -> Optional[int]:
-        """Get the backend PID for this connection."""
-        return await self._query_manager.get_backend_pid()
+    async def get_backend_pid(
+        self, conn: Optional[psycopg.AsyncConnection] = None
+    ) -> Optional[int]:
+        """Get the backend PID for this connection or a provided pool handle."""
+        return await self._query_manager.get_backend_pid(conn)
 
     async def cancel_backend(self, pid: int) -> bool:
         """Cancel a PostgreSQL backend process."""
