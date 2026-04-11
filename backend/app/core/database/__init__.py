@@ -54,7 +54,7 @@ class DatabaseConnection(BaseConnection):
 
     async def get_query_pid(self, query_text: Optional[str] = None) -> Optional[int]:
         """Get the backend PID for a running query."""
-        return await self._query_manager.get_query_pid()
+        return await self._query_manager.get_query_pid(query_text)
 
     async def execute_cypher(
         self,

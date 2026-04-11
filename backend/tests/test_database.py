@@ -207,6 +207,17 @@ class TestExecuteCypher:
         assert result == expected
 
     @pytest.mark.asyncio
+    async def test_get_query_pid_forwards_query_text_to_query_manager(self):
+        """Facade passes query_text through to QueryManager.get_query_pid."""
+        db = DatabaseConnection(
+            host="h", port=5432, database="d", user="u", password="p"
+        )
+        db._query_manager.get_query_pid = AsyncMock(return_value=12345)
+        pid = await db.get_query_pid("MATCH (n) RETURN n")
+        db._query_manager.get_query_pid.assert_called_once_with("MATCH (n) RETURN n")
+        assert pid == 12345
+
+    @pytest.mark.asyncio
     async def test_execute_cypher_passes_conn_to_execute_query(self):
         """Optional conn is forwarded for transactional execution."""
         db = DatabaseConnection(

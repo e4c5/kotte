@@ -286,13 +286,31 @@ async def import_csv(
         job_status.completed_at = datetime.now(timezone.utc).isoformat()
         job_status.progress = 1.0
 
-        # Invalidate property cache so new properties are discovered
-        await invalidate_property_metadata_cache(
-            validated_graph_name, validated_label_name
-        )
+        try:
+            await invalidate_property_metadata_cache(
+                validated_graph_name, validated_label_name
+            )
+        except Exception as e:
+            logger.warning(
+                "Post-import metadata cache invalidation failed for graph=%s label=%s: %s",
+                validated_graph_name,
+                validated_label_name,
+                e,
+                exc_info=True,
+            )
 
-        # Update table statistics for accurate count estimates
-        await MetadataService.analyze_table(db_conn, validated_graph_name, validated_label_name)
+        try:
+            await MetadataService.analyze_table(
+                db_conn, validated_graph_name, validated_label_name
+            )
+        except Exception as e:
+            logger.warning(
+                "Post-import ANALYZE failed for graph=%s label=%s: %s",
+                validated_graph_name,
+                validated_label_name,
+                e,
+                exc_info=True,
+            )
 
         return CSVImportResponse(
             job_id=job_id,

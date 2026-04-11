@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import Layout from './components/Layout'
+import { LazyRouteErrorBoundary } from './components/LazyRouteErrorBoundary'
 
 const LoginPage = lazy(() => import('./pages/LoginPage'))
 const ConnectionPage = lazy(() => import('./pages/ConnectionPage'))
@@ -18,15 +19,17 @@ const LoadingFallback = () => (
 function App() {
   return (
     <BrowserRouter>
-      <Suspense fallback={<LoadingFallback />}>
-        <Routes>
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/" element={<Layout />}>
-            <Route index element={<ConnectionPage />} />
-            <Route path="workspace" element={<WorkspacePage />} />
-          </Route>
-        </Routes>
-      </Suspense>
+      <LazyRouteErrorBoundary>
+        <Suspense fallback={<LoadingFallback />}>
+          <Routes>
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/" element={<Layout />}>
+              <Route index element={<ConnectionPage />} />
+              <Route path="workspace" element={<WorkspacePage />} />
+            </Route>
+          </Routes>
+        </Suspense>
+      </LazyRouteErrorBoundary>
     </BrowserRouter>
   )
 }

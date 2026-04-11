@@ -99,11 +99,9 @@ async function request<T>(
       apiCache.set(url, resultData, options.cacheTtl)
     }
     
-    // Invalidate relevant cache on mutations
+    // Invalidate cached GETs after mutations (graph list, metadata, meta-graph, etc.)
     if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
-      if (url.includes('/graph')) {
-        apiCache.clear('/graph')
-      }
+      apiCache.clear('/graphs')
     }
 
     return { data: resultData }

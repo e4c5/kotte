@@ -26,7 +26,7 @@ export interface GraphFilters {
   nodeLabels: Set<string>
   edgeLabels: Set<string>
   propertyFilters: Array<{
-    label: string
+    label?: string
     property: string
     value: string
     operator: 'equals' | 'contains' | 'startsWith' | 'endsWith'

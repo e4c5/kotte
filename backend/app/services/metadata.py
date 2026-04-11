@@ -21,14 +21,21 @@ async def invalidate_property_metadata_cache(
     Uses ``metadata_cache`` APIs that hold the async lock (no direct ``_cache`` access).
     Clears property discovery keys for both vertex and edge kinds when a label is given.
     When only ``graph_name`` is given, clears property, count, and stats prefixes for that graph.
+
+    Graph and label identifiers are validated before any cache key use; keys use
+    ``props:{graph}:``-style prefixes with validated names to avoid cross-graph collisions.
     """
-    if label_name:
+    validated_graph = validate_graph_name(graph_name)
+    validated_label = validate_label_name(label_name) if label_name else None
+    if validated_label:
         for kind in ("v", "e"):
-            await metadata_cache.delete(f"props:{graph_name}:{label_name}:{kind}")
+            await metadata_cache.delete(
+                f"props:{validated_graph}:{validated_label}:{kind}"
+            )
     else:
-        await metadata_cache.clear(prefix=f"props:{graph_name}")
-        await metadata_cache.clear(prefix=f"counts:{graph_name}")
-        await metadata_cache.clear(prefix=f"stats:{graph_name}")
+        await metadata_cache.clear(prefix=f"props:{validated_graph}:")
+        await metadata_cache.clear(prefix=f"counts:{validated_graph}:")
+        await metadata_cache.clear(prefix=f"stats:{validated_graph}:")
 
 
 class MetadataService:
@@ -45,14 +52,15 @@ class MetadataService:
         """
         Discover property keys for a label using Cypher keys().
         """
-        cache_key = f"props:{graph_name}:{label_name}:{label_kind}"
-        cached = await metadata_cache.get(cache_key)
-        if cached is not None:
-            return cached
-
         try:
             validated_graph_name = validate_graph_name(graph_name)
             validated_label_name = validate_label_name(label_name)
+            cache_key = (
+                f"props:{validated_graph_name}:{validated_label_name}:{label_kind}"
+            )
+            cached = await metadata_cache.get(cache_key)
+            if cached is not None:
+                return cached
             limit = min(max(1, sample_size), 500)
 
             if label_kind == "v":
@@ -97,13 +105,12 @@ class MetadataService:
         """
         Get approximate counts for all labels of a given kind in one query.
         """
-        cache_key = f"counts:{graph_name}:{label_kind}"
-        cached = await metadata_cache.get(cache_key)
-        if cached is not None:
-            return cached
-
         try:
             validated_graph_name = validate_graph_name(graph_name)
+            cache_key = f"counts:{validated_graph_name}:{label_kind}"
+            cached = await metadata_cache.get(cache_key)
+            if cached is not None:
+                return cached
             query = """
                 SELECT label.name as label_name,
                        CASE
@@ -188,14 +195,16 @@ class MetadataService:
         """
         Get statistics (min, max) for a numeric property.
         """
-        cache_key = f"stats:{graph_name}:{label_name}:{label_kind}:{property_name}"
-        cached = await metadata_cache.get(cache_key)
-        if cached is not None:
-            return cached
-
         try:
             validated_graph_name = validate_graph_name(graph_name)
             validated_label_name = validate_label_name(label_name)
+            cache_key = (
+                f"stats:{validated_graph_name}:{validated_label_name}:"
+                f"{label_kind}:{property_name}"
+            )
+            cached = await metadata_cache.get(cache_key)
+            if cached is not None:
+                return cached
             limit = min(max(1, sample_size), 5000)
 
             cypher = MetadataService._build_stats_query(validated_label_name, label_kind, limit)
@@ -297,7 +306,7 @@ class MetadataService:
             logger.info(
                 f"Ensured indices on {table_name} for columns: {', '.join(columns)}"
             )
-            await invalidate_property_metadata_cache(graph_name)
+            await invalidate_property_metadata_cache(validated_graph_name)
         except Exception as e:
             logger.warning(
                 f"Failed to create indices for {graph_name}.{label_name} ({label_kind}): {e}"
@@ -317,6 +326,6 @@ class MetadataService:
             safe_label = escape_identifier(validated_label_name)
             await db_conn.execute_command(f"ANALYZE {safe_graph}.{safe_label}")
             logger.info("Updated statistics for %s.%s", validated_graph_name, validated_label_name)
-            await invalidate_property_metadata_cache(graph_name)
+            await invalidate_property_metadata_cache(validated_graph_name)
         except Exception as e:
             logger.warning("Failed to analyze table %s.%s: %s", graph_name, label_name, e)

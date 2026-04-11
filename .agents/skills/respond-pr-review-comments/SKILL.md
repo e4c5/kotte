@@ -1,49 +1,55 @@
 ---
 name: respond-pr-review-comments
-description: Analyze top-level pull request review comments from a PR URL, resolve comments that need no code change, and write a markdown action plan for comments that require code updates.
+description: Analyze top-level pull request review comments using an automated script, resolve non-actionable comments, and create a plan for those requiring code changes.
 ---
 
-You take exactly one argument: a GitHub pull request URL.
+You take one optional argument: a GitHub pull request URL.
 
 ## Goal
 
-Process pull request **top-level review comments** one at a time (the first comment in each review thread, where `replyTo == null`; ignore replies), decide whether each needs a code change, and:
+Automate the analysis of pull request comments. Use a Python script to gather active comments and their context, then use AI to decide whether each needs a code change.
 
-- Immediately resolve comments that do **not** require code changes.
-- Create a markdown-formatted plan file for comments that **do** require code changes, using the required `review-actions-#nnn` pattern (replace `#nnn` with the PR number, for example `review-actions-123`).
+- Non-actionable comments: Reply and resolve the thread immediately.
+- Actionable comments: Add to a `fixes.md` file with a concrete implementation plan.
 
 ## Steps
 
-1. Parse `{owner}`, `{repo}`, and `{pr_number}` from the PR URL.
-2. Retrieve PR context with:
-   - `gh pr view {pr_url} --json number,title,body,baseRefName,headRefName,files`
-   - `gh pr diff {pr_url}`
-3. Retrieve both **review threads** and **issue comments** (conversation comments) via GraphQL and paginate until done:
-   - `repository.pullRequest.reviewThreads` (include `isResolved`, `isOutdated`, and `comments`)
-   - `repository.pullRequest.comments`
-4. For each thread or issue comment:
-   - Skip if already resolved or **outdated** (for threads).
-   - If it is a bot comment (author: `coderabbitai`, `codeant-ai`, `viper-review`):
-     - Look for nested reports (e.g., `<details>` blocks titled "Actionable comments", "Nitpick comments", or lists of findings).
-     - Decompose these reports into individual items for analysis.
-   - Otherwise, select the top-level comment only (`replyTo == null` for threads; non-reply issue comments).
-5. For each identified comment or decomposed item, validate against diff and surrounding file context and classify:
-   - **Resolvable now**: comment can be addressed without code changes (already fixed, misunderstood, or no-op).
-   - **Needs code change**: valid feedback that requires code edits.
-6. If **resolvable now**, resolve the thread immediately (for review threads) or acknowledge the bot (e.g., with a reaction or reply if relevant).
-7. If **needs code change**, append an item to `review-actions-#nnn`.
-   - Thread/comment URL
-   - File and line context with 1-indexed line numbers:
-     - Single line: `path/to/file.ext:<line-number>` (example: `src/app.js:52`)
-     - Line range: `path/to/file.ext:<start-line>-<end-line>` (example: `src/app.js:52-55`)
-     - Deleted line: `path/to/file.ext:deleted@<old-line>` (example: `src/app.js:deleted@49`)
-     - Mixed added/deleted range: include both in one field (example: `src/app.js:52-55; deleted@49`)
-   - Why code change is needed
-   - Concrete implementation plan for a follow-up coding agent
-   - Risks/edge cases and validation notes
+1. **Gather Context:**
+   - Run the analysis script: `python3 .agents/skills/respond-pr-review-comments/scripts/analyze_pr.py [PR_URL]`
+   - Identify the generated context file: `comments-context-{pr_number}.json`. If the script terminates without generating this file (e.g., no open PRs), inform the user and stop.
+
+2. **Process Comments:**
+   - Read the context file.
+   - For each comment in the `comments` list:
+     - **Analyze & Verify:** 
+       - Read the file content at `path` around the `line` provided to verify the finding. 
+       - Check if the issue is still present and if the suggested fix makes sense in the current context.
+       - For bot findings, look for "Prompt for AI Agents" or "Committable suggestion" blocks in the comment body.
+     - **If no code change is needed:**
+       - Post a reply: `gh pr review {pr_url} --comment --body "@author [Detailed explanation why the change is not needed or already addressed]"`
+       - If it's a `thread` type, resolve it:
+         ```bash
+         gh api graphql -f query='mutation($id: ID!) { resolveReviewThread(input: { threadId: $id }) { thread { isResolved } } }' -f id="{threadId}"
+         ```
+     - **If a code change is needed:**
+       - Append a detailed entry to `fixes.md`:
+         - **Comment URL:** {url}
+         - **File & Context:** `{path}:{line}`
+         - **Finding:** {title} - {body}
+         - **Original Suggestion:** (Include the bot's suggestion or "Prompt for AI Agents" if present)
+         - **Verified Plan:** A step-by-step technical plan to implement the fix, including:
+           1. Specific lines to modify.
+           2. Logic changes required.
+           3. Any new imports or dependencies.
+           4. **Testing Strategy:** Which specific tests to run or add to verify the fix.
+         - **Risks:** Potential side effects or edge cases to watch out for.
+
+3. **Cleanup:**
+   - Once all comments are processed, delete the `comments-context-{pr_number}.json` file.
+   - Inform the user that the `fixes.md` file is ready and provides a high-fidelity roadmap for implementation.
 
 ## Output requirements
 
-- Produce `review-actions-123` in markdown format (replace `123` with the current PR number). If the file already exists, append a new run section with timestamp and keep prior sections for history.
-- If every top-level review comment is resolved directly, still create the file and record that no code changes are required.
-- Do not include reply comments in analysis or planning.
+- Produce a `fixes.md` file containing all actionable items.
+- Ensure all non-actionable threads are resolved on GitHub.
+- Do not process outdated or already resolved comments.

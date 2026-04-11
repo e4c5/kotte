@@ -23,6 +23,7 @@ class JSONFormatter(logging.Formatter):
             "logger": record.name,
             "module": record.module,
             "line": record.lineno,
+            "request_id": getattr(record, "request_id", None),
         }
 
         # Add exception info if present

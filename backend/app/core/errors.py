@@ -15,6 +15,9 @@ from app.core.metrics import metrics
 
 logger = logging.getLogger(__name__)
 
+# 422: use Starlette constant when present; avoid deprecated UNPROCESSABLE_ENTITY alias
+HTTP_422_UNPROCESSABLE = getattr(status, "HTTP_422_UNPROCESSABLE_CONTENT", 422)
+
 
 class ErrorCode:
     """Stable error codes for API responses."""
@@ -116,7 +119,7 @@ class GraphConstraintViolation(APIException):
             code=ErrorCode.GRAPH_CONSTRAINT_VIOLATION,
             message=f"{constraint_type} constraint violated: {details}",
             category=ErrorCategory.VALIDATION,
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            status_code=HTTP_422_UNPROCESSABLE,
             details=extra_details or {},
         )
 
@@ -154,7 +157,7 @@ class GraphCypherSyntaxError(APIException):
             code=ErrorCode.CYPHER_SYNTAX_ERROR,
             message=friendly_message,
             category=ErrorCategory.VALIDATION,
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            status_code=HTTP_422_UNPROCESSABLE,
             details={"query": query[:200], "error": error_message},
         )
 

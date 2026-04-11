@@ -25,15 +25,18 @@ export default function FilterTab({ availableNodeLabels, availableEdgeLabels }: 
   })
 
   const handleAddFilter = () => {
-    if (newFilter.label && newFilter.property && newFilter.value) {
-      addPropertyFilter({
-        label: newFilter.label,
-        property: newFilter.property,
-        value: newFilter.value,
-        operator: newFilter.operator,
-      })
-      setNewFilter({ label: '', property: '', value: '', operator: 'contains' })
-    }
+    const property = newFilter.property.trim()
+    const value = newFilter.value.trim()
+    if (!property || !value) return
+
+    const labelTrim = newFilter.label.trim()
+    addPropertyFilter({
+      ...(labelTrim ? { label: labelTrim } : {}),
+      property,
+      value,
+      operator: newFilter.operator,
+    })
+    setNewFilter({ label: '', property: '', value: '', operator: 'contains' })
   }
 
   return (
@@ -77,7 +80,8 @@ export default function FilterTab({ availableNodeLabels, availableEdgeLabels }: 
         {filters.propertyFilters.map((filter, idx) => (
           <div key={idx} className="flex justify-between items-center gap-2 p-2 mb-2 rounded-lg bg-zinc-800 border border-zinc-700">
             <span className="text-xs text-zinc-300 truncate min-w-0">
-              {filter.label}.{filter.property} {filter.operator} &quot;{filter.value}&quot;
+              {filter.label ? `${filter.label}.` : ''}
+              {filter.property} {filter.operator} &quot;{filter.value}&quot;
             </span>
             <button
               type="button"

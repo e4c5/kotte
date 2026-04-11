@@ -110,8 +110,9 @@ class DatabaseConnection:
 
     async def connect(self) -> None:
         """Initialize the connection pool."""
+        pool: Optional[AsyncConnectionPool] = None
         try:
-            self._pool = AsyncConnectionPool(
+            pool = AsyncConnectionPool(
                 kwargs=self._connect_kwargs(),
                 min_size=settings.db_pool_min_size,
                 max_size=settings.db_pool_max_size,
@@ -120,17 +121,20 @@ class DatabaseConnection:
                 configure=self._configure_age,
                 open=False,
             )
-            await self._pool.open()
-            await self._pool.wait()
+            await pool.open()
+            await pool.wait()
+
+            self._pool = pool
+            pool = None
 
             logger.info(
                 f"Connection pool initialized for {self.database} on {self.host}:{self.port} "
                 f"(size: {settings.db_pool_min_size}-{settings.db_pool_max_size})"
             )
-            
+
             # Start metrics reporting
             self._metrics_task = asyncio.create_task(self._report_pool_metrics())
-            
+
         except asyncio.TimeoutError as e:
             logger.error(
                 "Database pool initialization timed out after %s seconds",
@@ -157,6 +161,16 @@ class DatabaseConnection:
                 status_code=500,
                 retryable=True,
             ) from e
+        finally:
+            if pool is not None:
+                try:
+                    await pool.close()
+                except Exception as cleanup_err:
+                    logger.warning(
+                        "Failed to close partially initialized pool: %s",
+                        cleanup_err,
+                        exc_info=True,
+                    )
 
     async def disconnect(self) -> None:
         """Close the connection pool."""
@@ -189,6 +203,8 @@ class DatabaseConnection:
         params: Optional[dict],
         timeout: int,
         start_time: float,
+        *,
+        rollback_on_error: bool = True,
     ) -> list[dict]:
         async with conn.cursor() as cur:
             try:
@@ -209,12 +225,14 @@ class DatabaseConnection:
                     query_hash,
                     timeout,
                 )
-                await conn.rollback()
+                if rollback_on_error:
+                    await conn.rollback()
                 raise
             except Exception:
                 query_hash = hashlib.sha256(query.encode()).hexdigest()[:8]
                 logger.error("execute_query failed (hash: %s)", query_hash, exc_info=True)
-                await conn.rollback()
+                if rollback_on_error:
+                    await conn.rollback()
                 raise
 
     async def execute_query(
@@ -234,7 +252,7 @@ class DatabaseConnection:
         start_time = time.time()
         if conn is not None:
             return await self._execute_query_on_conn(
-                conn, query, params, timeout, start_time
+                conn, query, params, timeout, start_time, rollback_on_error=False
             )
         async with self.connection() as ac:
             return await self._execute_query_on_conn(
@@ -248,6 +266,8 @@ class DatabaseConnection:
         params: Optional[dict],
         timeout: int,
         start_time: float,
+        *,
+        rollback_on_error: bool = True,
     ) -> None:
         async with conn.cursor() as cur:
             try:
@@ -266,14 +286,16 @@ class DatabaseConnection:
                     query_hash,
                     timeout,
                 )
-                await conn.rollback()
+                if rollback_on_error:
+                    await conn.rollback()
                 raise
             except Exception:
                 query_hash = hashlib.sha256(query.encode()).hexdigest()[:8]
                 logger.error(
                     "execute_command failed (hash: %s)", query_hash, exc_info=True
                 )
-                await conn.rollback()
+                if rollback_on_error:
+                    await conn.rollback()
                 raise
 
     async def execute_command(
@@ -289,7 +311,9 @@ class DatabaseConnection:
             timeout = settings.query_timeout
         start_time = time.time()
         if conn is not None:
-            await self._execute_command_on_conn(conn, query, params, timeout, start_time)
+            await self._execute_command_on_conn(
+                conn, query, params, timeout, start_time, rollback_on_error=False
+            )
             return
         async with self.connection() as ac:
             await self._execute_command_on_conn(ac, query, params, timeout, start_time)
@@ -300,11 +324,18 @@ class DatabaseConnection:
         query: str,
         params: Optional[dict],
         timeout: int,
+        *,
+        rollback_on_error: bool = True,
     ) -> Optional[Any]:
         async with conn.cursor() as cur:
-            await asyncio.wait_for(cur.execute(query, params), timeout=timeout)
-            result = await cur.fetchone()
-            return first_value(result)
+            try:
+                await asyncio.wait_for(cur.execute(query, params), timeout=timeout)
+                result = await cur.fetchone()
+                return first_value(result)
+            except Exception:
+                if rollback_on_error:
+                    await conn.rollback()
+                raise
 
     async def execute_scalar(
         self,
@@ -318,11 +349,9 @@ class DatabaseConnection:
         if timeout is None:
             timeout = settings.query_timeout
         if conn is not None:
-            try:
-                return await self._execute_scalar_on_conn(conn, query, params, timeout)
-            except Exception:
-                await conn.rollback()
-                raise
+            return await self._execute_scalar_on_conn(
+                conn, query, params, timeout, rollback_on_error=False
+            )
         async with self.connection() as ac:
             try:
                 return await self._execute_scalar_on_conn(ac, query, params, timeout)

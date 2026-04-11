@@ -19,7 +19,14 @@ class QueryManager:
         self.db_conn = db_conn
 
     async def get_backend_pid(self) -> Optional[int]:
-        """Get the backend PID for the current connection."""
+        """
+        Return the backend PID for a connection checked out from the pool.
+
+        Each call uses a pooled connection; the PID identifies that checkout, not
+        necessarily the same physical session as another operation. For cancellation
+        or correlation, pair with the connection used for the active query when
+        possible.
+        """
         try:
             async with self.db_conn.connection() as conn:
                 async with conn.cursor() as cur:

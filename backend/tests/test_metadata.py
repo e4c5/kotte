@@ -3,6 +3,7 @@
 import pytest
 from unittest.mock import AsyncMock, patch
 
+from app.core.errors import APIException
 from app.services.metadata import (
     MetadataService,
     invalidate_property_metadata_cache,
@@ -149,3 +150,13 @@ class TestInvalidatePropertyMetadataCache:
         assert await metadata_cache.get("counts:g:v") is None
         assert await metadata_cache.get("stats:g:L:v:age") is None
         assert await metadata_cache.get("props:other:Person:v") is not None
+
+    @pytest.mark.asyncio
+    async def test_invalidate_rejects_invalid_graph_name(self):
+        with pytest.raises(APIException):
+            await invalidate_property_metadata_cache("bad name")
+
+    @pytest.mark.asyncio
+    async def test_invalidate_rejects_invalid_label_when_provided(self):
+        with pytest.raises(APIException):
+            await invalidate_property_metadata_cache("g", "bad-label")

@@ -1,4 +1,4 @@
-import { RefObject } from 'react'
+import { RefObject, useCallback } from 'react'
 
 interface UseGraphExportProps {
   svgRef: RefObject<SVGSVGElement>
@@ -21,7 +21,7 @@ const triggerDownload = (blob: Blob, svgObjectUrl: string) => {
 }
 
 export function useGraphExport({ svgRef, width, height }: UseGraphExportProps) {
-  const exportToPNG = async (): Promise<void> => {
+  const exportToPNG = useCallback(async (): Promise<void> => {
     if (!svgRef.current) {
       throw new Error('SVG element not found')
     }
@@ -95,7 +95,7 @@ export function useGraphExport({ svgRef, width, height }: UseGraphExportProps) {
       
       img.src = url
     })
-  }
+  }, [svgRef, width, height])
 
   return { exportToPNG }
 }

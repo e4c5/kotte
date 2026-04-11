@@ -1,4 +1,9 @@
-"""Cypher query execution logic for Apache AGE."""
+"""Cypher query execution logic for Apache AGE.
+
+Dynamic SQL is built only from ``validate_graph_name`` output and parameterized
+``%(name)s`` placeholders; the RETURN column list is derived from the Cypher text
+for the AGE ``AS (...)`` clause, not from arbitrary user-controlled identifiers.
+"""
 
 import hashlib
 import logging

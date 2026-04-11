@@ -71,6 +71,14 @@ class CredentialEncryption:
                     )
                 key_str = _load_or_create_dev_key()
                 if settings.environment != "test":
+                    logger.warning(
+                        "SECURITY: MASTER_ENCRYPTION_KEY not set; using persisted "
+                        "development encryption key. Set MASTER_ENCRYPTION_KEY in production.",
+                        extra={
+                            "event": "dev_encryption_key_fallback",
+                            "environment": settings.environment,
+                        },
+                    )
                     warnings.warn(
                         "MASTER_ENCRYPTION_KEY not set, using persisted dev key. "
                         "Set MASTER_ENCRYPTION_KEY in production!",

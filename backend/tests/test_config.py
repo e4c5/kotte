@@ -69,4 +69,13 @@ class TestSettings:
             assert settings.max_nodes_for_graph == 10000
             assert settings.max_edges_for_graph == 20000
 
+    def test_pool_min_must_not_exceed_max(self):
+        """Invalid pool bounds are rejected at settings load."""
+        with patch.dict(os.environ, {}, clear=True):
+            with pytest.raises(ValueError, match="db_pool_min_size"):
+                Settings(
+                    db_pool_min_size=10,
+                    db_pool_max_size=5,
+                )
+
 

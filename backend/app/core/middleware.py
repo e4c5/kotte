@@ -38,47 +38,51 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         response = await call_next(request)
-        
-        # Prevent browsers from performing MIME type sniffing
+
         response.headers["X-Content-Type-Options"] = "nosniff"
-        
-        # Prevent clickjacking
         response.headers["X-Frame-Options"] = "DENY"
-        
-        # Enable XSS protection in older browsers
         response.headers["X-XSS-Protection"] = "1; mode=block"
-        
-        # Strict-Transport-Security (HSTS) - only for HTTPS
-        if not settings.debug:
-            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
-            
-        # Content-Security-Policy (CSP)
-        script_policy = "'self'"
-        style_policy = "'self' 'unsafe-inline'" # unsafe-inline often needed for CSS-in-JS or similar
-        
-        if settings.debug:
-            # Development mode often needs more permissive CSP for HMR, etc.
-            script_policy += " 'unsafe-inline' 'unsafe-eval'"
-            
+
+        is_production = settings.environment == "production"
+
+        # HSTS only in production over HTTPS (avoid sending on plain HTTP dev servers)
+        if is_production and request.url.scheme == "https":
+            response.headers["Strict-Transport-Security"] = (
+                "max-age=31536000; includeSubDomains"
+            )
+
+        if is_production:
+            script_policy = "'self'"
+            style_policy = "'self' 'unsafe-inline'"
+        else:
+            # Development: allow Swagger UI / ReDoc assets from common CDNs when docs are enabled
+            script_policy = (
+                "'self' 'unsafe-inline' 'unsafe-eval' "
+                "https://cdn.jsdelivr.net https://unpkg.com"
+            )
+            style_policy = (
+                "'self' 'unsafe-inline' "
+                "https://cdn.jsdelivr.net https://unpkg.com"
+            )
+
         csp = (
             f"default-src 'self'; "
             f"script-src {script_policy}; "
             f"style-src {style_policy}; "
-            "img-src 'self' data:; "
+            "img-src 'self' data: https://fastapi.tiangolo.com; "
             "connect-src 'self'; "
-            "font-src 'self'; "
+            "font-src 'self' https://cdn.jsdelivr.net; "
             "frame-ancestors 'none'; "
             "base-uri 'self'; "
             "form-action 'self';"
         )
         response.headers["Content-Security-Policy"] = csp
-        
-        # Referrer-Policy
+
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-        
-        # Permissions-Policy
-        response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
-        
+        response.headers["Permissions-Policy"] = (
+            "geolocation=(), microphone=(), camera=()"
+        )
+
         return response
 
 
