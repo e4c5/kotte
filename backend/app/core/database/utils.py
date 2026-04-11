@@ -103,8 +103,9 @@ def cypher_return_columns(cypher_query: str) -> List[str]:
     start_pos = return_match.end()
     
     # Find position of next keyword that ends the RETURN clause
+    # Using \b instead of \s+ to avoid potential ReDoS from backtracking on spaces
     end_match = re.search(
-        r"\s+(ORDER\s+BY|LIMIT|SKIP)\b|;",
+        r";|\b(?:ORDER\s+BY|LIMIT|SKIP)\b",
         cypher_query[start_pos:],
         re.IGNORECASE | re.DOTALL,
     )
