@@ -28,12 +28,12 @@ This document captures findings from an internal review of the `avurudu` improve
 
 ### P4 — Frontend polish
 
-- [ ] **P4.1** — Graph export blob URL lifecycle (`useGraphExport`)
-- [ ] **P4.2** — Vitest `run` for non-watch CI (`make test-frontend` / scripts)
+- [x] **P4.1** — Graph export blob URL lifecycle (`useGraphExport`; defer PNG revoke)
+- [x] **P4.2** — Vitest `run` + `make test-frontend` uses `timeout` (`npm run test:run`, default 180s)
 
 ### Follow-ups (optional, not blocking)
 
-- [ ] **F.1** — Integration test: multi-step transaction rollback with `USE_REAL_TEST_DB=true` (see P0.1 status)
+- [x] **F.1** — Integration test `test_failed_query_in_transaction_does_not_poison_pool` (`USE_REAL_TEST_DB=true`)
 
 ---
 
@@ -134,6 +134,8 @@ This document captures findings from an internal review of the `avurudu` improve
 
 **Primary reference:** `frontend/src/hooks/useGraphExport.ts`.
 
+**Status:** **Done** (2026-04-11). SVG object URL revoked after click; PNG object URL revoked in a microtask so the browser can attach the download first.
+
 ### P4.2 Vitest non-watch CI
 
 **Problem:** `make test-frontend` may leave Vitest in watch mode.
@@ -142,6 +144,8 @@ This document captures findings from an internal review of the `avurudu` improve
 
 **Primary reference:** `frontend/package.json`, `Makefile`.
 
+**Status:** **Done** (2026-04-11). `npm run test:run` maps to `vitest run`. `make test-frontend` runs `timeout $(TEST_TIMEOUT) npm run test:run` (default **180s**) so hung workers or accidental watch mode cannot block forever. Use `TEST_TIMEOUT=600s make test-frontend` to extend. Interactive watch remains `npm test` (`vitest`).
+
 ---
 
 ## How to use this backlog
@@ -149,6 +153,14 @@ This document captures findings from an internal review of the `avurudu` improve
 1. **Checklist first** — Update the [Progress checklist](#progress-checklist) when you start or finish work so the table of contents reflects reality.
 2. **Ship P0 before** relying on transactional guarantees for delete/import flows in production (P0.1 is done).
 3. **P1.1** (cache invalidation) is done; safe to increase concurrency against the metadata cache.
-4. **P2.1** and **P3.3** are done. **Remaining:** **P4.1–P4.2**, optional **F.1**.
+4. **P4.1–P4.2** and optional **F.1** are done.
 
 When an item is done, add a **Status** line under its section (date + short summary) and check the box above.
+
+---
+
+## F.1 — Optional real-DB transaction test
+
+**Goal:** After a failing `execute_query(..., conn=conn)` inside `transaction()`, the pool must still return a healthy connection.
+
+**Status:** **Done** (2026-04-11). `tests/integration/test_transaction_rollback_real_db.py::test_failed_query_in_transaction_does_not_poison_pool` — skipped unless `USE_REAL_TEST_DB=true`; requires PostgreSQL with Apache AGE (same as app `connect`).
