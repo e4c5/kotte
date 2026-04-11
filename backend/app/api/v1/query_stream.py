@@ -110,6 +110,9 @@ async def stream_query_results(
 
             if has_limit or has_skip:
                 # Query already controls result window; execute once and stream in-memory chunks.
+                # The full LIMIT/SKIP window is materialized before chunking (large LIMIT values
+                # can still use significant RAM). Prefer unpaginated Cypher plus this endpoint's
+                # SKIP/LIMIT loop for very large scans.
                 # Ignore request offset here to avoid double-applying SKIP/OFFSET.
                 stream_offset = 0
                 raw_rows = await db_conn.execute_cypher(
@@ -159,11 +162,26 @@ async def stream_query_results(
                 return
 
             while True:
+                remaining = max_rows - emitted_rows
+                if remaining <= 0:
+                    error_chunk = {
+                        "error": {
+                            "code": ErrorCode.QUERY_VALIDATION_ERROR,
+                            "message": (
+                                f"Stream result cap reached ({max_rows} rows). "
+                                "Refine query with WHERE/LIMIT."
+                            ),
+                        }
+                    }
+                    yield json.dumps(error_chunk) + "\n"
+                    break
+
                 # Add SKIP and LIMIT to the query (strip trailing ; so we don't produce "...; SKIP")
                 cypher_base = cypher_query.rstrip()
                 if cypher_base.endswith(";"):
                     cypher_base = cypher_base[:-1].rstrip()
-                modified_cypher = f"{cypher_base} SKIP {current_offset} LIMIT {chunk_size}"
+                fetch_limit = min(chunk_size, remaining)
+                modified_cypher = f"{cypher_base} SKIP {current_offset} LIMIT {fetch_limit}"
 
                 # Execute via literal SQL (execute_cypher) to avoid cypher() overload issues
                 raw_rows = await db_conn.execute_cypher(
@@ -194,9 +212,9 @@ async def stream_query_results(
                 result_rows = [
                     QueryResultRow(data=row) for row in parsed_rows
                 ]
-
-                # Determine if there are more rows
-                has_more = len(parsed_rows) == chunk_size
+                n = len(result_rows)
+                chunk_emitted_after = emitted_rows + n
+                has_more = (n == fetch_limit) and (chunk_emitted_after < max_rows)
 
                 # Create chunk response
                 chunk = QueryStreamChunk(
@@ -210,11 +228,8 @@ async def stream_query_results(
 
                 # Yield chunk as JSON line
                 yield json.dumps(chunk.model_dump(), default=str) + "\n"
-                emitted_rows += len(result_rows)
+                emitted_rows += n
 
-                # If this was the last chunk or we got fewer rows than requested, we're done
-                if not has_more or len(parsed_rows) < chunk_size:
-                    break
                 if emitted_rows >= max_rows:
                     error_chunk = {
                         "error": {
@@ -228,8 +243,10 @@ async def stream_query_results(
                     yield json.dumps(error_chunk) + "\n"
                     break
 
-                # Move to next chunk
-                current_offset += chunk_size
+                if n < fetch_limit:
+                    break
+
+                current_offset += fetch_limit
 
                 # Safety fallback
                 if current_offset >= 1_000_000:

@@ -117,7 +117,10 @@ def fetch_review_threads(owner: str, repo: str, pr_number: int) -> list[dict]:
             break
         cursor = pinfo.get("endCursor")
         if not cursor:
-            break
+            raise RuntimeError(
+                "GitHub GraphQL pagination inconsistency in fetch_review_threads: "
+                f"hasNextPage=true but endCursor missing; pageInfo={pinfo!r}"
+            )
     return all_nodes
 
 
@@ -140,7 +143,10 @@ def fetch_issue_comments(owner: str, repo: str, pr_number: int) -> list[dict]:
             break
         cursor = pinfo.get("endCursor")
         if not cursor:
-            break
+            raise RuntimeError(
+                "GitHub GraphQL pagination inconsistency in fetch_issue_comments: "
+                f"hasNextPage=true but endCursor missing; pageInfo={pinfo!r}"
+            )
     return all_nodes
 
 

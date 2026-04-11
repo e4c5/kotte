@@ -380,8 +380,10 @@ class DatabaseConnection:
                         try:
                             async with conn.cursor() as cur:
                                 # Also set a server-side timeout as a second line of defense
+                                timeout_ms = str(int(effective_timeout * 1000))
                                 await cur.execute(
-                                    f"SET LOCAL statement_timeout = {effective_timeout * 1000}"
+                                    "SELECT set_config('statement_timeout', %(timeout_ms)s, true)",
+                                    {"timeout_ms": timeout_ms},
                                 )
                         except Exception as e:
                             logger.warning(f"Failed to set transaction statement_timeout: {e}")
