@@ -8,6 +8,30 @@ type HierarchyNodeData = {
   children?: HierarchyNodeData[]
 }
 
+function createTreeData(nodes: GraphNode[]): HierarchyNodeData {
+  const groups = new Map<string, GraphNode[]>()
+  nodes.forEach((node) => {
+    const key = node.label || 'Other'
+    const group = groups.get(key)
+    if (group) {
+      group.push(node)
+    } else {
+      groups.set(key, [node])
+    }
+  })
+
+  return {
+    name: 'root',
+    children: Array.from(groups.entries()).map(([label, groupNodes]) => ({
+      name: label,
+      children: groupNodes.map((node) => ({
+        name: String(node.id),
+        node,
+      })),
+    })),
+  }
+}
+
 // Initialize node positions based on layout type
 export function initializeLayout(
   nodes: GraphNode[],
@@ -120,27 +144,7 @@ export function initializeLayout(
     case 'partition': {
       if (!nodes.length) break
 
-      const groups = new Map<string, GraphNode[]>()
-      nodes.forEach((node) => {
-        const key = node.label || 'Other'
-        const group = groups.get(key)
-        if (group) {
-          group.push(node)
-        } else {
-          groups.set(key, [node])
-        }
-      })
-
-      const rootData: HierarchyNodeData = {
-        name: 'root',
-        children: Array.from(groups.entries()).map(([label, groupNodes]) => ({
-          name: label,
-          children: groupNodes.map((node) => ({
-            name: String(node.id),
-            node,
-          })),
-        })),
-      }
+      const rootData = createTreeData(nodes)
 
       const root = d3
         .hierarchy<HierarchyNodeData>(rootData, (d) => d.children)
@@ -151,10 +155,10 @@ export function initializeLayout(
       const partitionLayout = d3
         .partition<HierarchyNodeData>()
         .size([2 * Math.PI, radius])
-      partitionLayout(root)
+      const rootPartitioned = partitionLayout(root) as d3.HierarchyRectangularNode<HierarchyNodeData>
 
       const byId = new Map(nodes.map((n) => [n.id, n]))
-      root.leaves().forEach((leaf) => {
+      rootPartitioned.leaves().forEach((leaf) => {
         const data = leaf.data.node
         if (!data) return
         const target = byId.get(data.id)
@@ -171,27 +175,7 @@ export function initializeLayout(
     case 'pack': {
       if (!nodes.length) break
 
-      const groups = new Map<string, GraphNode[]>()
-      nodes.forEach((node) => {
-        const key = node.label || 'Other'
-        const group = groups.get(key)
-        if (group) {
-          group.push(node)
-        } else {
-          groups.set(key, [node])
-        }
-      })
-
-      const rootData: HierarchyNodeData = {
-        name: 'root',
-        children: Array.from(groups.entries()).map(([label, groupNodes]) => ({
-          name: label,
-          children: groupNodes.map((node) => ({
-            name: String(node.id),
-            node,
-          })),
-        })),
-      }
+      const rootData = createTreeData(nodes)
 
       const root = d3
         .hierarchy<HierarchyNodeData>(rootData, (d) => d.children)
