@@ -79,6 +79,7 @@ class DatabaseConnection:
 
     async def _report_pool_metrics(self) -> None:
         """Background task to report pool metrics."""
+        consecutive_failures = 0
         while self._pool:
             try:
                 stats = self._pool.get_stats()
@@ -87,9 +88,24 @@ class DatabaseConnection:
                 available = stats.get("pool_available", 0)
                 in_use = total - available
                 metrics.record_db_pool_stats(self.database, total, available, in_use)
-            except Exception:
-                # Don't let metrics reporting crash the session
-                pass
+                consecutive_failures = 0
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                consecutive_failures += 1
+                # Avoid log spam: full traceback on first failure, then periodic warnings.
+                if consecutive_failures == 1:
+                    logger.warning(
+                        "Pool metrics report failed (will retry every 30s): %s",
+                        e,
+                        exc_info=True,
+                    )
+                elif consecutive_failures % 10 == 0:
+                    logger.warning(
+                        "Pool metrics still failing after %s consecutive errors: %s",
+                        consecutive_failures,
+                        e,
+                    )
             await asyncio.sleep(30)
 
     async def connect(self) -> None:
@@ -166,71 +182,153 @@ class DatabaseConnection:
         async with self._pool.connection() as conn:
             yield conn
 
-    async def execute_query(
-        self, query: str, params: Optional[dict] = None, timeout: Optional[int] = None
+    async def _execute_query_on_conn(
+        self,
+        conn: psycopg.AsyncConnection,
+        query: str,
+        params: Optional[dict],
+        timeout: int,
+        start_time: float,
     ) -> list[dict]:
-        """Execute a query using a connection from the pool."""
+        async with conn.cursor() as cur:
+            try:
+                await asyncio.wait_for(
+                    cur.execute(query, params),
+                    timeout=timeout,
+                )
+                result = await cur.fetchall()
+                duration = time.time() - start_time
+                metrics.record_db_query(duration)
+                return result
+            except asyncio.TimeoutError:
+                duration = time.time() - start_time
+                metrics.record_db_query(duration)
+                query_hash = hashlib.sha256(query.encode()).hexdigest()[:8]
+                logger.warning(
+                    "Query timeout (hash: %s) after %s seconds",
+                    query_hash,
+                    timeout,
+                )
+                await conn.rollback()
+                raise
+            except Exception:
+                query_hash = hashlib.sha256(query.encode()).hexdigest()[:8]
+                logger.error("execute_query failed (hash: %s)", query_hash, exc_info=True)
+                await conn.rollback()
+                raise
+
+    async def execute_query(
+        self,
+        query: str,
+        params: Optional[dict] = None,
+        timeout: Optional[int] = None,
+        *,
+        conn: Optional[psycopg.AsyncConnection] = None,
+    ) -> list[dict]:
+        """
+        Execute a query. Uses ``conn`` when provided (e.g. inside ``transaction()``);
+        otherwise checks out a connection from the pool.
+        """
         if timeout is None:
             timeout = settings.query_timeout
         start_time = time.time()
-        
-        async with self.connection() as conn:
-            async with conn.cursor() as cur:
-                try:
-                    await asyncio.wait_for(
-                        cur.execute(query, params),
-                        timeout=timeout,
-                    )
-                    result = await cur.fetchall()
-                    duration = time.time() - start_time
-                    metrics.record_db_query(duration)
-                    return result
-                except asyncio.TimeoutError:
-                    duration = time.time() - start_time
-                    metrics.record_db_query(duration)
-                    query_hash = hashlib.sha256(query.encode()).hexdigest()[:8]
-                    logger.warning(f"Query timeout (hash: {query_hash}) after {timeout} seconds")
-                    await conn.rollback()
-                    raise
-                except Exception:
-                    query_hash = hashlib.sha256(query.encode()).hexdigest()[:8]
-                    logger.error("execute_query failed (hash: %s)", query_hash, exc_info=True)
-                    await conn.rollback()
-                    raise
+        if conn is not None:
+            return await self._execute_query_on_conn(
+                conn, query, params, timeout, start_time
+            )
+        async with self.connection() as ac:
+            return await self._execute_query_on_conn(
+                ac, query, params, timeout, start_time
+            )
+
+    async def _execute_command_on_conn(
+        self,
+        conn: psycopg.AsyncConnection,
+        query: str,
+        params: Optional[dict],
+        timeout: int,
+        start_time: float,
+    ) -> None:
+        async with conn.cursor() as cur:
+            try:
+                await asyncio.wait_for(
+                    cur.execute(query, params),
+                    timeout=timeout,
+                )
+                duration = time.time() - start_time
+                metrics.record_db_query(duration)
+            except asyncio.TimeoutError:
+                duration = time.time() - start_time
+                metrics.record_db_query(duration)
+                query_hash = hashlib.sha256(query.encode()).hexdigest()[:8]
+                logger.warning(
+                    "Command timeout (hash: %s) after %s seconds",
+                    query_hash,
+                    timeout,
+                )
+                await conn.rollback()
+                raise
+            except Exception:
+                query_hash = hashlib.sha256(query.encode()).hexdigest()[:8]
+                logger.error(
+                    "execute_command failed (hash: %s)", query_hash, exc_info=True
+                )
+                await conn.rollback()
+                raise
 
     async def execute_command(
-        self, query: str, params: Optional[dict] = None, timeout: Optional[int] = None
+        self,
+        query: str,
+        params: Optional[dict] = None,
+        timeout: Optional[int] = None,
+        *,
+        conn: Optional[psycopg.AsyncConnection] = None,
     ) -> None:
-        """Execute a command (no result set) using a connection from the pool."""
+        """Execute a command (no result set). Pass ``conn`` to join an open transaction."""
         if timeout is None:
             timeout = settings.query_timeout
         start_time = time.time()
-        
-        async with self.connection() as conn:
-            async with conn.cursor() as cur:
-                try:
-                    await asyncio.wait_for(
-                        cur.execute(query, params),
-                        timeout=timeout,
-                    )
-                    duration = time.time() - start_time
-                    metrics.record_db_query(duration)
-                except asyncio.TimeoutError:
-                    duration = time.time() - start_time
-                    metrics.record_db_query(duration)
-                    query_hash = hashlib.sha256(query.encode()).hexdigest()[:8]
-                    logger.warning(f"Command timeout (hash: {query_hash}) after {timeout} seconds")
-                    raise
+        if conn is not None:
+            await self._execute_command_on_conn(conn, query, params, timeout, start_time)
+            return
+        async with self.connection() as ac:
+            await self._execute_command_on_conn(ac, query, params, timeout, start_time)
+
+    async def _execute_scalar_on_conn(
+        self,
+        conn: psycopg.AsyncConnection,
+        query: str,
+        params: Optional[dict],
+        timeout: int,
+    ) -> Optional[Any]:
+        async with conn.cursor() as cur:
+            await asyncio.wait_for(cur.execute(query, params), timeout=timeout)
+            result = await cur.fetchone()
+            return first_value(result)
 
     async def execute_scalar(
-        self, query: str, params: Optional[dict] = None
+        self,
+        query: str,
+        params: Optional[dict] = None,
+        *,
+        timeout: Optional[int] = None,
+        conn: Optional[psycopg.AsyncConnection] = None,
     ) -> Optional[Any]:
         """Execute a query and return a single scalar value."""
-        async with self.connection() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute(query, params)
-                result = await cur.fetchone()
-                return first_value(result)
+        if timeout is None:
+            timeout = settings.query_timeout
+        if conn is not None:
+            try:
+                return await self._execute_scalar_on_conn(conn, query, params, timeout)
+            except Exception:
+                await conn.rollback()
+                raise
+        async with self.connection() as ac:
+            try:
+                return await self._execute_scalar_on_conn(ac, query, params, timeout)
+            except Exception:
+                await ac.rollback()
+                raise
 
     @asynccontextmanager
     async def transaction(self, timeout: Optional[int] = None):
