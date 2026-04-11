@@ -162,7 +162,7 @@ async def execute_query(
             raw_rows = await db_conn.execute_cypher(
                 validated_graph_name,
                 cypher_to_execute,
-                params=request.params or None,
+                params=request.params,
                 timeout=settings.query_timeout,
                 conn=exec_conn,
             )

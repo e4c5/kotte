@@ -29,11 +29,11 @@ async def test_stream_query_unregisters_tracker_on_completion():
     async for chunk in stream_query_results(
         graph_name="test_graph",
         cypher_query="MATCH (n) RETURN n",
-        params={},
         chunk_size=100,
         offset=0,
         db_conn=mock_db,
         request_id=request_id,
+        params={},
     ):
         chunks.append(chunk)
 
@@ -60,11 +60,11 @@ async def test_stream_query_with_existing_limit_is_chunked_in_memory():
     async for chunk in stream_query_results(
         graph_name="test_graph",
         cypher_query="MATCH (n) RETURN n LIMIT 3",
-        params={},
         chunk_size=2,
         offset=0,
         db_conn=mock_db,
         request_id=request_id,
+        params={},
     ):
         chunks.append(json.loads(chunk))
 
@@ -73,3 +73,33 @@ async def test_stream_query_with_existing_limit_is_chunked_in_memory():
     assert data_chunks[0]["chunk_size"] == 2
     assert data_chunks[1]["chunk_size"] == 1
     mock_db.execute_cypher.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_stream_query_empty_params_dict_reaches_execute_cypher():
+    """Explicit {} must be passed to execute_cypher (3-arg cypher), not coerced to None."""
+    request_id = "stream-empty-params"
+    mock_db = MagicMock()
+    mock_db.execute_scalar = AsyncMock(return_value=1)
+    mock_db.execute_cypher = AsyncMock(return_value=[])
+
+    query_tracker.unregister_query(request_id)
+    query_tracker.register_query(
+        request_id=request_id,
+        db_conn=mock_db,
+        query_text="RETURN 1 AS x",
+        user_id="test-user",
+    )
+
+    async for _ in stream_query_results(
+        graph_name="test_graph",
+        cypher_query="RETURN 1 AS x LIMIT 1",
+        chunk_size=100,
+        offset=0,
+        db_conn=mock_db,
+        request_id=request_id,
+        params={},
+    ):
+        pass
+
+    assert mock_db.execute_cypher.call_args.kwargs["params"] == {}

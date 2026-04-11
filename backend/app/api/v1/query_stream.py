@@ -3,7 +3,7 @@
 import json
 import logging
 import uuid
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Optional
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
@@ -42,11 +42,11 @@ async def get_db_connection(session: dict = Depends(get_session)) -> DatabaseCon
 async def stream_query_results(
     graph_name: str,
     cypher_query: str,
-    params: dict,
     chunk_size: int,
     offset: int,
     db_conn: DatabaseConnection,
     request_id: str,
+    params: Optional[dict] = None,
 ) -> AsyncGenerator[str, None]:
     """
     Stream query results in chunks.
@@ -87,8 +87,8 @@ async def stream_query_results(
             except Exception as e:
                 logger.warning("Failed to get backend PID for stream tracking: %s", e)
 
-            cypher_params = params or {}
-            has_params = bool(cypher_params)
+            # Pass params through unchanged: None → 2-arg cypher(); {} or non-empty → 3-arg
+            # (CypherExecutor uses `params is not None`, not truthiness.)
 
             # Build SQL query with LIMIT and OFFSET for pagination
             # Note: We need to wrap the original query in a subquery to add LIMIT/OFFSET
@@ -115,7 +115,7 @@ async def stream_query_results(
                 raw_rows = await db_conn.execute_cypher(
                     validated_graph_name,
                     cypher_query,
-                    params=cypher_params if has_params else None,
+                    params=params,
                     timeout=settings.query_timeout,
                     conn=exec_conn,
                 )
@@ -169,7 +169,7 @@ async def stream_query_results(
                 raw_rows = await db_conn.execute_cypher(
                     validated_graph_name,
                     modified_cypher,
-                    params=cypher_params if has_params else None,
+                    params=params,
                     timeout=settings.query_timeout,
                     conn=exec_conn,
                 )
@@ -288,11 +288,11 @@ async def stream_query(
         stream_query_results(
             graph_name=request.graph,
             cypher_query=request.cypher,
-            params=request.params or {},
             chunk_size=request.chunk_size,
             offset=request.offset,
             db_conn=db_conn,
             request_id=request_id,
+            params=request.params,
         ),
         media_type="application/x-ndjson",
         headers={
