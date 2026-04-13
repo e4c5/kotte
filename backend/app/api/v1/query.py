@@ -5,6 +5,7 @@ import logging
 import re
 import time
 import uuid
+from typing import Annotated
 
 from fastapi import APIRouter, Depends
 
@@ -51,8 +52,8 @@ async def list_query_templates():
 @router.post("/execute", response_model=QueryExecuteResponse)
 async def execute_query(
     request: QueryExecuteRequest,
-    db_conn: DatabaseConnection = Depends(get_db_connection),
-    session: dict = Depends(get_session),
+    db_conn: Annotated[DatabaseConnection, Depends(get_db_connection)],
+    session: Annotated[dict, Depends(get_session)],
 ) -> QueryExecuteResponse:
     """
     Execute a Cypher query against the specified graph.
@@ -359,7 +360,7 @@ async def execute_query(
 async def cancel_query(
     request_id: str,
     request: QueryCancelRequest,
-    session: dict = Depends(get_session),
+    session: Annotated[dict, Depends(get_session)],
 ) -> QueryCancelResponse:
     """
     Cancel a running query.

@@ -1,7 +1,7 @@
 """Saved database connection endpoints."""
 
 import logging
-from typing import List
+from typing import Annotated, List
 
 from fastapi import APIRouter, Depends, status
 from fastapi.responses import JSONResponse, Response
@@ -24,7 +24,7 @@ router = APIRouter()
 @router.post("", response_model=SavedConnectionResponse, status_code=status.HTTP_201_CREATED)
 async def save_connection(
     request: SavedConnectionRequest,
-    session: dict = Depends(get_session),
+    session: Annotated[dict, Depends(get_session)],
 ) -> SavedConnectionResponse:
     """
     Save a database connection (encrypted).
@@ -101,7 +101,7 @@ async def save_connection(
 
 @router.get("", response_model=list[SavedConnectionResponse])
 async def list_connections(
-    session: dict = Depends(get_session),
+    session: Annotated[dict, Depends(get_session)],
 ) -> list[SavedConnectionResponse]:
     """List all saved connections for the current user."""
     user_id = session.get("user_id")
@@ -140,7 +140,7 @@ async def list_connections(
 @router.get("/{connection_id}", response_model=SavedConnectionDetail)
 async def get_connection(
     connection_id: str,
-    session: dict = Depends(get_session),
+    session: Annotated[dict, Depends(get_session)],
 ) -> SavedConnectionDetail:
     """
     Get a saved connection with decrypted credentials.
@@ -203,7 +203,7 @@ async def get_connection(
 @router.delete("/{connection_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_connection(
     connection_id: str,
-    session: dict = Depends(get_session),
+    session: Annotated[dict, Depends(get_session)],
 ) -> Response:
     """Delete a saved connection."""
     user_id = session.get("user_id")

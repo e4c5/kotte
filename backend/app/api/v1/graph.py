@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+from typing import Annotated
 
 from fastapi import APIRouter, Depends
 
@@ -36,7 +37,7 @@ router = APIRouter()
 
 @router.get("", response_model=list[GraphInfo])
 async def list_graphs(
-    db_conn: DatabaseConnection = Depends(get_db_connection),
+    db_conn: Annotated[DatabaseConnection, Depends(get_db_connection)],
 ) -> list[GraphInfo]:
     """List all available AGE graphs in the database."""
     try:
@@ -70,7 +71,7 @@ async def list_graphs(
 @router.get("/{graph_name}/metadata", response_model=GraphMetadata)
 async def get_graph_metadata(
     graph_name: str,
-    db_conn: DatabaseConnection = Depends(get_db_connection),
+    db_conn: Annotated[DatabaseConnection, Depends(get_db_connection)],
 ) -> GraphMetadata:
     """Get metadata for a specific graph."""
     try:
@@ -204,7 +205,7 @@ async def get_graph_metadata(
 @router.get("/{graph_name}/meta-graph", response_model=MetaGraphResponse)
 async def get_meta_graph(
     graph_name: str,
-    db_conn: DatabaseConnection = Depends(get_db_connection),
+    db_conn: Annotated[DatabaseConnection, Depends(get_db_connection)],
 ) -> MetaGraphResponse:
     """Get meta-graph view showing label-to-label relationship patterns."""
     try:
@@ -293,7 +294,7 @@ async def expand_node_neighborhood(
     graph_name: str,
     node_id: str,
     request: NodeExpandRequest,
-    db_conn: DatabaseConnection = Depends(get_db_connection),
+    db_conn: Annotated[DatabaseConnection, Depends(get_db_connection)],
 ) -> NodeExpandResponse:
     """Expand the neighborhood of a node up to a specified depth."""
     try:
@@ -423,7 +424,7 @@ async def expand_node_neighborhood(
 async def find_shortest_path(
     graph_name: str,
     request: ShortestPathRequest,
-    db_conn: DatabaseConnection = Depends(get_db_connection),
+    db_conn: Annotated[DatabaseConnection, Depends(get_db_connection)],
 ) -> ShortestPathResponse:
     """Find shortest path between two nodes using variable-length path matching."""
     try:

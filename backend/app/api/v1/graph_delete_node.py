@@ -1,6 +1,7 @@
 """Node deletion endpoint for graph API."""
 
 import logging
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
 
@@ -21,8 +22,8 @@ router = APIRouter()
 async def delete_node(
     graph_name: str,
     node_id: str,
+    db_conn: Annotated[DatabaseConnection, Depends(get_db_connection)],
     detach: bool = Query(default=False, description="If true, delete node and all its relationships"),
-    db_conn: DatabaseConnection = Depends(get_db_connection),
 ) -> NodeDeleteResponse:
     """
     Delete a node from the graph.

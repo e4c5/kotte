@@ -2,6 +2,7 @@
 
 import logging
 from datetime import datetime, timezone
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, Response
 from pydantic import BaseModel
@@ -47,7 +48,7 @@ async def health_check() -> HealthResponse:
 
 @router.get("/ready", response_model=ReadinessResponse)
 async def readiness_check(
-    session: dict = Depends(get_session),
+    session: Annotated[dict, Depends(get_session)],
 ) -> ReadinessResponse:
     """
     Readiness check endpoint.

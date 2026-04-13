@@ -3,6 +3,7 @@
 import logging
 import uuid
 from datetime import datetime, timezone
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, UploadFile, File, Form
 
@@ -52,7 +53,7 @@ def _cleanup_import_jobs() -> None:
         del _import_jobs[oldest_id]
 
 
-def get_db_connection(session: dict = Depends(get_session)) -> DatabaseConnection:
+def get_db_connection(session: Annotated[dict, Depends(get_session)]) -> DatabaseConnection:
     """Get database connection from session."""
     db_conn = session.get("db_connection")
     if not db_conn:
@@ -67,12 +68,12 @@ def get_db_connection(session: dict = Depends(get_session)) -> DatabaseConnectio
 
 @router.post("/csv", response_model=CSVImportResponse)
 async def import_csv(
+    db_conn: Annotated[DatabaseConnection, Depends(get_db_connection)],
     graph_name: str = Form(...),
+    file: UploadFile = File(...),
     node_label: str = Form(None),
     edge_label: str = Form(None),
     drop_if_exists: bool = Form(False),
-    file: UploadFile = File(...),
-    db_conn: DatabaseConnection = Depends(get_db_connection),
 ) -> CSVImportResponse:
     """
     Import CSV file to create graph data.
@@ -338,7 +339,7 @@ async def import_csv(
 @router.get("/jobs/{job_id}", response_model=ImportJobStatus)
 async def get_import_job_status(
     job_id: str,
-    session: dict = Depends(get_session),
+    session: Annotated[dict, Depends(get_session)],
 ) -> ImportJobStatus:
     """Get import job status."""
     _cleanup_import_jobs()

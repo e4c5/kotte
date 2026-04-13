@@ -1,6 +1,7 @@
 """Session management endpoints."""
 
 import logging
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request, status
 from starlette.responses import JSONResponse
@@ -23,7 +24,7 @@ router = APIRouter()
 
 @router.post("/connect", response_model=ConnectResponse, status_code=status.HTTP_201_CREATED)
 async def connect(
-    request: ConnectRequest, http_request: Request, session: dict = Depends(get_session)
+    request: ConnectRequest, http_request: Request, session: Annotated[dict, Depends(get_session)]
 ) -> ConnectResponse:
     """
     Establish database connection and create session.
@@ -97,7 +98,7 @@ async def connect(
 
 @router.post("/disconnect", response_model=DisconnectResponse)
 async def disconnect(
-    http_request: Request, session: dict = Depends(get_session)
+    http_request: Request, session: Annotated[dict, Depends(get_session)]
 ) -> DisconnectResponse:
     """Disconnect from database and invalidate session."""
     session_id = http_request.session.get("session_id")
@@ -124,7 +125,7 @@ async def disconnect(
 
 @router.get("/status", response_model=SessionStatusResponse)
 async def get_status(
-    http_request: Request, session: dict = Depends(get_session)
+    http_request: Request, session: Annotated[dict, Depends(get_session)]
 ) -> SessionStatusResponse:
     """Get current session status."""
     conn_config = session.get("connection_config", {})

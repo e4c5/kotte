@@ -2,6 +2,7 @@
 
 import logging
 from datetime import datetime, timezone
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request, status
 
@@ -79,7 +80,7 @@ async def login(request: LoginRequest, http_request: Request) -> LoginResponse:
 
 @router.post("/logout", response_model=LogoutResponse)
 async def logout(
-    http_request: Request, session: dict = Depends(get_session)
+    http_request: Request, session: Annotated[dict, Depends(get_session)]
 ) -> LogoutResponse:
     """
     Logout user and invalidate session.
@@ -113,7 +114,7 @@ async def logout(
 
 @router.get("/me", response_model=UserInfo)
 async def get_current_user(
-    session: dict = Depends(get_session),
+    session: Annotated[dict, Depends(get_session)],
 ) -> UserInfo:
     """Get current authenticated user information."""
     user_id = session.get("user_id")

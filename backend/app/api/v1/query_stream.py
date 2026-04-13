@@ -3,7 +3,7 @@
 import json
 import logging
 import uuid
-from typing import AsyncGenerator, Optional
+from typing import Annotated, AsyncGenerator, Optional
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-async def get_db_connection(session: dict = Depends(get_session)) -> DatabaseConnection:
+async def get_db_connection(session: Annotated[dict, Depends(get_session)]) -> DatabaseConnection:
     """Get database connection from session."""
     db_conn = session.get("db_connection")
     if not db_conn:
@@ -164,17 +164,7 @@ async def stream_query_results(
             while True:
                 remaining = max_rows - emitted_rows
                 if remaining <= 0:
-                    error_chunk = {
-                        "error": {
-                            "code": ErrorCode.QUERY_VALIDATION_ERROR,
-                            "message": (
-                                f"Stream result cap reached ({max_rows} rows). "
-                                "Refine query with WHERE/LIMIT."
-                            ),
-                        }
-                    }
-                    yield json.dumps(error_chunk) + "\n"
-                    break
+                    return
 
                 # Add SKIP and LIMIT to the query (strip trailing ; so we don't produce "...; SKIP")
                 cypher_base = cypher_query.rstrip()
@@ -231,17 +221,18 @@ async def stream_query_results(
                 emitted_rows += n
 
                 if emitted_rows >= max_rows:
-                    error_chunk = {
-                        "error": {
-                            "code": ErrorCode.QUERY_VALIDATION_ERROR,
-                            "message": (
-                                f"Stream result cap reached ({max_rows} rows). "
-                                "Refine query with WHERE/LIMIT."
-                            ),
+                    if n == fetch_limit: # Check if there might be more rows beyond the cap
+                        error_chunk = {
+                            "error": {
+                                "code": ErrorCode.QUERY_VALIDATION_ERROR,
+                                "message": (
+                                    f"Stream result cap reached ({max_rows} rows). "
+                                    "Refine query with WHERE/LIMIT."
+                                ),
+                            }
                         }
-                    }
-                    yield json.dumps(error_chunk) + "\n"
-                    break
+                        yield json.dumps(error_chunk) + "\n"
+                    return
 
                 if n < fetch_limit:
                     break
@@ -275,8 +266,8 @@ async def stream_query_results(
 @router.post("/stream")
 async def stream_query(
     request: QueryStreamRequest,
-    db_conn: DatabaseConnection = Depends(get_db_connection),
-    session: dict = Depends(get_session),
+    db_conn: Annotated[DatabaseConnection, Depends(get_db_connection)],
+    session: Annotated[dict, Depends(get_session)],
 ) -> StreamingResponse:
     """
     Stream query results in chunks (NDJSON format).
