@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.delete("/{graph_name}/nodes/{node_id}", response_model=NodeDeleteResponse)
+@router.delete("/{graph_name}/nodes/{node_id}")
 async def delete_node(
     graph_name: str,
     node_id: str,

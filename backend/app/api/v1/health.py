@@ -32,7 +32,7 @@ class ReadinessResponse(BaseModel):
     version: str = "0.1.0"
 
 
-@router.get("/health", response_model=HealthResponse)
+@router.get("/health")
 async def health_check() -> HealthResponse:
     """
     Basic health check endpoint.
@@ -46,7 +46,7 @@ async def health_check() -> HealthResponse:
     )
 
 
-@router.get("/ready", response_model=ReadinessResponse)
+@router.get("/ready")
 async def readiness_check(
     session: Annotated[dict, Depends(get_session)],
 ) -> ReadinessResponse:

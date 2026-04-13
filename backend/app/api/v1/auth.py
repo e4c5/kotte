@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.post("/login", response_model=LoginResponse, status_code=status.HTTP_200_OK)
+@router.post("/login", status_code=status.HTTP_200_OK)
 async def login(request: LoginRequest, http_request: Request) -> LoginResponse:
     """
     Authenticate user and create session.
@@ -78,7 +78,7 @@ async def login(request: LoginRequest, http_request: Request) -> LoginResponse:
     )
 
 
-@router.post("/logout", response_model=LogoutResponse)
+@router.post("/logout")
 async def logout(
     http_request: Request, session: Annotated[dict, Depends(get_session)]
 ) -> LogoutResponse:
@@ -112,7 +112,7 @@ async def logout(
     return LogoutResponse(logged_out=True)
 
 
-@router.get("/me", response_model=UserInfo)
+@router.get("/me")
 async def get_current_user(
     session: Annotated[dict, Depends(get_session)],
 ) -> UserInfo:

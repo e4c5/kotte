@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.post("", response_model=SavedConnectionResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", status_code=status.HTTP_201_CREATED)
 async def save_connection(
     request: SavedConnectionRequest,
     session: Annotated[dict, Depends(get_session)],
@@ -99,7 +99,7 @@ async def save_connection(
         ) from e
 
 
-@router.get("", response_model=list[SavedConnectionResponse])
+@router.get("")
 async def list_connections(
     session: Annotated[dict, Depends(get_session)],
 ) -> list[SavedConnectionResponse]:
@@ -137,7 +137,7 @@ async def list_connections(
         ) from e
 
 
-@router.get("/{connection_id}", response_model=SavedConnectionDetail)
+@router.get("/{connection_id}")
 async def get_connection(
     connection_id: str,
     session: Annotated[dict, Depends(get_session)],

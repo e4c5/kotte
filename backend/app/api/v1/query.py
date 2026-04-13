@@ -49,7 +49,7 @@ async def list_query_templates():
     return get_templates()
 
 
-@router.post("/execute", response_model=QueryExecuteResponse)
+@router.post("/execute")
 async def execute_query(
     request: QueryExecuteRequest,
     db_conn: Annotated[DatabaseConnection, Depends(get_db_connection)],
@@ -356,7 +356,7 @@ async def execute_query(
         ) from e
 
 
-@router.post("/{request_id}/cancel", response_model=QueryCancelResponse)
+@router.post("/{request_id}/cancel")
 async def cancel_query(
     request_id: str,
     request: QueryCancelRequest,

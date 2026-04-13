@@ -66,7 +66,7 @@ def get_db_connection(session: Annotated[dict, Depends(get_session)]) -> Databas
     return db_conn
 
 
-@router.post("/csv", response_model=CSVImportResponse)
+@router.post("/csv")
 async def import_csv(
     db_conn: Annotated[DatabaseConnection, Depends(get_db_connection)],
     graph_name: str = Form(...),
@@ -336,7 +336,7 @@ async def import_csv(
         ) from e
 
 
-@router.get("/jobs/{job_id}", response_model=ImportJobStatus)
+@router.get("/jobs/{job_id}")
 async def get_import_job_status(
     job_id: str,
     session: Annotated[dict, Depends(get_session)],

@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.get("", response_model=list[GraphInfo])
+@router.get("")
 async def list_graphs(
     db_conn: Annotated[DatabaseConnection, Depends(get_db_connection)],
 ) -> list[GraphInfo]:
@@ -68,7 +68,7 @@ async def list_graphs(
         ) from e
 
 
-@router.get("/{graph_name}/metadata", response_model=GraphMetadata)
+@router.get("/{graph_name}/metadata")
 async def get_graph_metadata(
     graph_name: str,
     db_conn: Annotated[DatabaseConnection, Depends(get_db_connection)],
@@ -202,7 +202,7 @@ async def get_graph_metadata(
         ) from e
 
 
-@router.get("/{graph_name}/meta-graph", response_model=MetaGraphResponse)
+@router.get("/{graph_name}/meta-graph")
 async def get_meta_graph(
     graph_name: str,
     db_conn: Annotated[DatabaseConnection, Depends(get_db_connection)],
@@ -289,7 +289,7 @@ async def get_meta_graph(
         ) from e
 
 
-@router.post("/{graph_name}/nodes/{node_id}/expand", response_model=NodeExpandResponse)
+@router.post("/{graph_name}/nodes/{node_id}/expand")
 async def expand_node_neighborhood(
     graph_name: str,
     node_id: str,
@@ -419,7 +419,6 @@ async def expand_node_neighborhood(
 
 @router.post(
     "/{graph_name}/shortest-path",
-    response_model=ShortestPathResponse,
 )
 async def find_shortest_path(
     graph_name: str,
