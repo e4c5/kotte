@@ -65,15 +65,6 @@ Apache AGE Graph Visualizer Backend API.
         ],
     )
 
-    # CORS middleware
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=settings.cors_origins,
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
-
     # CSRF protection middleware (needs request.session, so Session must run before it)
     if settings.csrf_enabled:
         app.add_middleware(CSRFMiddleware)
@@ -100,6 +91,15 @@ Apache AGE Graph Visualizer Backend API.
 
     # Security headers: CSP differs by environment (dev allows Swagger/ReDoc CDNs); see middleware.
     app.add_middleware(SecurityHeadersMiddleware)
+
+    # CORS middleware (added last so it runs first on requests)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
     # Error handlers
     setup_error_handlers(app)
