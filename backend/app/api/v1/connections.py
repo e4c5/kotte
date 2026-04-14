@@ -63,7 +63,7 @@ async def save_connection(
             )
         
         logger.info(
-            f"User {user_id} saved connection '{request.name}'",
+            "Saved connection for user",
             extra={
                 "event": "connection_saved",
                 "user_id": user_id,
@@ -90,7 +90,7 @@ async def save_connection(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         )
     except Exception as e:
-        logger.exception(f"Error saving connection: {e}")
+        logger.exception("Error saving connection", extra={"error": str(e)})
         raise APIException(
             code=ErrorCode.INTERNAL_ERROR,
             message="Failed to save connection",
@@ -128,7 +128,7 @@ async def list_connections(
             for conn in connections
         ]
     except Exception as e:
-        logger.exception(f"Error listing connections: {e}")
+        logger.exception("Error listing connections", extra={"error": str(e)})
         raise APIException(
             code=ErrorCode.INTERNAL_ERROR,
             message="Failed to list connections",
@@ -168,7 +168,7 @@ async def get_connection(
             )
         
         logger.info(
-            f"User {user_id} retrieved connection '{connection_id}'",
+            "Retrieved connection for user",
             extra={
                 "event": "connection_retrieved",
                 "user_id": user_id,
@@ -191,7 +191,7 @@ async def get_connection(
     except APIException:
         raise
     except Exception as e:
-        logger.exception(f"Error retrieving connection: {e}")
+        logger.exception("Error retrieving connection", extra={"error": str(e)})
         raise APIException(
             code=ErrorCode.INTERNAL_ERROR,
             message="Failed to retrieve connection",
@@ -226,7 +226,7 @@ async def delete_connection(
             )
         
         logger.info(
-            f"User {user_id} deleted connection '{connection_id}'",
+            "Deleted connection for user",
             extra={
                 "event": "connection_deleted",
                 "user_id": user_id,
@@ -238,7 +238,7 @@ async def delete_connection(
     except APIException:
         raise
     except Exception as e:
-        logger.exception(f"Error deleting connection: {e}")
+        logger.exception("Error deleting connection", extra={"error": str(e)})
         raise APIException(
             code=ErrorCode.INTERNAL_ERROR,
             message="Failed to delete connection",

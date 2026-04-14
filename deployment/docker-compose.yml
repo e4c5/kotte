@@ -8,7 +8,7 @@ services:
     container_name: kotte-age
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-kotte-dev-pass}
       POSTGRES_DB: postgres
     ports:
       - "5432:5432"
@@ -31,7 +31,7 @@ services:
       DB_PORT: 5432
       DB_NAME: postgres
       DB_USER: postgres
-      DB_PASSWORD: postgres
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-kotte-dev-pass}
       SESSION_SECRET_KEY: ${SESSION_SECRET_KEY}
       CORS_ORIGINS: http://localhost:5173,http://localhost:3000,http://frontend:5173
       ENVIRONMENT: development
