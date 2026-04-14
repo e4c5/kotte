@@ -78,6 +78,29 @@ def _normalize_path_array_string(s: str) -> Optional[str]:
     return s
 
 
+def _normalize_label(label: Any) -> str:
+    """Convert label values to a stable string representation."""
+    if isinstance(label, list):
+        return label[0] if label else ""
+    if not isinstance(label, str):
+        return str(label)
+    return label
+
+
+def _ensure_dict(value: Any) -> Dict[str, Any]:
+    """Return value when dict, otherwise an empty dict."""
+    return value if isinstance(value, dict) else {}
+
+
+def _coalesce_keys(obj: Dict[str, Any], keys: List[str], fallback_substring: str) -> Any:
+    """Return first non-None value from keys, then fallback substring lookup."""
+    for key in keys:
+        value = obj.get(key)
+        if value is not None:
+            return value
+    return _get_first_value_for_key_containing(obj, fallback_substring)
+
+
 class AgTypeParser:
     """Parser for AGE agtype format."""
 
@@ -191,18 +214,8 @@ class AgTypeParser:
     def _parse_vertex(obj: Dict[str, Any]) -> Dict[str, Any]:
         """Parse a vertex (node) from agtype."""
         node_id = obj.get("id")
-        label = obj.get("label", "")
-        properties = obj.get("properties", {})
-
-        # Handle label as string or list
-        if isinstance(label, list):
-            label = label[0] if label else ""
-        elif not isinstance(label, str):
-            label = str(label)
-
-        # Ensure properties is a dict
-        if not isinstance(properties, dict):
-            properties = {}
+        label = _normalize_label(obj.get("label", ""))
+        properties = _ensure_dict(obj.get("properties", {}))
 
         return {
             "id": AgTypeParser._parse_id(node_id),
@@ -215,40 +228,18 @@ class AgTypeParser:
     def _parse_edge(obj: Dict[str, Any]) -> Dict[str, Any]:
         """Parse an edge from agtype. Supports start_id/end_id, startid/endid, and already-parsed source/target."""
         edge_id = obj.get("id")
-        label = obj.get("label", "")
-        start_id = obj.get("start_id")
-        if start_id is None:
-            start_id = obj.get("startid")
-        if start_id is None:
-            start_id = obj.get("startId")
-        if start_id is None:
-            start_id = obj.get("start_vertex_id")
-        if start_id is None:
-            start_id = obj.get("source")
-        if start_id is None:
-            start_id = _get_first_value_for_key_containing(obj, "start")
-        end_id = obj.get("end_id")
-        if end_id is None:
-            end_id = obj.get("endid")
-        if end_id is None:
-            end_id = obj.get("endId")
-        if end_id is None:
-            end_id = obj.get("end_vertex_id")
-        if end_id is None:
-            end_id = obj.get("target")
-        if end_id is None:
-            end_id = _get_first_value_for_key_containing(obj, "end")
-        properties = obj.get("properties", {})
-
-        # Handle label as string or list
-        if isinstance(label, list):
-            label = label[0] if label else ""
-        elif not isinstance(label, str):
-            label = str(label)
-
-        # Ensure properties is a dict
-        if not isinstance(properties, dict):
-            properties = {}
+        label = _normalize_label(obj.get("label", ""))
+        start_id = _coalesce_keys(
+            obj,
+            ["start_id", "startid", "startId", "start_vertex_id", "source"],
+            "start",
+        )
+        end_id = _coalesce_keys(
+            obj,
+            ["end_id", "endid", "endId", "end_vertex_id", "target"],
+            "end",
+        )
+        properties = _ensure_dict(obj.get("properties", {}))
 
         return {
             "id": AgTypeParser._parse_id(edge_id),
