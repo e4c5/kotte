@@ -11,6 +11,8 @@ from app.services.cache import metadata_cache
 
 logger = logging.getLogger(__name__)
 
+DOES_NOT_EXIST_TEXT = "does not exist"
+
 
 async def invalidate_property_metadata_cache(
     graph_name: str, label_name: Optional[str] = None
@@ -90,7 +92,7 @@ class MetadataService:
 
         except Exception as e:
             msg = f"Failed to discover properties for {graph_name}.{label_name}: {e}"
-            if "does not exist" in str(e):
+            if DOES_NOT_EXIST_TEXT in str(e):
                 logger.debug(msg)
             else:
                 logger.warning(msg)
@@ -170,7 +172,7 @@ class MetadataService:
             return int(result) if result else 0
         except Exception as e:
             msg = f"Failed to get exact count for {graph_name}.{label_name}: {e}"
-            if "does not exist" in str(e):
+            if DOES_NOT_EXIST_TEXT in str(e):
                 logger.debug(msg)
             else:
                 logger.warning(msg)
@@ -233,7 +235,7 @@ class MetadataService:
 
         except Exception as e:
             msg = f"Failed to get property statistics for {graph_name}.{label_name}.{property_name}: {e}"
-            if "does not exist" in str(e):
+            if DOES_NOT_EXIST_TEXT in str(e):
                 logger.debug(msg)
             else:
                 logger.warning(msg)

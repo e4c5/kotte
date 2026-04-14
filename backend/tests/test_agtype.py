@@ -61,6 +61,11 @@ class TestAgTypeParser:
         assert result["label"] == "Person"
         assert result["properties"] == {"name": "Alice", "age": 30}
 
+    def test_parse_vertex_with_non_string_list_label(self):
+        vertex = {"id": "1", "label": [123], "properties": {}}
+        parsed = AgTypeParser.parse(vertex)
+        assert parsed["label"] == "123"
+
     def test_parse_vertex_with_list_label(self):
         """Test parsing vertex with label as list."""
         vertex = {
@@ -84,6 +89,18 @@ class TestAgTypeParser:
         
         assert result["type"] == "node"
         assert result["label"] == ""
+
+    def test_parse_vertex_with_json_properties(self):
+        """Test parsing a vertex where properties is a JSON string."""
+        vertex = {
+            "id": 1,
+            "label": "Person",
+            "properties": '{"name": "Alice", "age": 30}',
+        }
+        result = AgTypeParser.parse(vertex)
+        
+        assert result["type"] == "node"
+        assert result["properties"] == {"name": "Alice", "age": 30}
 
     def test_parse_edge(self):
         """Test parsing an edge."""

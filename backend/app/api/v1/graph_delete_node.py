@@ -1,6 +1,7 @@
 """Node deletion endpoint for graph API."""
 
 import logging
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
 
@@ -17,12 +18,12 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.delete("/{graph_name}/nodes/{node_id}", response_model=NodeDeleteResponse)
+@router.delete("/{graph_name}/nodes/{node_id}")
 async def delete_node(
     graph_name: str,
     node_id: str,
+    db_conn: Annotated[DatabaseConnection, Depends(get_db_connection)],
     detach: bool = Query(default=False, description="If true, delete node and all its relationships"),
-    db_conn: DatabaseConnection = Depends(get_db_connection),
 ) -> NodeDeleteResponse:
     """
     Delete a node from the graph.
@@ -163,7 +164,10 @@ async def delete_node(
     except APIException:
         raise
     except Exception as e:
-        logger.exception(f"Error deleting node {node_id} from graph {graph_name}")
+        logger.exception(
+            "Error deleting node",
+            extra={"graph": graph_name, "node_id": node_id, "error": str(e)},
+        )
         api_exc = translate_db_error(
             e,
             context={"graph": validated_graph_name, "node_id": node_id},

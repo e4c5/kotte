@@ -1,10 +1,10 @@
 """Saved database connection endpoints."""
 
 import logging
-from typing import List
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, status
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import Response
 
 from app.core.auth import get_session
 from app.core.connection_storage import connection_storage
@@ -13,7 +13,6 @@ from app.models.connection import (
     SavedConnectionRequest,
     SavedConnectionResponse,
     SavedConnectionDetail,
-    SavedConnectionListResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -21,10 +20,10 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.post("", response_model=SavedConnectionResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", status_code=status.HTTP_201_CREATED)
 async def save_connection(
     request: SavedConnectionRequest,
-    session: dict = Depends(get_session),
+    session: Annotated[dict, Depends(get_session)],
 ) -> SavedConnectionResponse:
     """
     Save a database connection (encrypted).
@@ -63,7 +62,7 @@ async def save_connection(
             )
         
         logger.info(
-            f"User {user_id} saved connection '{request.name}'",
+            "Saved connection for user",
             extra={
                 "event": "connection_saved",
                 "user_id": user_id,
@@ -90,7 +89,7 @@ async def save_connection(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         )
     except Exception as e:
-        logger.exception(f"Error saving connection: {e}")
+        logger.exception("Error saving connection", extra={"error": str(e)})
         raise APIException(
             code=ErrorCode.INTERNAL_ERROR,
             message="Failed to save connection",
@@ -99,9 +98,9 @@ async def save_connection(
         ) from e
 
 
-@router.get("", response_model=list[SavedConnectionResponse])
+@router.get("")
 async def list_connections(
-    session: dict = Depends(get_session),
+    session: Annotated[dict, Depends(get_session)],
 ) -> list[SavedConnectionResponse]:
     """List all saved connections for the current user."""
     user_id = session.get("user_id")
@@ -128,7 +127,7 @@ async def list_connections(
             for conn in connections
         ]
     except Exception as e:
-        logger.exception(f"Error listing connections: {e}")
+        logger.exception("Error listing connections", extra={"error": str(e)})
         raise APIException(
             code=ErrorCode.INTERNAL_ERROR,
             message="Failed to list connections",
@@ -137,10 +136,10 @@ async def list_connections(
         ) from e
 
 
-@router.get("/{connection_id}", response_model=SavedConnectionDetail)
+@router.get("/{connection_id}")
 async def get_connection(
     connection_id: str,
-    session: dict = Depends(get_session),
+    session: Annotated[dict, Depends(get_session)],
 ) -> SavedConnectionDetail:
     """
     Get a saved connection with decrypted credentials.
@@ -168,7 +167,7 @@ async def get_connection(
             )
         
         logger.info(
-            f"User {user_id} retrieved connection '{connection_id}'",
+            "Retrieved connection for user",
             extra={
                 "event": "connection_retrieved",
                 "user_id": user_id,
@@ -191,7 +190,7 @@ async def get_connection(
     except APIException:
         raise
     except Exception as e:
-        logger.exception(f"Error retrieving connection: {e}")
+        logger.exception("Error retrieving connection", extra={"error": str(e)})
         raise APIException(
             code=ErrorCode.INTERNAL_ERROR,
             message="Failed to retrieve connection",
@@ -203,7 +202,7 @@ async def get_connection(
 @router.delete("/{connection_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_connection(
     connection_id: str,
-    session: dict = Depends(get_session),
+    session: Annotated[dict, Depends(get_session)],
 ) -> Response:
     """Delete a saved connection."""
     user_id = session.get("user_id")
@@ -226,7 +225,7 @@ async def delete_connection(
             )
         
         logger.info(
-            f"User {user_id} deleted connection '{connection_id}'",
+            "Deleted connection for user",
             extra={
                 "event": "connection_deleted",
                 "user_id": user_id,
@@ -238,7 +237,7 @@ async def delete_connection(
     except APIException:
         raise
     except Exception as e:
-        logger.exception(f"Error deleting connection: {e}")
+        logger.exception("Error deleting connection", extra={"error": str(e)})
         raise APIException(
             code=ErrorCode.INTERNAL_ERROR,
             message="Failed to delete connection",

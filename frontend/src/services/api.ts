@@ -60,28 +60,86 @@ interface RequestOptions {
   cacheTtl?: number // TTL in milliseconds
 }
 
-async function request<T>(
+function getCachedGetResponse<T>(method: Method, url: string, options?: RequestOptions): { data: T } | null {
+  if (method !== 'GET' || !options?.cacheTtl) return null
+  const cached = apiCache.get<T>(url)
+  return cached !== null ? { data: cached } : null
+}
+
+async function getCsrfTokenForMethod(method: Method): Promise<string | null> {
+  const needsCsrf = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)
+  if (needsCsrf) {
+    return sessionStorage.getItem('csrf_token') || (await ensureCsrfToken())
+  }
+  return null
+}
+
+function buildHeaders(csrfToken: string | null): Record<string, string> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  if (csrfToken) headers['X-CSRF-Token'] = csrfToken
+  return headers
+}
+
+async function parseResponseData(res: Response): Promise<Record<string, unknown>> {
+  const text = await res.text()
+  return text ? (JSON.parse(text) as Record<string, unknown>) : {}
+}
+
+function persistCsrfToken(data: Record<string, unknown>): void {
+  if (data.csrf_token != null) {
+    sessionStorage.setItem('csrf_token', String(data.csrf_token))
+  }
+}
+
+function cacheSuccessfulGet<T>(method: Method, url: string, options: RequestOptions | undefined, data: T): void {
+  if (method === 'GET' && options?.cacheTtl) {
+    apiCache.set(url, data, options.cacheTtl)
+  }
+}
+
+function invalidateCachesForMutation(method: Method): void {
+  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+    invalidateCachesAfterMutation()
+  }
+}
+
+function handleUnauthorized(res: Response): void {
+  if (res.status !== 401) return
+  sessionStorage.removeItem('csrf_token')
+  apiCache.clear()
+  if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
+    window.location.href = '/login'
+  }
+}
+
+async function retryOnCsrfFailure<T>(
+  res: Response,
+  apiError: APIError['error'] | undefined,
+  method: Method,
+  url: string,
+  body: unknown,
+  options?: RequestOptions
+): Promise<{ data: T } | null> {
+  const isCsrfFailure = res.status === 403 && apiError?.message === 'CSRF token validation failed'
+  if (!isCsrfFailure || options?._csrfRetry) return null
+
+  sessionStorage.removeItem('csrf_token')
+  const token = await ensureCsrfToken()
+  if (!token) return null
+  return request<T>(method, url, body, { ...options, _csrfRetry: true })
+}
+
+export async function request<T>(
   method: Method,
   url: string,
   body?: unknown,
   options?: RequestOptions
 ): Promise<{ data: T }> {
-  // Check cache for GET requests
-  if (method === 'GET' && options?.cacheTtl) {
-    const cached = apiCache.get<T>(url)
-    if (cached !== null) {
-      return { data: cached }
-    }
-  }
+  const cachedResponse = getCachedGetResponse<T>(method, url, options)
+  if (cachedResponse) return cachedResponse
 
-  const needsCsrf = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)
-  let csrfToken: string | null = null
-  if (needsCsrf) {
-    csrfToken = sessionStorage.getItem('csrf_token') || (await ensureCsrfToken())
-  }
-
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-  if (csrfToken) headers['X-CSRF-Token'] = csrfToken
+  const csrfToken = await getCsrfTokenForMethod(method)
+  const headers = buildHeaders(csrfToken)
 
   const res = await fetch(BASE + url, {
     method,
@@ -90,47 +148,22 @@ async function request<T>(
     body: body !== undefined ? JSON.stringify(body) : undefined,
   })
 
-  const text = await res.text()
-  const data = text ? (JSON.parse(text) as Record<string, unknown>) : {}
+  const data = await parseResponseData(res)
 
   if (res.ok) {
-    if (data.csrf_token != null) {
-      sessionStorage.setItem('csrf_token', String(data.csrf_token))
-    }
-    
+    persistCsrfToken(data)
     const resultData = data as T
-    
-    // Store in cache if requested
-    if (method === 'GET' && options?.cacheTtl) {
-      apiCache.set(url, resultData, options.cacheTtl)
-    }
-    
-    // Invalidate cached GETs after mutations (graph list, metadata, templates, etc.)
-    if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
-      invalidateCachesAfterMutation()
-    }
+    cacheSuccessfulGet(method, url, options, resultData)
+    invalidateCachesForMutation(method)
 
     return { data: resultData }
   }
 
   const apiError = (data as unknown as APIError).error
+  handleUnauthorized(res)
 
-  if (res.status === 401) {
-    sessionStorage.removeItem('csrf_token')
-    apiCache.clear()
-    if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
-      window.location.href = '/login'
-    }
-  }
-
-  const isCsrfFailure =
-    res.status === 403 && apiError?.message === 'CSRF token validation failed'
-  if (isCsrfFailure && !options?._csrfRetry) {
-    const token = await ensureCsrfToken()
-    if (token) {
-      return request<T>(method, url, body, { ...options, _csrfRetry: true })
-    }
-  }
+  const csrfRetry = await retryOnCsrfFailure<T>(res, apiError, method, url, body, options)
+  if (csrfRetry) return csrfRetry
 
   if (apiError) {
     throw new APIErrorException(

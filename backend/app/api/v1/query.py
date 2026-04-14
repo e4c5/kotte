@@ -1,10 +1,12 @@
 """Query execution endpoints."""
 
 import asyncio
+import hashlib
 import logging
 import re
 import time
 import uuid
+from typing import Annotated
 
 from fastapi import APIRouter, Depends
 
@@ -48,11 +50,11 @@ async def list_query_templates():
     return get_templates()
 
 
-@router.post("/execute", response_model=QueryExecuteResponse)
+@router.post("/execute")
 async def execute_query(
     request: QueryExecuteRequest,
-    db_conn: DatabaseConnection = Depends(get_db_connection),
-    session: dict = Depends(get_session),
+    db_conn: Annotated[DatabaseConnection, Depends(get_db_connection)],
+    session: Annotated[dict, Depends(get_session)],
 ) -> QueryExecuteResponse:
     """
     Execute a Cypher query against the specified graph.
@@ -295,7 +297,14 @@ async def execute_query(
     except Exception as e:
         query_tracker.unregister_query(request_id)
         query_duration = time.time() - query_start_time
-        logger.exception(f"Query execution failed: {request.cypher[:100]}")
+        logger.exception(
+            "Query execution failed",
+            extra={
+                "request_id": request_id,
+                "query_hash": hashlib.sha256(request.cypher.encode()).hexdigest()[:8],
+                "query_length": len(request.cypher),
+            },
+        )
         error_msg = str(e)
 
         # Constraint violations (UniqueViolation, ForeignKeyViolation, etc.)
@@ -355,11 +364,11 @@ async def execute_query(
         ) from e
 
 
-@router.post("/{request_id}/cancel", response_model=QueryCancelResponse)
+@router.post("/{request_id}/cancel")
 async def cancel_query(
     request_id: str,
     request: QueryCancelRequest,
-    session: dict = Depends(get_session),
+    session: Annotated[dict, Depends(get_session)],
 ) -> QueryCancelResponse:
     """
     Cancel a running query.

@@ -1,6 +1,7 @@
 """Session management endpoints."""
 
 import logging
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request, status
 from starlette.responses import JSONResponse
@@ -21,9 +22,9 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.post("/connect", response_model=ConnectResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/connect", status_code=status.HTTP_201_CREATED)
 async def connect(
-    request: ConnectRequest, http_request: Request, session: dict = Depends(get_session)
+    request: ConnectRequest, http_request: Request, session: Annotated[dict, Depends(get_session)]
 ) -> ConnectResponse:
     """
     Establish database connection and create session.
@@ -95,9 +96,9 @@ async def connect(
     )
 
 
-@router.post("/disconnect", response_model=DisconnectResponse)
+@router.post("/disconnect")
 async def disconnect(
-    http_request: Request, session: dict = Depends(get_session)
+    http_request: Request, session: Annotated[dict, Depends(get_session)]
 ) -> DisconnectResponse:
     """Disconnect from database and invalidate session."""
     session_id = http_request.session.get("session_id")
@@ -108,7 +109,7 @@ async def disconnect(
         try:
             await db_conn.disconnect()
         except Exception as e:
-            logger.warning(f"Error disconnecting database: {e}")
+            logger.warning("Error disconnecting database", extra={"error": str(e)})
 
     # Delete session
     if session_id:
@@ -122,9 +123,9 @@ async def disconnect(
     return DisconnectResponse(disconnected=True)
 
 
-@router.get("/status", response_model=SessionStatusResponse)
+@router.get("/status")
 async def get_status(
-    http_request: Request, session: dict = Depends(get_session)
+    http_request: Request, session: Annotated[dict, Depends(get_session)]
 ) -> SessionStatusResponse:
     """Get current session status."""
     conn_config = session.get("connection_config", {})

@@ -2,6 +2,7 @@
 
 import logging
 from datetime import datetime, timezone
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, Response
 from pydantic import BaseModel
@@ -31,7 +32,7 @@ class ReadinessResponse(BaseModel):
     version: str = "0.1.0"
 
 
-@router.get("/health", response_model=HealthResponse)
+@router.get("/health")
 async def health_check() -> HealthResponse:
     """
     Basic health check endpoint.
@@ -45,9 +46,9 @@ async def health_check() -> HealthResponse:
     )
 
 
-@router.get("/ready", response_model=ReadinessResponse)
+@router.get("/ready")
 async def readiness_check(
-    session: dict = Depends(get_session),
+    session: Annotated[dict, Depends(get_session)],
 ) -> ReadinessResponse:
     """
     Readiness check endpoint.
@@ -78,7 +79,7 @@ async def readiness_check(
                     "status": "connected",
                 }
         except Exception as e:
-            logger.warning(f"Error checking database connection: {e}")
+            logger.warning("Error checking database connection", extra={"error": str(e)})
             db_status = {
                 "connected": False,
                 "status": "error",

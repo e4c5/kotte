@@ -84,6 +84,55 @@ export default function ResultTab({
     }
   }, [result?.graph_elements?.paths])
 
+  const availableNodeLabels = useMemo(
+    () => Array.from(new Set(result?.graph_elements?.nodes?.map(n => n.label) || [])),
+    [result?.graph_elements?.nodes]
+  )
+
+  const availableEdgeLabels = useMemo(
+    () => Array.from(new Set(result?.graph_elements?.edges?.map(e => e.label) || [])),
+    [result?.graph_elements?.edges]
+  )
+
+  const closeContextMenu = () => setContextMenu(null)
+
+  const handleExportGraph = async () => {
+    if (!exportGraph) return
+    try {
+      await exportGraph()
+    } catch (error) {
+      console.error('Failed to export graph:', error)
+      alert('Failed to export graph. Please try again.')
+    }
+  }
+
+  const handleNodeExpand = async () => {
+    if (!contextMenu) return
+    try {
+      await onNodeExpand(contextMenu.nodeId)
+    } finally {
+      closeContextMenu()
+    }
+  }
+
+  const handleNodeDelete = async () => {
+    if (!contextMenu) return
+    try {
+      await onNodeDelete(contextMenu.nodeId)
+    } finally {
+      closeContextMenu()
+    }
+  }
+
+  const handleNodeContextMenu = (node: GraphNode, event: MouseEvent) => {
+    setContextMenu({ nodeId: node.id, x: event.clientX, y: event.clientY })
+  }
+
+  const handleExportReady = (exportFn: () => Promise<void>) => {
+    setExportGraph(() => exportFn)
+    onExportReady(exportFn)
+  }
+
   if (!result) {
     if (tab.error || tab.loading) {
       return (
@@ -146,14 +195,7 @@ export default function ResultTab({
             {exportGraph && (
               <button
                 type="button"
-                onClick={async () => {
-                  try {
-                    await exportGraph()
-                  } catch (error) {
-                    console.error('Failed to export graph:', error)
-                    alert('Failed to export graph. Please try again.')
-                  }
-                }}
+                onClick={handleExportGraph}
                 className="ml-auto px-3 py-1.5 text-sm rounded border border-zinc-600 text-zinc-300 hover:bg-zinc-700"
                 title="Export graph as PNG"
               >
@@ -190,35 +232,24 @@ export default function ResultTab({
                 edges={result.graph_elements?.edges as GraphEdge[] || []}
                 pathHighlights={pathHighlights}
                 onNodeClick={onNodeSelect}
-                onNodeRightClick={(node, event) => {
-                  setContextMenu({ nodeId: node.id, x: event.clientX, y: event.clientY })
-                }}
+                onNodeRightClick={handleNodeContextMenu}
                 onEdgeClick={onEdgeSelect}
-                onExportReady={(exportFn) => {
-                  setExportGraph(() => exportFn)
-                  onExportReady(exportFn)
-                }}
+                onExportReady={handleExportReady}
               />
               {contextMenu && (
                 <NodeContextMenu
                   x={contextMenu.x}
                   y={contextMenu.y}
                   nodeId={contextMenu.nodeId}
-                  onExpand={async () => {
-                    await onNodeExpand(contextMenu.nodeId)
-                    setContextMenu(null)
-                  }}
-                  onDelete={async () => {
-                    await onNodeDelete(contextMenu.nodeId)
-                    setContextMenu(null)
-                  }}
-                  onClose={() => setContextMenu(null)}
+                  onExpand={handleNodeExpand}
+                  onDelete={handleNodeDelete}
+                  onClose={closeContextMenu}
                 />
               )}
               {showControls && (
                 <GraphControls
-                  availableNodeLabels={Array.from(new Set(result.graph_elements?.nodes?.map(n => n.label) || []))}
-                  availableEdgeLabels={Array.from(new Set(result.graph_elements?.edges?.map(e => e.label) || []))}
+                  availableNodeLabels={availableNodeLabels}
+                  availableEdgeLabels={availableEdgeLabels}
                   onClose={() => setShowControls(false)}
                 />
               )}
