@@ -101,6 +101,15 @@ def _coalesce_keys(obj: Dict[str, Any], keys: List[str], fallback_substring: str
     return _get_first_value_for_key_containing(obj, fallback_substring)
 
 
+def _append_unique_id(values: List[str], raw_id: Any) -> None:
+    """Append normalized id string if present and not already in list."""
+    if raw_id is None:
+        return
+    string_id = str(raw_id)
+    if string_id not in {str(x) for x in values}:
+        values.append(string_id)
+
+
 class AgTypeParser:
     """Parser for AGE agtype format."""
 
@@ -273,14 +282,9 @@ class AgTypeParser:
                 and n2.get("type") == "node"
             ):
                 segments.append({"start_node": n1, "edge": e, "end_node": n2})
-                nid = n1.get("id")
-                if nid is not None and str(nid) not in {str(x) for x in node_ids}:
-                    node_ids.append(str(nid))
-                if e.get("id") is not None and str(e["id"]) not in {str(x) for x in edge_ids}:
-                    edge_ids.append(str(e["id"]))
-                n2id = n2.get("id")
-                if n2id is not None and str(n2id) not in {str(x) for x in node_ids}:
-                    node_ids.append(str(n2id))
+                _append_unique_id(node_ids, n1.get("id"))
+                _append_unique_id(edge_ids, e.get("id"))
+                _append_unique_id(node_ids, n2.get("id"))
                 i += 2
             else:
                 i += 1
