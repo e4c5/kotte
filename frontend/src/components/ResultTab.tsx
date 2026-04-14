@@ -108,14 +108,20 @@ export default function ResultTab({
 
   const handleNodeExpand = async () => {
     if (!contextMenu) return
-    await onNodeExpand(contextMenu.nodeId)
-    closeContextMenu()
+    try {
+      await onNodeExpand(contextMenu.nodeId)
+    } finally {
+      closeContextMenu()
+    }
   }
 
   const handleNodeDelete = async () => {
     if (!contextMenu) return
-    await onNodeDelete(contextMenu.nodeId)
-    closeContextMenu()
+    try {
+      await onNodeDelete(contextMenu.nodeId)
+    } finally {
+      closeContextMenu()
+    }
   }
 
   const handleNodeContextMenu = (node: GraphNode, event: MouseEvent) => {

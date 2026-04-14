@@ -208,8 +208,19 @@ async def stream_query_results(
                 emitted_rows += n
 
                 if emitted_rows >= max_rows:
-                    if n == fetch_limit:  # Check if there might be more rows beyond the cap
-                        yield _stream_cap_error_chunk(max_rows)
+                    if n == fetch_limit:  # Might be more rows, probe 1 row
+                        probe_params = dict(exec_params)
+                        probe_params["__skip"] = current_offset + n
+                        probe_params["__limit"] = 1
+                        more_rows = await db_conn.execute_cypher(
+                            validated_graph_name,
+                            modified_cypher,
+                            params=probe_params,
+                            time_limit_seconds=settings.query_timeout,
+                            conn=exec_conn,
+                        )
+                        if more_rows:
+                            yield _stream_cap_error_chunk(max_rows)
                     return
 
                 if n < fetch_limit:

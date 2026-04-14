@@ -61,6 +61,11 @@ class TestAgTypeParser:
         assert result["label"] == "Person"
         assert result["properties"] == {"name": "Alice", "age": 30}
 
+    def test_parse_vertex_with_non_string_list_label(self):
+        vertex = {"id": "1", "label": [123], "properties": {}}
+        parsed = AgTypeParser.parse(vertex)
+        assert parsed["label"] == "123"
+
     def test_parse_vertex_with_list_label(self):
         """Test parsing vertex with label as list."""
         vertex = {

@@ -81,7 +81,9 @@ def _normalize_path_array_string(s: str) -> Optional[str]:
 def _normalize_label(label: Any) -> str:
     """Convert label values to a stable string representation."""
     if isinstance(label, list):
-        return label[0] if label else ""
+        if not label:
+            return ""
+        label = label[0]
     if not isinstance(label, str):
         return str(label)
     return label

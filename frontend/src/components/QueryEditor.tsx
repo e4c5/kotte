@@ -72,7 +72,7 @@ export default function QueryEditor({
         return
       }
 
-      if (!(e.ctrlKey || e.metaKey)) return
+      if (!(e.ctrlKey || e.metaKey) || !isEditorFocused()) return
 
       if (e.key === 'ArrowUp') {
         e.preventDefault()
