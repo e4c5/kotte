@@ -6,6 +6,7 @@ for the AGE ``AS (...)`` clause, not from arbitrary user-controlled identifiers.
 """
 
 import hashlib
+import json
 import logging
 from typing import Optional
 
@@ -22,6 +23,16 @@ class CypherExecutor:
 
     def __init__(self, db_conn):
         self.db_conn = db_conn
+
+    @staticmethod
+    def _dollar_quote_cypher(text: str) -> str:
+        """Return Cypher wrapped in a safe PostgreSQL dollar-quoted literal."""
+        tag = "kotte"
+        delim = f"${tag}$"
+        while delim in text:
+            tag += "_x"
+            delim = f"${tag}$"
+        return f"{delim}{text}{delim}"
 
     async def execute_cypher(
         self,
@@ -41,35 +52,22 @@ class CypherExecutor:
         if cypher_normalized.endswith(";"):
             cypher_normalized = cypher_normalized[:-1].rstrip()
         
-        # Empty dict {} must use 3-arg cypher() when caller passed params= explicitly
-        has_params = params is not None
-        
         # AGE requires AS (col1 agtype, ...) to match RETURN column count and names.
         return_cols = cypher_return_columns(cypher_query)
-        as_clause_str = ", ".join(f'"{c}" agtype' for c in return_cols)
+        as_clause_str = ", ".join(f'"{c}" ag_catalog.agtype' for c in return_cols)
 
-        # Build parameterized SQL
-        if has_params:
-            runnable_sql = (
-                f"SELECT * FROM ag_catalog.cypher("
-                f"%(graph_name)s::text, %(cypher_query)s::text, %(params)s::agtype"
-                f") AS ({as_clause_str})"
-            )
-            run_params = {
-                "graph_name": validated_graph_name,
-                "cypher_query": cypher_normalized,
-                "params": params,
-            }
-        else:
-            runnable_sql = (
-                f"SELECT * FROM ag_catalog.cypher("
-                f"%(graph_name)s::text, %(cypher_query)s::text"
-                f") AS ({as_clause_str})"
-            )
-            run_params = {
-                "graph_name": validated_graph_name,
-                "cypher_query": cypher_normalized,
-            }
+        # Some AGE builds expose only cypher(name, cstring, agtype).
+        # Always use 3-arg form and provide '{}' when caller has no params.
+        graph_literal = f"'{validated_graph_name}'::name"
+        cypher_literal = self._dollar_quote_cypher(cypher_normalized) + "::cstring"
+        runnable_sql = (
+            f"SELECT * FROM ag_catalog.cypher("
+            f"{graph_literal}, {cypher_literal}, %(params)s::ag_catalog.agtype"
+            f") AS ({as_clause_str})"
+        )
+        run_params = {
+            "params": json.dumps(params if params is not None else {}),
+        }
 
         # Use hashes for logging to avoid exposing sensitive data
         query_hash = hashlib.sha256(cypher_normalized.encode()).hexdigest()[:8]

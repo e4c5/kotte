@@ -269,12 +269,10 @@ async def import_csv(
                     continue
 
                 batch_cypher = "\n".join(cypher_statements)
-                batch_query = """
-                    SELECT * FROM ag_catalog.cypher(%(graph_name)s::text, %(cypher)s::text) AS (result agtype)
-                """
-                await db_conn.execute_query(
-                    batch_query,
-                    {"graph_name": validated_graph_name, "cypher": batch_cypher},
+                await db_conn.execute_cypher(
+                    validated_graph_name,
+                    batch_cypher,
+                    params={},
                     conn=conn,
                 )
 

@@ -137,7 +137,7 @@ class TestExecuteCypher:
 
     @pytest.mark.asyncio
     async def test_execute_cypher_two_arg_form_no_params(self):
-        """With params=None, uses 2-arg cypher(...) with placeholders."""
+        """With params=None, uses 3-arg cypher(...) and empty agtype params."""
         conn = DatabaseConnection(
             host="h", port=5432, database="d", user="u", password=TEST_DB_SECRET
         )
@@ -147,14 +147,19 @@ class TestExecuteCypher:
         sql_str = self._query_string(conn.execute_query.call_args)
         params = conn.execute_query.call_args[0][1]
         assert "ag_catalog.cypher(" in sql_str
-        assert "%(graph_name)s" in sql_str
-        assert "%(cypher_query)s" in sql_str
-        assert params["graph_name"] == "my_graph"
-        assert params["cypher_query"] == "MATCH (n) RETURN n AS node"
+        assert "'my_graph'::name" in sql_str
+        assert "MATCH (n) RETURN n AS node" in sql_str
+        assert "%(params)s" in sql_str
+        assert "::name" in sql_str
+        assert "::cstring" in sql_str
+        assert "::ag_catalog.agtype" in sql_str
+        assert "graph_name" not in params
+        assert "cypher_query" not in params
+        assert params["params"] == "{}"
 
     @pytest.mark.asyncio
     async def test_execute_cypher_empty_params_dict_uses_three_arg_form(self):
-        """Explicit params={} must use 3-arg cypher(..., params), not 2-arg."""
+        """Explicit params={} uses 3-arg cypher(..., params)."""
         conn = DatabaseConnection(
             host="h", port=5432, database="d", user="u", password=TEST_DB_SECRET
         )
@@ -163,7 +168,7 @@ class TestExecuteCypher:
         sql_str = conn.execute_query.call_args[0][0]
         params = conn.execute_query.call_args[0][1]
         assert "%(params)s" in sql_str
-        assert params["params"] == {}
+        assert params["params"] == "{}"
 
     @pytest.mark.asyncio
     async def test_execute_cypher_three_arg_form_with_params(self):
@@ -180,13 +185,15 @@ class TestExecuteCypher:
         sql_str = self._query_string(conn.execute_query.call_args)
         params = conn.execute_query.call_args[0][1]
         assert "ag_catalog.cypher(" in sql_str
-        assert "%(graph_name)s" in sql_str
-        assert "%(cypher_query)s" in sql_str
+        assert "'g'::name" in sql_str
+        assert "RETURN n AS x" in sql_str
         assert "%(params)s" in sql_str
-        assert "::agtype" in sql_str
-        assert params["graph_name"] == "g"
-        assert params["cypher_query"] == "RETURN n AS x"
-        assert params["params"] == mock_params
+        assert "::name" in sql_str
+        assert "::cstring" in sql_str
+        assert "::ag_catalog.agtype" in sql_str
+        assert "graph_name" not in params
+        assert "cypher_query" not in params
+        assert params["params"] == '{"n": 1}'
 
     @pytest.mark.asyncio
     async def test_execute_cypher_strips_trailing_semicolon(self):
@@ -197,7 +204,10 @@ class TestExecuteCypher:
         conn.execute_query = AsyncMock(return_value=[])
         await conn.execute_cypher("g", "RETURN 1 AS x;")
         params = conn.execute_query.call_args[0][1]
-        assert params["cypher_query"] == "RETURN 1 AS x"
+        sql_str = self._query_string(conn.execute_query.call_args)
+        assert "RETURN 1 AS x;" not in sql_str
+        assert "RETURN 1 AS x" in sql_str
+        assert params["params"] == "{}"
 
     @pytest.mark.asyncio
     async def test_execute_cypher_invalid_graph_name_raises(self):

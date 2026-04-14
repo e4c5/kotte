@@ -77,6 +77,10 @@ class DatabaseConnection:
             await cur.execute("LOAD 'age'")
             await cur.execute('SET search_path = ag_catalog, "$user", public')
 
+        # Pool configure callbacks must return connections in IDLE state.
+        # SELECT/SET open a transaction under default psycopg settings.
+        await conn.commit()
+
     async def _report_pool_metrics(self) -> None:
         """Background task to report pool metrics."""
         consecutive_failures = 0

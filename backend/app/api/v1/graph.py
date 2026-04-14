@@ -1,7 +1,6 @@
 """Graph metadata endpoints."""
 
 import asyncio
-import json
 import logging
 from typing import Annotated
 
@@ -237,14 +236,11 @@ async def get_meta_graph(
             ORDER BY edge_count DESC
             LIMIT 1000
         """
-        sql_query = """
-            SELECT * FROM ag_catalog.cypher(%(graph_name)s::text, %(cypher)s::text)
-            AS (src_label agtype, rel_type agtype, dst_label agtype, edge_count agtype)
-        """
         try:
-            raw_rows = await db_conn.execute_query(
-                sql_query,
-                {"graph_name": validated_graph_name, "cypher": meta_cypher.strip()},
+            raw_rows = await db_conn.execute_cypher(
+                validated_graph_name,
+                meta_cypher.strip(),
+                params={},
             )
         except Exception as e:
             logger.warning(
@@ -458,18 +454,10 @@ async def find_shortest_path(
             "source_id": request.source_id,
             "target_id": request.target_id,
         }
-        params_json = json.dumps(params)
-        sql_query = """
-            SELECT * FROM ag_catalog.cypher(%(graph_name)s::text, %(cypher)s::text, %(params)s::agtype)
-            AS (path_nodes agtype, path_edges agtype, path_length agtype)
-        """
-        raw_rows = await db_conn.execute_query(
-            sql_query,
-            {
-                "graph_name": validated_graph_name,
-                "cypher": cypher_query,
-                "params": params_json,
-            },
+        raw_rows = await db_conn.execute_cypher(
+            validated_graph_name,
+            cypher_query,
+            params=params,
         )
 
         if not raw_rows:
