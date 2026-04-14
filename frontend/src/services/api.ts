@@ -68,8 +68,10 @@ function getCachedGetResponse<T>(method: Method, url: string, options?: RequestO
 
 async function getCsrfTokenForMethod(method: Method): Promise<string | null> {
   const needsCsrf = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)
-  if (!needsCsrf) return null
-  return sessionStorage.getItem('csrf_token') || (await ensureCsrfToken())
+  if (needsCsrf) {
+    return sessionStorage.getItem('csrf_token') || (await ensureCsrfToken())
+  }
+  return null
 }
 
 function buildHeaders(csrfToken: string | null): Record<string, string> {

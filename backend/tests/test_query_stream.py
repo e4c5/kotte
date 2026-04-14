@@ -126,7 +126,7 @@ async def test_stream_query_respects_max_rows_and_emits_error_line():
     """Chunks never exceed remaining budget; cap reached yields QUERY_VALIDATION_ERROR line."""
     request_id = "stream-max-rows-cap"
 
-    async def exec_side_effect(_graph, cypher_query, params=None, **_kwargs):
+    def exec_side_effect(_graph, cypher_query, params=None, **_kwargs):
         if "$__skip" in cypher_query and "$__limit" in cypher_query:
             skip = params.get("__skip")
             limit = params.get("__limit")
@@ -162,16 +162,17 @@ async def test_stream_query_multi_chunk_then_cap_error():
     """Several full pages then a partial fetch up to max_rows, then error NDJSON."""
     request_id = "stream-max-rows-multi"
 
-    async def exec_side_effect(_graph, cypher_query, params=None, **_kwargs):
-        if "$__skip" in cypher_query and "$__limit" in cypher_query:
-            skip = params.get("__skip")
-            limit = params.get("__limit")
-            if skip == 0 and limit == 40:
-                return [{"i": i} for i in range(40)]
-            if skip == 40 and limit == 40:
-                return [{"i": i} for i in range(40)]
-            if skip == 80 and limit == 20:
-                return [{"i": i} for i in range(20)]
+    def exec_side_effect(_graph, cypher_query, params=None, **_kwargs):
+        if "$__skip" not in cypher_query or "$__limit" not in cypher_query:
+            return []
+        
+        skip = params.get("__skip")
+        limit = params.get("__limit")
+        # Returns 40, then 40, then 20 = 100 total
+        if (skip, limit) in [(0, 40), (40, 40)]:
+            return [{"i": i} for i in range(40)]
+        if (skip, limit) == (80, 20):
+            return [{"i": i} for i in range(20)]
         return []
 
     mock_db = _stream_mock_db(exec_side_effect)

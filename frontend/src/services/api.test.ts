@@ -82,7 +82,7 @@ describe('ensureCsrfToken', () => {
 })
 
 describe('request', () => {
-  const originalSessionStorage = global.sessionStorage
+  const originalSessionStorage = globalThis.sessionStorage
 
   beforeEach(() => {
     vi.stubGlobal('fetch', vi.fn())

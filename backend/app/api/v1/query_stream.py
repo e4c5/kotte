@@ -8,7 +8,7 @@ from typing import Annotated, AsyncGenerator, Optional
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 
-from app.core.auth import get_session
+from app.core.deps import get_session, get_db_connection
 from app.core.config import settings
 from app.core.database import DatabaseConnection
 from app.core.errors import APIException, ErrorCode, ErrorCategory, translate_db_error
@@ -70,19 +70,6 @@ def _strip_trailing_semicolon(cypher_query: str) -> str:
     if cypher_base.endswith(";"):
         return cypher_base[:-1].rstrip()
     return cypher_base
-
-
-async def get_db_connection(session: Annotated[dict, Depends(get_session)]) -> DatabaseConnection:
-    """Get database connection from session."""
-    db_conn = session.get("db_connection")
-    if not db_conn:
-        raise APIException(
-            code=ErrorCode.DB_UNAVAILABLE,
-            message="Database connection not established",
-            category=ErrorCategory.UPSTREAM,
-            status_code=500,
-        )
-    return db_conn
 
 
 async def stream_query_results(
