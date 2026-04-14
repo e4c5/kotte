@@ -6,6 +6,8 @@ from unittest.mock import AsyncMock
 from app.core.database import DatabaseConnection
 from app.core.errors import APIException
 
+TEST_DB_SECRET = "test-db-secret"
+
 
 class TestCypherReturnColumns:
     """Tests for cypher RETURN column name inference."""
@@ -137,7 +139,7 @@ class TestExecuteCypher:
     async def test_execute_cypher_two_arg_form_no_params(self):
         """With params=None, uses 2-arg cypher(...) with placeholders."""
         conn = DatabaseConnection(
-            host="h", port=5432, database="d", user="u", password="p"
+            host="h", port=5432, database="d", user="u", password=TEST_DB_SECRET
         )
         conn.execute_query = AsyncMock(return_value=[])
         await conn.execute_cypher("my_graph", "MATCH (n) RETURN n AS node")
@@ -154,7 +156,7 @@ class TestExecuteCypher:
     async def test_execute_cypher_empty_params_dict_uses_three_arg_form(self):
         """Explicit params={} must use 3-arg cypher(..., params), not 2-arg."""
         conn = DatabaseConnection(
-            host="h", port=5432, database="d", user="u", password="p"
+            host="h", port=5432, database="d", user="u", password=TEST_DB_SECRET
         )
         conn.execute_query = AsyncMock(return_value=[])
         await conn.execute_cypher("g", "RETURN 1 AS c1", params={})
@@ -167,7 +169,7 @@ class TestExecuteCypher:
     async def test_execute_cypher_three_arg_form_with_params(self):
         """With params set, uses 3-arg cypher(..., params) with placeholders."""
         conn = DatabaseConnection(
-            host="h", port=5432, database="d", user="u", password="p"
+            host="h", port=5432, database="d", user="u", password=TEST_DB_SECRET
         )
         conn.execute_query = AsyncMock(return_value=[])
         mock_params = {"n": 1}
@@ -190,7 +192,7 @@ class TestExecuteCypher:
     async def test_execute_cypher_strips_trailing_semicolon(self):
         """Trailing semicolon in cypher is stripped before parameterization."""
         conn = DatabaseConnection(
-            host="h", port=5432, database="d", user="u", password="p"
+            host="h", port=5432, database="d", user="u", password=TEST_DB_SECRET
         )
         conn.execute_query = AsyncMock(return_value=[])
         await conn.execute_cypher("g", "RETURN 1 AS x;")
@@ -201,7 +203,7 @@ class TestExecuteCypher:
     async def test_execute_cypher_invalid_graph_name_raises(self):
         """Invalid graph name (e.g. contains quote) raises APIException."""
         conn = DatabaseConnection(
-            host="h", port=5432, database="d", user="u", password="p"
+            host="h", port=5432, database="d", user="u", password=TEST_DB_SECRET
         )
         conn.execute_query = AsyncMock(return_value=[])
         with pytest.raises(APIException):
@@ -212,7 +214,7 @@ class TestExecuteCypher:
     async def test_execute_cypher_returns_result_from_execute_query(self):
         """Return value is that of execute_query."""
         conn = DatabaseConnection(
-            host="h", port=5432, database="d", user="u", password="p"
+            host="h", port=5432, database="d", user="u", password=TEST_DB_SECRET
         )
         expected = [{"node": "value"}]
         conn.execute_query = AsyncMock(return_value=expected)
@@ -223,7 +225,7 @@ class TestExecuteCypher:
     async def test_get_query_pid_forwards_query_text_to_query_manager(self):
         """Facade passes query_text through to QueryManager.get_query_pid."""
         db = DatabaseConnection(
-            host="h", port=5432, database="d", user="u", password="p"
+            host="h", port=5432, database="d", user="u", password=TEST_DB_SECRET
         )
         db._query_manager.get_query_pid = AsyncMock(return_value=12345)
         pid = await db.get_query_pid("MATCH (n) RETURN n")
@@ -234,7 +236,7 @@ class TestExecuteCypher:
     async def test_execute_cypher_passes_conn_to_execute_query(self):
         """Optional conn is forwarded for transactional execution."""
         db = DatabaseConnection(
-            host="h", port=5432, database="d", user="u", password="p"
+            host="h", port=5432, database="d", user="u", password=TEST_DB_SECRET
         )
         db.execute_query = AsyncMock(return_value=[])
         mock_conn = object()

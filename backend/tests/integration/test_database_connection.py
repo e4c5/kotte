@@ -5,6 +5,8 @@ import pytest
 from app.core.database import DatabaseConnection
 from app.core.errors import APIException
 
+INVALID_TEST_DB_SECRET = "invalid-test-secret"
+
 requires_real_db = pytest.mark.skipif(
     os.getenv("USE_REAL_TEST_DB", "false").lower() != "true",
     reason="Requires real test database (set USE_REAL_TEST_DB=true)",
@@ -104,7 +106,7 @@ class TestDatabaseConnection:
             port=5432,
             database="invalid_db",
             user="invalid_user",
-            password="invalid_password",
+            password=INVALID_TEST_DB_SECRET,
         )
         with pytest.raises((APIException, Exception)):  # Should raise connection error
             await conn.connect()

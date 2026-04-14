@@ -12,6 +12,11 @@ from app.main import create_app
 from app.core.auth import session_manager
 from app.services.user import user_service
 
+TEST_USER_NAME = "testuser"
+TEST_USER_SECRET = "test-user-secret"
+ADMIN_USER_NAME = "admin"
+ADMIN_USER_SECRET = "admin"
+
 
 @pytest.fixture(scope="function")
 def test_app(monkeypatch):
@@ -73,8 +78,8 @@ async def authenticated_client(async_client):
     Creates a user, logs in, and returns client with session cookie.
     """
     # Create a test user if it doesn't exist
-    test_username = "testuser"
-    test_password = "testpass"
+    test_username = TEST_USER_NAME
+    test_password = TEST_USER_SECRET
     
     # Clean up any existing test user
     if test_username in user_service._users:
@@ -104,7 +109,7 @@ async def admin_client(async_client):
     # Login as admin
     login_response = await async_client.post(
         "/api/v1/auth/login",
-        json={"username": "admin", "password": "admin"},
+        json={"username": ADMIN_USER_NAME, "password": ADMIN_USER_SECRET},
     )
     
     if login_response.status_code != 200:
