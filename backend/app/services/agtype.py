@@ -224,12 +224,12 @@ class AgTypeParser:
         """Parse a vertex (node) from agtype."""
         node_id = obj.get("id")
         label = _normalize_label(obj.get("label", ""))
-        properties = _ensure_dict(obj.get("properties", {}))
+        properties = AgTypeParser.parse(obj.get("properties", {}))
 
         return {
             "id": AgTypeParser._parse_id(node_id),
             "label": label,
-            "properties": AgTypeParser.parse(properties),
+            "properties": _ensure_dict(properties),
             "type": "node",
         }
 
@@ -248,14 +248,14 @@ class AgTypeParser:
             ["end_id", "endid", "endId", "end_vertex_id", "target"],
             "end",
         )
-        properties = _ensure_dict(obj.get("properties", {}))
+        properties = AgTypeParser.parse(obj.get("properties", {}))
 
         return {
             "id": AgTypeParser._parse_id(edge_id),
             "label": label,
             "source": AgTypeParser._parse_id(start_id),
             "target": AgTypeParser._parse_id(end_id),
-            "properties": AgTypeParser.parse(properties),
+            "properties": _ensure_dict(properties),
             "type": "edge",
         }
 

@@ -185,16 +185,21 @@ async def stream_query_results(
                 if remaining <= 0:
                     return
 
-                # Add SKIP and LIMIT to the query (strip trailing ; so we don't produce "...; SKIP")
+                # Add SKIP and LIMIT to the query using parameters
                 cypher_base = _strip_trailing_semicolon(cypher_query)
                 fetch_limit = min(chunk_size, remaining)
-                modified_cypher = f"{cypher_base} SKIP {current_offset} LIMIT {fetch_limit}"
+                modified_cypher = f"{cypher_base} SKIP $__skip LIMIT $__limit"
 
-                # Execute via literal SQL (execute_cypher) to avoid cypher() overload issues
+                # Update params with skip/limit
+                exec_params = dict(params) if params is not None else {}
+                exec_params["__skip"] = current_offset
+                exec_params["__limit"] = fetch_limit
+
+                # Execute via literal SQL (execute_cypher)
                 raw_rows = await db_conn.execute_cypher(
                     validated_graph_name,
                     modified_cypher,
-                    params=params,
+                    params=exec_params,
                     time_limit_seconds=settings.query_timeout,
                     conn=exec_conn,
                 )

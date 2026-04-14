@@ -121,12 +121,13 @@ async function retryOnCsrfFailure<T>(
   const isCsrfFailure = res.status === 403 && apiError?.message === 'CSRF token validation failed'
   if (!isCsrfFailure || options?._csrfRetry) return null
 
+  sessionStorage.removeItem('csrf_token')
   const token = await ensureCsrfToken()
   if (!token) return null
   return request<T>(method, url, body, { ...options, _csrfRetry: true })
 }
 
-async function request<T>(
+export async function request<T>(
   method: Method,
   url: string,
   body?: unknown,

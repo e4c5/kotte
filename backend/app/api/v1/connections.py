@@ -1,10 +1,10 @@
 """Saved database connection endpoints."""
 
 import logging
-from typing import Annotated, List
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, status
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import Response
 
 from app.core.auth import get_session
 from app.core.connection_storage import connection_storage
@@ -13,7 +13,6 @@ from app.models.connection import (
     SavedConnectionRequest,
     SavedConnectionResponse,
     SavedConnectionDetail,
-    SavedConnectionListResponse,
 )
 
 logger = logging.getLogger(__name__)

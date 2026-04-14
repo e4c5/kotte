@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { APIErrorException, ensureCsrfToken } from './api'
+import { APIErrorException, ensureCsrfToken, request } from './api'
 
 describe('APIErrorException', () => {
   it('sets name, message, and custom properties', () => {
@@ -78,5 +78,60 @@ describe('ensureCsrfToken', () => {
 
     const token = await ensureCsrfToken()
     expect(token).toBeNull()
+  })
+})
+
+describe('request', () => {
+  const originalSessionStorage = global.sessionStorage
+
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn())
+    originalSessionStorage.clear()
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('retries on CSRF failure after clearing stale token', async () => {
+    const mockFetch = vi.mocked(fetch)
+    originalSessionStorage.setItem('csrf_token', 'stale-token')
+
+    // First call: 403 CSRF failure
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 403,
+      text: async () => JSON.stringify({ error: { message: 'CSRF token validation failed' } }),
+    } as Response)
+
+    // Second call: Fetch fresh CSRF token
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ csrf_token: 'new-token' }),
+    } as Response)
+
+    // Third call: Successful retry with new token
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      text: async () => JSON.stringify({ result: 'success' }),
+    } as Response)
+
+    const result = await request('POST', '/test', { data: 1 })
+    expect(result.data).toEqual({ result: 'success' })
+
+    // Check that sessionStorage was cleared and then updated
+    expect(originalSessionStorage.getItem('csrf_token')).toBe('new-token')
+
+    // Verify fetch calls
+    expect(mockFetch).toHaveBeenCalledTimes(3)
+    
+    // First call used stale token
+    expect(mockFetch.mock.calls[0][1]?.headers).toMatchObject({ 'X-CSRF-Token': 'stale-token' })
+    
+    // Second call was for the new token
+    expect(mockFetch.mock.calls[1][0]).toContain('/auth/csrf-token')
+    
+    // Third call used fresh token
+    expect(mockFetch.mock.calls[2][1]?.headers).toMatchObject({ 'X-CSRF-Token': 'new-token' })
   })
 })
