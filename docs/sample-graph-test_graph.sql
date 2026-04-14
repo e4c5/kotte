@@ -7,6 +7,8 @@
 -- Or in an interactive psql session (same session for all statements):
 --   \i docs/sample-graph-test_graph.sql
 
+\set GRAPH_NAME test_graph
+
 -- 1. Ensure AGE is available and search path is set
 CREATE EXTENSION IF NOT EXISTS age;
 LOAD 'age';
@@ -15,7 +17,7 @@ SET search_path = ag_catalog, "$user", public;
 -- 2. Create the graph (idempotent: no-op if it already exists)
 DO $$
 BEGIN
-  PERFORM * FROM ag_catalog.create_graph('test_graph');
+  PERFORM * FROM ag_catalog.create_graph(:'GRAPH_NAME');
 EXCEPTION
   WHEN duplicate_schema OR duplicate_object THEN
     NULL;
@@ -23,69 +25,69 @@ END
 $$;
 
 -- 3. Create sample vertices (nodes)
-SELECT * FROM cypher('test_graph', $$
+SELECT * FROM cypher(:'GRAPH_NAME', $$
   CREATE (a:Person {name: 'Alice', age: 30})
   RETURN a
 $$) AS (result agtype);
 
-SELECT * FROM cypher('test_graph', $$
+SELECT * FROM cypher(:'GRAPH_NAME', $$
   CREATE (b:Person {name: 'Bob', age: 25})
   RETURN b
 $$) AS (result agtype);
 
-SELECT * FROM cypher('test_graph', $$
+SELECT * FROM cypher(:'GRAPH_NAME', $$
   CREATE (c:Person {name: 'Carol', age: 28})
   RETURN c
 $$) AS (result agtype);
 
-SELECT * FROM cypher('test_graph', $$
+SELECT * FROM cypher(:'GRAPH_NAME', $$
   CREATE (d:Project {title: 'Kotte', status: 'active'})
   RETURN d
 $$) AS (result agtype);
 
-SELECT * FROM cypher('test_graph', $$
+SELECT * FROM cypher(:'GRAPH_NAME', $$
   CREATE (e:Project {title: 'AGE', status: 'active'})
   RETURN e
 $$) AS (result agtype);
 
 -- 4. Create edges (must match existing nodes)
-SELECT * FROM cypher('test_graph', $$
+SELECT * FROM cypher(:'GRAPH_NAME', $$
   MATCH (a:Person {name: 'Alice'}), (b:Person {name: 'Bob'})
   CREATE (a)-[r:KNOWS {since: 2020}]->(b)
   RETURN r
 $$) AS (result agtype);
 
-SELECT * FROM cypher('test_graph', $$
+SELECT * FROM cypher(:'GRAPH_NAME', $$
   MATCH (b:Person {name: 'Bob'}), (c:Person {name: 'Carol'})
   CREATE (b)-[r:KNOWS {since: 2021}]->(c)
   RETURN r
 $$) AS (result agtype);
 
-SELECT * FROM cypher('test_graph', $$
+SELECT * FROM cypher(:'GRAPH_NAME', $$
   MATCH (a:Person {name: 'Alice'}), (c:Person {name: 'Carol'})
   CREATE (a)-[r:KNOWS]->(c)
   RETURN r
 $$) AS (result agtype);
 
-SELECT * FROM cypher('test_graph', $$
+SELECT * FROM cypher(:'GRAPH_NAME', $$
   MATCH (a:Person {name: 'Alice'}), (d:Project {title: 'Kotte'})
   CREATE (a)-[r:WORKS_ON {role: 'dev'}]->(d)
   RETURN r
 $$) AS (result agtype);
 
-SELECT * FROM cypher('test_graph', $$
+SELECT * FROM cypher(:'GRAPH_NAME', $$
   MATCH (b:Person {name: 'Bob'}), (d:Project {title: 'Kotte'})
   CREATE (b)-[r:WORKS_ON {role: 'dev'}]->(d)
   RETURN r
 $$) AS (result agtype);
 
-SELECT * FROM cypher('test_graph', $$
+SELECT * FROM cypher(:'GRAPH_NAME', $$
   MATCH (c:Person {name: 'Carol'}), (e:Project {title: 'AGE'})
   CREATE (c)-[r:WORKS_ON {role: 'contributor'}]->(e)
   RETURN r
 $$) AS (result agtype);
 
 -- 5. Verify: run in Kotte or psql
--- In Kotte: select graph "test_graph", then run:
+-- In Kotte: select graph "test_graph" (or your GRAPH_NAME), then run:
 --   MATCH (n)-[r]-(m) RETURN n, r, m LIMIT 50
 -- You should see nodes and edges in Graph View.
