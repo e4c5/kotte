@@ -235,7 +235,7 @@ async def stream_query_results(
     except APIException:
         raise
     except Exception as e:
-        logger.exception(f"Error streaming query results: {e}")
+        logger.exception("Error streaming query results", extra={"error": str(e)})
         api_exc = translate_db_error(
             e,
             context={"graph": graph_name, "query": cypher_query[:200]},

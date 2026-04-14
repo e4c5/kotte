@@ -296,7 +296,7 @@ async def execute_query(
     except Exception as e:
         query_tracker.unregister_query(request_id)
         query_duration = time.time() - query_start_time
-        logger.exception(f"Query execution failed: {request.cypher[:100]}")
+        logger.exception("Query execution failed", extra={"query_preview": request.cypher[:100]})
         error_msg = str(e)
 
         # Constraint violations (UniqueViolation, ForeignKeyViolation, etc.)

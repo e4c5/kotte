@@ -79,7 +79,7 @@ async def readiness_check(
                     "status": "connected",
                 }
         except Exception as e:
-            logger.warning(f"Error checking database connection: {e}")
+            logger.warning("Error checking database connection", extra={"error": str(e)})
             db_status = {
                 "connected": False,
                 "status": "error",

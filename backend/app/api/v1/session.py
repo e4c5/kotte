@@ -109,7 +109,7 @@ async def disconnect(
         try:
             await db_conn.disconnect()
         except Exception as e:
-            logger.warning(f"Error disconnecting database: {e}")
+            logger.warning("Error disconnecting database", extra={"error": str(e)})
 
     # Delete session
     if session_id:
