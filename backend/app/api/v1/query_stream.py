@@ -26,6 +26,52 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def _parse_raw_rows(raw_rows: list[dict]) -> tuple[list[dict], list[str]]:
+    """Parse agtype values and return parsed rows and sorted column names."""
+    parsed_rows: list[dict] = []
+    columns: set[str] = set()
+    for raw_row in raw_rows:
+        parsed_row: dict = {}
+        for col_name, agtype_value in raw_row.items():
+            columns.add(col_name)
+            parsed_row[col_name] = AgTypeParser.parse(agtype_value)
+        parsed_rows.append(parsed_row)
+    return parsed_rows, sorted(columns)
+
+
+def _chunk_to_ndjson(columns: list[str], rows: list[dict], offset: int, has_more: bool) -> str:
+    """Build one NDJSON line for a stream chunk."""
+    result_rows = [QueryResultRow(data=row) for row in rows]
+    chunk = QueryStreamChunk(
+        columns=columns,
+        rows=result_rows,
+        chunk_size=len(result_rows),
+        offset=offset,
+        has_more=has_more,
+        total_rows=None,
+    )
+    return json.dumps(chunk.model_dump(), default=str) + "\n"
+
+
+def _stream_cap_error_chunk(max_rows: int) -> str:
+    """Return a standardized stream-cap error chunk as NDJSON."""
+    error_chunk = {
+        "error": {
+            "code": ErrorCode.QUERY_VALIDATION_ERROR,
+            "message": f"Stream result cap reached ({max_rows} rows). Refine query with WHERE/LIMIT.",
+        }
+    }
+    return json.dumps(error_chunk) + "\n"
+
+
+def _strip_trailing_semicolon(cypher_query: str) -> str:
+    """Return Cypher text without trailing semicolon."""
+    cypher_base = cypher_query.rstrip()
+    if cypher_base.endswith(";"):
+        return cypher_base[:-1].rstrip()
+    return cypher_base
+
+
 async def get_db_connection(session: Annotated[dict, Depends(get_session)]) -> DatabaseConnection:
     """Get database connection from session."""
     db_conn = session.get("db_connection")
@@ -123,42 +169,15 @@ async def stream_query_results(
                     conn=exec_conn,
                 )
 
-                parsed_rows = []
-                columns = set()
-                for raw_row in raw_rows:
-                    parsed_row = {}
-                    for col_name, agtype_value in raw_row.items():
-                        columns.add(col_name)
-                        parsed_row[col_name] = AgTypeParser.parse(agtype_value)
-                    parsed_rows.append(parsed_row)
-
-                all_columns = sorted(list(columns))
+                parsed_rows, all_columns = _parse_raw_rows(raw_rows)
                 capped_rows = parsed_rows[stream_offset : stream_offset + max_rows]
                 for start in range(0, len(capped_rows), chunk_size):
                     chunk_rows = capped_rows[start : start + chunk_size]
-                    result_rows = [QueryResultRow(data=row) for row in chunk_rows]
                     has_more = start + chunk_size < len(capped_rows)
-                    chunk = QueryStreamChunk(
-                        columns=all_columns,
-                        rows=result_rows,
-                        chunk_size=len(result_rows),
-                        offset=stream_offset + start,
-                        has_more=has_more,
-                        total_rows=None,
-                    )
-                    yield json.dumps(chunk.model_dump(), default=str) + "\n"
+                    yield _chunk_to_ndjson(all_columns, chunk_rows, stream_offset + start, has_more)
 
                 if len(parsed_rows) - stream_offset > max_rows:
-                    error_chunk = {
-                        "error": {
-                            "code": ErrorCode.QUERY_VALIDATION_ERROR,
-                            "message": (
-                                f"Stream result cap reached ({max_rows} rows). "
-                                "Refine query with WHERE/LIMIT."
-                            ),
-                        }
-                    }
-                    yield json.dumps(error_chunk) + "\n"
+                    yield _stream_cap_error_chunk(max_rows)
                 return
 
             while True:
@@ -167,9 +186,7 @@ async def stream_query_results(
                     return
 
                 # Add SKIP and LIMIT to the query (strip trailing ; so we don't produce "...; SKIP")
-                cypher_base = cypher_query.rstrip()
-                if cypher_base.endswith(";"):
-                    cypher_base = cypher_base[:-1].rstrip()
+                cypher_base = _strip_trailing_semicolon(cypher_query)
                 fetch_limit = min(chunk_size, remaining)
                 modified_cypher = f"{cypher_base} SKIP {current_offset} LIMIT {fetch_limit}"
 
@@ -183,55 +200,24 @@ async def stream_query_results(
                 )
 
                 # Parse agtype results
-                parsed_rows = []
-                chunk_columns = set()
-
-                for raw_row in raw_rows:
-                    parsed_row = {}
-                    for col_name, agtype_value in raw_row.items():
-                        chunk_columns.add(col_name)
-                        parsed_value = AgTypeParser.parse(agtype_value)
-                        parsed_row[col_name] = parsed_value
-                    parsed_rows.append(parsed_row)
+                parsed_rows, chunk_columns = _parse_raw_rows(raw_rows)
 
                 # Set columns from first chunk
                 if all_columns is None:
-                    all_columns = sorted(list(chunk_columns))
+                    all_columns = chunk_columns
 
                 # Convert to QueryResultRow format
-                result_rows = [
-                    QueryResultRow(data=row) for row in parsed_rows
-                ]
-                n = len(result_rows)
+                n = len(parsed_rows)
                 chunk_emitted_after = emitted_rows + n
                 has_more = (n == fetch_limit) and (chunk_emitted_after < max_rows)
 
-                # Create chunk response
-                chunk = QueryStreamChunk(
-                    columns=all_columns,
-                    rows=result_rows,
-                    chunk_size=len(result_rows),
-                    offset=current_offset,
-                    has_more=has_more,
-                    total_rows=None,  # We don't know total without COUNT query
-                )
-
                 # Yield chunk as JSON line
-                yield json.dumps(chunk.model_dump(), default=str) + "\n"
+                yield _chunk_to_ndjson(all_columns, parsed_rows, current_offset, has_more)
                 emitted_rows += n
 
                 if emitted_rows >= max_rows:
-                    if n == fetch_limit: # Check if there might be more rows beyond the cap
-                        error_chunk = {
-                            "error": {
-                                "code": ErrorCode.QUERY_VALIDATION_ERROR,
-                                "message": (
-                                    f"Stream result cap reached ({max_rows} rows). "
-                                    "Refine query with WHERE/LIMIT."
-                                ),
-                            }
-                        }
-                        yield json.dumps(error_chunk) + "\n"
+                    if n == fetch_limit:  # Check if there might be more rows beyond the cap
+                        yield _stream_cap_error_chunk(max_rows)
                     return
 
                 if n < fetch_limit:

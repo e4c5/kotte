@@ -31,42 +31,58 @@ export default function QueryEditor({
   const params = onParamsChange !== undefined ? controlledParams : localParams
   const setParams = onParamsChange ?? setLocalParams
 
+  const isEditorFocused = () => textareaRef.current === document.activeElement
+
+  const applyHistoryAtIndex = (index: number) => {
+    if (index >= 0) {
+      onChange(history[history.length - 1 - index])
+      return
+    }
+    onChange('')
+  }
+
+  const stepHistory = (direction: 'up' | 'down') => {
+    if (direction === 'up') {
+      if (history.length === 0) return
+      const newIndex = historyIndex < history.length - 1 ? historyIndex + 1 : historyIndex
+      setHistoryIndex(newIndex)
+      applyHistoryAtIndex(newIndex)
+      return
+    }
+
+    if (historyIndex < 0) return
+    const newIndex = historyIndex > 0 ? historyIndex - 1 : -1
+    setHistoryIndex(newIndex)
+    applyHistoryAtIndex(newIndex)
+  }
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (
-        (e.shiftKey || e.ctrlKey || e.metaKey) &&
-        e.key === 'Enter' &&
-        textareaRef.current === document.activeElement
-      ) {
+      if ((e.shiftKey || e.ctrlKey || e.metaKey) && e.key === 'Enter' && isEditorFocused()) {
         e.preventDefault()
         onExecute()
         setExpanded(false)
+        return
       }
 
-      if (e.key === 'Escape' && textareaRef.current === document.activeElement) {
+      if (e.key === 'Escape' && isEditorFocused()) {
         e.preventDefault()
         setExpanded(false)
         textareaRef.current?.blur()
+        return
       }
 
-      if (e.ctrlKey || e.metaKey) {
-        if (e.key === 'ArrowUp' && history.length > 0) {
-          e.preventDefault()
-          const newIndex = historyIndex < history.length - 1 ? historyIndex + 1 : historyIndex
-          setHistoryIndex(newIndex)
-          if (newIndex >= 0) {
-            onChange(history[history.length - 1 - newIndex])
-          }
-        } else if (e.key === 'ArrowDown' && historyIndex >= 0) {
-          e.preventDefault()
-          const newIndex = historyIndex > 0 ? historyIndex - 1 : -1
-          setHistoryIndex(newIndex)
-          if (newIndex >= 0) {
-            onChange(history[history.length - 1 - newIndex])
-          } else {
-            onChange('')
-          }
-        }
+      if (!(e.ctrlKey || e.metaKey)) return
+
+      if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        stepHistory('up')
+        return
+      }
+
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        stepHistory('down')
       }
     }
 
