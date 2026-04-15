@@ -37,6 +37,7 @@ interface GraphViewProps {
   height?: number
   pathHighlights?: PathHighlights
   onNodeClick?: (node: GraphNode) => void
+  onNodeDoubleClick?: (node: GraphNode) => void
   onNodeRightClick?: (node: GraphNode, event: MouseEvent) => void
   onEdgeClick?: (edge: GraphEdge) => void
   onExportReady?: (exportFn: () => Promise<void>) => void
@@ -52,6 +53,7 @@ export default function GraphView({
   onNodeRightClick,
   onEdgeClick,
   onExportReady,
+  onNodeDoubleClick,
 }: GraphViewProps) {
   type SvgSelection = d3.Selection<SVGSVGElement, unknown, null, undefined>
 
@@ -64,6 +66,7 @@ export default function GraphView({
   const userZoomedRef = useRef(false)
   const applyingAutoTransformRef = useRef(false)
   const onNodeClickRef = useRef<typeof onNodeClick>(onNodeClick)
+  const onNodeDoubleClickRef = useRef<typeof onNodeDoubleClick>(onNodeDoubleClick)
   const onNodeRightClickRef = useRef<typeof onNodeRightClick>(onNodeRightClick)
   const onEdgeClickRef = useRef<typeof onEdgeClick>(onEdgeClick)
   const [debugFitScale, setDebugFitScale] = useState<number | null>(null)
@@ -109,9 +112,10 @@ export default function GraphView({
 
   useEffect(() => {
     onNodeClickRef.current = onNodeClick
+    onNodeDoubleClickRef.current = onNodeDoubleClick
     onNodeRightClickRef.current = onNodeRightClick
     onEdgeClickRef.current = onEdgeClick
-  }, [onNodeClick, onNodeRightClick, onEdgeClick])
+  }, [onNodeClick, onNodeDoubleClick, onNodeRightClick, onEdgeClick])
 
   const filteredEdges = useMemo(() => {
     let filtered = edges.filter((edge) => {
@@ -211,6 +215,7 @@ export default function GraphView({
       }
     })
     simulationRef.current = simulation
+    const edgeWidthProperty = edgeWidthMapping.property ?? undefined
 
     const nodeStrokeColor = (d: GraphNode) => {
       if (selectedNode === d.id) return '#ff0000'
@@ -219,9 +224,12 @@ export default function GraphView({
     }
 
     const link = container.append('g').attr('class', 'links').selectAll('line').data(filteredEdges).enter().append('line')
-      .attr('stroke', (d) => pathEdgeIds.has(String(d.id)) ? '#0066cc' : getEdgeStyle(d, edgeStyles, edgeWidthScale, edgeWidthMapping.property).color)
+      .attr('stroke', (d) => pathEdgeIds.has(String(d.id)) ? '#0066cc' : getEdgeStyle(d, edgeStyles, edgeWidthScale, edgeWidthProperty).color)
       .attr('stroke-opacity', (d) => pathEdgeIds.has(String(d.id)) ? 1 : 0.6)
-      .attr('stroke-width', (d) => pathEdgeIds.has(String(d.id)) ? Math.max(3, getEdgeStyle(d, edgeStyles, edgeWidthScale, edgeWidthMapping.property).size) : getEdgeStyle(d, edgeStyles, edgeWidthScale, edgeWidthMapping.property).size)
+      .attr('stroke-width', (d) => {
+        const edgeStyle = getEdgeStyle(d, edgeStyles, edgeWidthScale, edgeWidthProperty)
+        return pathEdgeIds.has(String(d.id)) ? Math.max(3, edgeStyle.size) : edgeStyle.size
+      })
 
     if (onEdgeClickRef.current) {
       link.style('cursor', 'pointer')
@@ -267,6 +275,11 @@ export default function GraphView({
         }
       }))
       .on('click', (event, d) => { event.stopPropagation(); onNodeClickRef.current?.(d) })
+      .on('dblclick', (event, d) => {
+        event.preventDefault()
+        event.stopPropagation()
+        onNodeDoubleClickRef.current?.(d)
+      })
       .on('contextmenu', (event, d) => { event.preventDefault(); onNodeRightClickRef.current?.(d, event) })
       .on('keydown', (event: KeyboardEvent, d: GraphNode) => {
         if (event.key === 'Enter' || event.key === ' ') {
@@ -280,7 +293,8 @@ export default function GraphView({
       .text((d) => getNodeCaption(d, nodeStyles)).attr('font-size', '12px').attr('dx', (d) => getNodeStyle(d, nodeStyles).size + 5).attr('dy', 4).style('pointer-events', 'none').style('fill', '#e4e4e7')
 
     const edgeLabels = container.append('g').attr('class', 'edge-labels').selectAll('text').data(filteredEdges).enter().append('text')
-      .text((d) => getEdgeCaption(d, edgeStyles, edgeWidthScale, edgeWidthMapping.property)).attr('font-size', '10px').attr('text-anchor', 'middle').attr('dy', -4).style('pointer-events', 'none').style('fill', '#a1a1aa')
+      .text((d) => getEdgeCaption(d, edgeStyles, edgeWidthScale, edgeWidthProperty))
+      .attr('font-size', '10px').attr('text-anchor', 'middle').attr('dy', -4).style('pointer-events', 'none').style('fill', '#a1a1aa')
 
     const centerX = viewportWidth / 2, centerY = viewportHeight / 2
     const fitToView = (animate = true) => {

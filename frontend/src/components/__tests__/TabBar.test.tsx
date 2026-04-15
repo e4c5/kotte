@@ -4,10 +4,10 @@ import userEvent from '@testing-library/user-event'
 import TabBar from '../TabBar'
 import type { QueryTab } from '../../stores/queryStore'
 
-function makeTab(overrides: Partial<QueryTab> & { id: string; name: string }): QueryTab {
+function makeTab({ id, name, ...overrides }: Partial<QueryTab> & { id: string; name: string }): QueryTab {
   return {
-    id: overrides.id,
-    name: overrides.name,
+    id,
+    name,
     query: '',
     params: '{}',
     graph: null,

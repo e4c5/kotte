@@ -14,6 +14,7 @@ interface ResultTabProps {
   onNodeSelect?: (node: GraphNode) => void
   onEdgeSelect?: (edge: GraphEdge) => void
   onExportReady: (exportFn: () => Promise<void>) => void
+  onNodeDoubleClick?: (node: GraphNode) => void | Promise<void>
 }
 
 export default function ResultTab({
@@ -25,6 +26,7 @@ export default function ResultTab({
   onNodeSelect,
   onEdgeSelect,
   onExportReady,
+  onNodeDoubleClick,
 }: ResultTabProps) {
   const [showControls, setShowControls] = useState(false)
   const [contextMenu, setContextMenu] = useState<{x: number, y: number, nodeId: string} | null>(null)
@@ -232,6 +234,7 @@ export default function ResultTab({
                 edges={result.graph_elements?.edges as GraphEdge[] || []}
                 pathHighlights={pathHighlights}
                 onNodeClick={onNodeSelect}
+                onNodeDoubleClick={onNodeDoubleClick}
                 onNodeRightClick={handleNodeContextMenu}
                 onEdgeClick={onEdgeSelect}
                 onExportReady={handleExportReady}

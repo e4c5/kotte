@@ -24,8 +24,8 @@ class Settings(BaseSettings):
     # Session Security
     session_secret_key: str = ""
     session_cookie_name: str = "kotte_session"
-    session_max_age: int = 3600  # 1 hour
-    session_idle_timeout: int = 1800  # 30 minutes
+    session_max_age: int = 7200  # 2 hours
+    session_idle_timeout: int = 3600  # 1 hour
 
     # Database
     db_host: str = "localhost"

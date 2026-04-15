@@ -11,8 +11,65 @@ import InspectorPanel from '../components/InspectorPanel'
 import SettingsModal from '../components/SettingsModal'
 import TabBar from '../components/TabBar'
 import ResultTab from '../components/ResultTab'
-import { graphAPI } from '../services/graph'
+import { graphAPI, type GraphEdge as ExpandedGraphEdge } from '../services/graph'
+import type { QueryExecuteResponse } from '../services/query'
 import { getNodeLabelColor } from '../utils/nodeColors'
+
+type FocusedGraphNode = NonNullable<QueryExecuteResponse['graph_elements']>['nodes'][number]
+type FocusedGraphEdge = NonNullable<QueryExecuteResponse['graph_elements']>['edges'][number]
+type FocusedNeighborhood = {
+  nodes: FocusedGraphNode[]
+  edges: FocusedGraphEdge[]
+}
+
+const normalizeExpandedEdges = (edges: ExpandedGraphEdge[]): FocusedGraphEdge[] => {
+  return edges.map((edge) => ({
+    ...edge,
+    source: typeof edge.source === 'string' ? edge.source : edge.source.id,
+    target: typeof edge.target === 'string' ? edge.target : edge.target.id,
+  }))
+}
+
+const buildFocusedNeighborhood = (
+  graphElements: QueryExecuteResponse['graph_elements'] | undefined,
+  focusedNode: FocusedGraphNode
+): FocusedNeighborhood => {
+  const existingNodes = graphElements?.nodes ?? []
+  const existingEdges = graphElements?.edges ?? []
+  const relatedEdges = existingEdges.filter(
+    (edge) => edge.source === focusedNode.id || edge.target === focusedNode.id
+  )
+  const visibleNodeIds = new Set<string>([focusedNode.id])
+
+  for (const edge of relatedEdges) {
+    visibleNodeIds.add(edge.source)
+    visibleNodeIds.add(edge.target)
+  }
+
+  const nodesById = new Map(existingNodes.map((node) => [node.id, node]))
+  const relatedNodes = Array.from(visibleNodeIds)
+    .map((nodeId) => nodesById.get(nodeId))
+    .filter((node): node is FocusedGraphNode => node !== undefined && node.id !== focusedNode.id)
+
+  return {
+    nodes: [focusedNode, ...relatedNodes],
+    edges: relatedEdges,
+  }
+}
+
+const buildFocusedNeighborhoodFromExpandResult = (
+  focusedNode: FocusedGraphNode,
+  nodes: FocusedGraphNode[],
+  edges: ExpandedGraphEdge[]
+): FocusedNeighborhood => {
+  const normalizedEdges = normalizeExpandedEdges(edges)
+  const otherNodes = nodes.filter((node) => node.id !== focusedNode.id)
+
+  return {
+    nodes: [focusedNode, ...otherNodes],
+    edges: normalizedEdges,
+  }
+}
 
 export default function WorkspacePage() {
   const navigate = useNavigate()
@@ -47,12 +104,13 @@ export default function WorkspacePage() {
   const [showSettings, setShowSettings] = useState(false)
   const [expanding, setExpanding] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const focusedNeighborhoodCacheRef = useRef(new Map<string, FocusedNeighborhood>())
+  const focusRequestIdRef = useRef(0)
   const {
     setSelectedNode,
     setSelectedEdge,
     selectedNode,
     selectedEdge,
-    layout,
     setLayout,
   } = useGraphStore()
 
@@ -103,6 +161,7 @@ export default function WorkspacePage() {
     }
 
     try {
+      focusedNeighborhoodCacheRef.current.clear()
       const queryParams = getQueryParams(params)
       const currentTab = tabs.find((t) => t.id === activeTabId)
       await executeQuery(
@@ -133,6 +192,7 @@ export default function WorkspacePage() {
   }
 
   const handleGraphSelect = (graphName: string) => {
+    focusedNeighborhoodCacheRef.current.clear()
     setCurrentGraph(graphName)
     if (activeTabId) {
       updateTab(activeTabId, { graph: graphName, result: null })
@@ -169,11 +229,127 @@ export default function WorkspacePage() {
         depth: 1,
         limit: 100,
       })
-      mergeGraphElements(activeTabId, expandResult.nodes, expandResult.edges)
+      mergeGraphElements(
+        activeTabId,
+        expandResult.nodes,
+        normalizeExpandedEdges(expandResult.edges)
+      )
     } catch (err) {
       console.error('Failed to expand node:', err)
     } finally {
       setExpanding(false)
+    }
+  }
+
+  const handleFocusNode = async (node: {
+    id: string
+    label: string
+    properties: Record<string, unknown>
+  }) => {
+    if (!activeTabId || !currentGraph) return
+
+    const focusedNode: FocusedGraphNode = {
+      id: node.id,
+      label: node.label,
+      properties: node.properties,
+      type: 'node',
+    }
+    const currentTab = tabs.find((tab) => tab.id === activeTabId)
+    const localNeighborhood = buildFocusedNeighborhood(
+      currentTab?.result?.graph_elements,
+      focusedNode
+    )
+
+    updateResult(activeTabId, (currentResult) => {
+      if (!currentResult) return null
+
+      return {
+        ...currentResult,
+        graph_elements: {
+          nodes: localNeighborhood.nodes,
+          edges: localNeighborhood.edges,
+          paths: [],
+        },
+        stats: {
+          ...currentResult.stats,
+          nodes_extracted: localNeighborhood.nodes.length,
+          edges_extracted: localNeighborhood.edges.length,
+        },
+        visualization_warning: undefined,
+      }
+    })
+
+    updateTab(activeTabId, { viewMode: 'graph' })
+    setSelectedNode(node.id)
+    setSelectedEdge(null)
+
+    const cacheKey = `${currentGraph}:${node.id}`
+    const cachedNeighborhood = focusedNeighborhoodCacheRef.current.get(cacheKey)
+    if (cachedNeighborhood) {
+      updateResult(activeTabId, (currentResult) => {
+        if (!currentResult) return null
+
+        return {
+          ...currentResult,
+          graph_elements: {
+            nodes: cachedNeighborhood.nodes,
+            edges: cachedNeighborhood.edges,
+            paths: [],
+          },
+          stats: {
+            ...currentResult.stats,
+            nodes_extracted: cachedNeighborhood.nodes.length,
+            edges_extracted: cachedNeighborhood.edges.length,
+          },
+          visualization_warning: undefined,
+        }
+      })
+      return
+    }
+
+    const requestId = ++focusRequestIdRef.current
+    setExpanding(true)
+    try {
+      const expandResult = await graphAPI.expandNode(currentGraph, node.id, {
+        depth: 1,
+        limit: 100,
+      })
+      const focusedNeighborhood = buildFocusedNeighborhoodFromExpandResult(
+        focusedNode,
+        expandResult.nodes,
+        expandResult.edges
+      )
+      focusedNeighborhoodCacheRef.current.set(cacheKey, focusedNeighborhood)
+
+      if (requestId !== focusRequestIdRef.current) {
+        return
+      }
+
+      updateResult(activeTabId, (currentResult) => {
+        if (!currentResult) return null
+
+        return {
+          ...currentResult,
+          graph_elements: {
+            nodes: focusedNeighborhood.nodes,
+            edges: focusedNeighborhood.edges,
+            paths: [],
+          },
+          stats: {
+            ...currentResult.stats,
+            nodes_extracted: focusedNeighborhood.nodes.length,
+            edges_extracted: focusedNeighborhood.edges.length,
+          },
+          visualization_warning: undefined,
+        }
+      })
+    } catch (err) {
+      console.error('Failed to focus node neighborhood:', err)
+      alert('Failed to focus on that node. Please try again.')
+    } finally {
+      if (requestId === focusRequestIdRef.current) {
+        setExpanding(false)
+      }
     }
   }
 
@@ -301,6 +477,7 @@ export default function WorkspacePage() {
                 onNodeExpand={handleExpandNode}
                 onNodeDelete={handleDeleteNode}
                 onNodeSelect={(node) => setSelectedNode(node.id)}
+                onNodeDoubleClick={handleFocusNode}
                 onEdgeSelect={(edge) => setSelectedEdge(edge.id)}
                 onExportReady={(exportFn) => handleTabExportReady(activeTab.id, exportFn)}
               />

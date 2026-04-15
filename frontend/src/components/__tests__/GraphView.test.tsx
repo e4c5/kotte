@@ -30,7 +30,7 @@ vi.mock('d3', async (importOriginal) => {
     simulation.alpha.mockReturnThis()
     simulation.alphaDecay.mockReturnThis()
     simulation.velocityDecay.mockReturnThis()
-    simulation.force.mockImplementation((name: string, arg?: any) => {
+    simulation.force.mockImplementation((_name: string, arg?: any) => {
       if (arg === undefined) return forceObj
       return simulation
     })
