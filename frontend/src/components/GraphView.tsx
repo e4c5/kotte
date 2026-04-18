@@ -4,6 +4,7 @@ import { useGraphStore } from '../stores/graphStore'
 import { initializeLayout } from '../utils/graphLayouts'
 import { getNodeStyle, getEdgeStyle, getNodeCaption, getEdgeCaption } from '../utils/graphStyles'
 import { useGraphExport } from '../hooks/useGraphExport'
+import type { LabelStyle, LayoutType } from '../stores/graphStore'
 
 export interface GraphNode {
   id: string
@@ -28,6 +29,91 @@ export interface GraphEdge {
 export interface PathHighlights {
   nodeIds: string[]
   edgeIds: string[]
+}
+
+interface FitToViewMetrics {
+  centerX: number
+  centerY: number
+  contentCenterX: number
+  contentCenterY: number
+  scale: number
+}
+
+interface FitToViewOptions {
+  nodes: GraphNode[]
+  hasEdges: boolean
+  viewportWidth: number
+  viewportHeight: number
+  layout: LayoutType
+  nodeStyles: Record<string, LabelStyle>
+  anchorNodeId?: string | null
+}
+
+const MIN_AUTO_FIT_SCALE = 0.1
+const MAX_AUTO_FIT_SCALE = 20
+const ISOLATED_NODE_MAX_AUTO_FIT_SCALE = 2.5
+const ISOLATED_NODE_MIN_FOOTPRINT = 160
+
+export function calculateFitToViewMetrics({
+  nodes,
+  hasEdges,
+  viewportWidth,
+  viewportHeight,
+  layout,
+  nodeStyles,
+  anchorNodeId,
+}: FitToViewOptions): FitToViewMetrics | null {
+  if (!nodes.length) return null
+
+  const centerX = viewportWidth / 2
+  const centerY = viewportHeight / 2
+  const xs = nodes.map((node) => node.x ?? centerX)
+  const ys = nodes.map((node) => node.y ?? centerY)
+  const minX = Math.min(...xs)
+  const maxX = Math.max(...xs)
+  const minY = Math.min(...ys)
+  const maxY = Math.max(...ys)
+  const isIsolatedNode = nodes.length === 1 && !hasEdges
+  const anchorNode =
+    anchorNodeId != null ? nodes.find((node) => node.id === anchorNodeId) : undefined
+  const anchorX = anchorNode?.x ?? centerX
+  const anchorY = anchorNode?.y ?? centerY
+  const maxNodeDiameter = nodes.reduce(
+    (largest, node) => Math.max(largest, getNodeStyle(node, nodeStyles).size * 2),
+    0
+  )
+  const minFootprint = isIsolatedNode
+    ? Math.max(ISOLATED_NODE_MIN_FOOTPRINT, maxNodeDiameter * 6)
+    : 1
+  const halfFootprint = minFootprint / 2
+  const halfWidth = anchorNode
+    ? Math.max(anchorX - minX, maxX - anchorX, halfFootprint, 0.5)
+    : Math.max((maxX - minX) / 2, halfFootprint, 0.5)
+  const halfHeight = anchorNode
+    ? Math.max(anchorY - minY, maxY - anchorY, halfFootprint, 0.5)
+    : Math.max((maxY - minY) / 2, halfFootprint, 0.5)
+  const contentWidth = Math.max(halfWidth * 2, 1)
+  const contentHeight = Math.max(halfHeight * 2, 1)
+  const margin = layout === 'force' ? 20 : 40
+  const usableWidth = Math.max(viewportWidth - 2 * margin, 1)
+  const usableHeight = Math.max(viewportHeight - 2 * margin, 1)
+  const rawScale =
+    0.92 * Math.min(usableWidth / contentWidth, usableHeight / contentHeight)
+  const scale = Math.max(
+    MIN_AUTO_FIT_SCALE,
+    Math.min(
+      isIsolatedNode ? ISOLATED_NODE_MAX_AUTO_FIT_SCALE : MAX_AUTO_FIT_SCALE,
+      rawScale
+    )
+  )
+
+  return {
+    centerX,
+    centerY,
+    contentCenterX: anchorNode ? anchorX : (minX + maxX) / 2,
+    contentCenterY: anchorNode ? anchorY : (minY + maxY) / 2,
+    scale,
+  }
 }
 
 interface GraphViewProps {
@@ -65,6 +151,7 @@ export default function GraphView({
   const zoomTransformRef = useRef(d3.zoomIdentity)
   const userZoomedRef = useRef(false)
   const applyingAutoTransformRef = useRef(false)
+  const focusNodeIdRef = useRef<string | null>(null)
   const onNodeClickRef = useRef<typeof onNodeClick>(onNodeClick)
   const onNodeDoubleClickRef = useRef<typeof onNodeDoubleClick>(onNodeDoubleClick)
   const onNodeRightClickRef = useRef<typeof onNodeRightClick>(onNodeRightClick)
@@ -271,7 +358,12 @@ export default function GraphView({
         }
       }))
       .on('click', (event, d) => { event.stopPropagation(); onNodeClickRef.current?.(d) })
-      .on('dblclick', (event, d) => { event.preventDefault(); event.stopPropagation(); onNodeDoubleClickRef.current?.(d) })
+      .on('dblclick', (event, d) => {
+        event.preventDefault()
+        event.stopPropagation()
+        focusNodeIdRef.current = d.id
+        onNodeDoubleClickRef.current?.(d)
+      })
       .on('contextmenu', (event, d) => { event.preventDefault(); onNodeRightClickRef.current?.(d, event) })
       .on('keydown', (event: KeyboardEvent, d: GraphNode) => {
         if (event.key === 'Enter' || event.key === ' ') {
@@ -280,7 +372,6 @@ export default function GraphView({
           onNodeClickRef.current?.(d)
         }
       })
-
     const labels = container.append('g').attr('class', 'labels').selectAll('text').data(filteredNodes).enter().append('text')
       .text((d) => getNodeCaption(d, nodeStyles)).attr('font-size', '12px').attr('dx', (d) => getNodeStyle(d, nodeStyles).size + 5).attr('dy', 4).style('pointer-events', 'none').style('fill', '#e4e4e7')
 
@@ -289,14 +380,21 @@ export default function GraphView({
 
     const centerX = viewportWidth / 2, centerY = viewportHeight / 2
     const fitToView = (animate = true) => {
-      if (!nodesWithPositions.length) return
-      const xs = nodesWithPositions.map((n) => n.x ?? centerX), ys = nodesWithPositions.map((n) => n.y ?? centerY)
-      const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys)
-      const contentWidth = maxX - minX || 1, contentHeight = maxY - minY || 1
-      const margin = layout === 'force' ? 20 : 40
-      const scale = Math.max(0.1, 0.92 * Math.min((viewportWidth - 2 * margin) / contentWidth, (viewportHeight - 2 * margin) / contentHeight))
+      const fitMetrics = calculateFitToViewMetrics({
+        nodes: nodesWithPositions,
+        hasEdges,
+        viewportWidth,
+        viewportHeight,
+        layout,
+        nodeStyles,
+        anchorNodeId: focusNodeIdRef.current,
+      })
+      if (!fitMetrics) return
+      const { centerX, centerY, contentCenterX, contentCenterY, scale } = fitMetrics
       setDebugFitScale(scale)
-      const transform = d3.zoomIdentity.translate(centerX - scale * (minX + contentWidth / 2), centerY - scale * (minY + contentHeight / 2)).scale(scale)
+      const transform = d3.zoomIdentity
+        .translate(centerX - scale * contentCenterX, centerY - scale * contentCenterY)
+        .scale(scale)
       applyingAutoTransformRef.current = true
       if (animate) svg.transition().duration(400).on('end', () => applyingAutoTransformRef.current = false).call(zoom.transform, transform)
       else { svg.call(zoom.transform, transform); applyingAutoTransformRef.current = false }

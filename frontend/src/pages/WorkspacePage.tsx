@@ -165,6 +165,7 @@ export default function WorkspacePage() {
   const handleFocusNode = async (node: GraphNode) => {
     if (!activeTabId || !currentGraph) return
     try {
+      setSelectedNode(node.id)
       const expandResult = await graphAPI.expandNode(currentGraph, node.id, { depth: 1, limit: 100 })
       type NormalizedEdge = { id: string; label: string; source: string; target: string; properties: Record<string, unknown>; type: string }
       const normalizedEdges: NormalizedEdge[] = expandResult.edges.map((e) => ({

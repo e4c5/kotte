@@ -1,6 +1,10 @@
 import { render } from '@testing-library/react'
 import { describe, it, expect, vi } from 'vitest'
-import GraphView, { type GraphNode, type GraphEdge } from '../GraphView'
+import GraphView, {
+  calculateFitToViewMetrics,
+  type GraphNode,
+  type GraphEdge,
+} from '../GraphView'
 
 vi.mock('d3', async (importOriginal) => {
   const actual = await importOriginal<typeof import('d3')>()
@@ -123,5 +127,59 @@ describe('GraphView', () => {
       <GraphView nodes={mockNodes} edges={mockEdges} />
     )
     expect(getByText(/GraphView marker/)).toBeInTheDocument()
+  })
+
+  it('keeps isolated nodes at a reasonable auto-fit scale', () => {
+    const fitMetrics = calculateFitToViewMetrics({
+      nodes: [{ id: '1', label: 'Person', properties: {}, x: 400, y: 300 }],
+      hasEdges: false,
+      viewportWidth: 800,
+      viewportHeight: 600,
+      layout: 'force',
+      nodeStyles: {},
+    })
+
+    expect(fitMetrics).not.toBeNull()
+    expect(fitMetrics?.scale).toBe(2.5)
+    expect(fitMetrics?.contentCenterX).toBe(400)
+    expect(fitMetrics?.contentCenterY).toBe(300)
+  })
+
+  it('does not apply the isolated-node cap to regular graph fits', () => {
+    const fitMetrics = calculateFitToViewMetrics({
+      nodes: [
+        { id: '1', label: 'Person', properties: {}, x: 400, y: 300 },
+        { id: '2', label: 'Person', properties: {}, x: 410, y: 305 },
+      ],
+      hasEdges: true,
+      viewportWidth: 800,
+      viewportHeight: 600,
+      layout: 'force',
+      nodeStyles: {},
+    })
+
+    expect(fitMetrics).not.toBeNull()
+    expect(fitMetrics?.scale).toBe(20)
+  })
+
+  it('centers focused neighborhoods on the anchor node instead of the bounds midpoint', () => {
+    const fitMetrics = calculateFitToViewMetrics({
+      nodes: [
+        { id: 'focus', label: 'Person', properties: {}, x: 400, y: 300 },
+        { id: 'left', label: 'Person', properties: {}, x: 200, y: 300 },
+        { id: 'right', label: 'Person', properties: {}, x: 430, y: 300 },
+      ],
+      hasEdges: true,
+      viewportWidth: 800,
+      viewportHeight: 600,
+      layout: 'force',
+      nodeStyles: {},
+      anchorNodeId: 'focus',
+    })
+
+    expect(fitMetrics).not.toBeNull()
+    expect(fitMetrics?.contentCenterX).toBe(400)
+    expect(fitMetrics?.contentCenterY).toBe(300)
+    expect(fitMetrics?.scale).toBeCloseTo(1.748, 3)
   })
 })
