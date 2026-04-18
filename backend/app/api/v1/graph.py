@@ -323,23 +323,27 @@ async def expand_node_neighborhood(
                 status_code=422,
             )
 
-        # Build Cypher query for neighborhood expansion
-        # MATCH path = (n)-[*1..depth]-(m) WHERE id(n) = $node_id
-        # Return all nodes and edges in the path
         depth = request.depth
         limit = request.limit
-        
-        # Use variable-length path matching
-        # Note: AGE uses id() function to get node ID
-        # We'll return the path and extract nodes/edges from it
-        cypher_query = f"""
-            MATCH path = (n)-[*1..{depth}]-(m)
-            WHERE id(n) = $node_id
-            WITH DISTINCT path, m
-            LIMIT $limit
-            UNWIND relationships(path) as rel
-            RETURN DISTINCT m, rel
-        """
+
+        # Double-click focus only needs first-hop neighbors, so use a direct
+        # relationship match instead of the more expensive variable-length path query.
+        if depth == 1:
+            cypher_query = """
+                MATCH (n)-[rel]-(m)
+                WHERE id(n) = $node_id
+                RETURN DISTINCT n, m, rel
+                LIMIT $limit
+            """
+        else:
+            cypher_query = f"""
+                MATCH path = (n)-[*1..{depth}]-(m)
+                WHERE id(n) = $node_id
+                WITH DISTINCT path, m
+                LIMIT $limit
+                UNWIND relationships(path) as rel
+                RETURN DISTINCT n, m, rel
+            """
         
         # Execute via execute_cypher (literal SQL) to avoid cypher() overload issues
         params = {

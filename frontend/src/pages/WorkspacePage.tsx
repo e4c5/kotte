@@ -53,7 +53,6 @@ export default function WorkspacePage() {
     setSelectedEdge,
     selectedNode,
     selectedEdge,
-    layout,
     setLayout,
   } = useGraphStore()
 
@@ -166,6 +165,43 @@ export default function WorkspacePage() {
     if (!activeTabId || !currentGraph) return
     try {
       setSelectedNode(node.id)
+      updateResult(activeTabId, (result) => {
+        const graphElements = result?.graph_elements
+        if (!result || !graphElements?.nodes || !graphElements?.edges) return result
+
+        const focusedEdges = graphElements.edges.filter((edge) => {
+          const sourceId = String(edge.source)
+          const targetId = String(edge.target)
+          return sourceId === node.id || targetId === node.id
+        })
+        const focusedNodeIds = new Set<string>([node.id])
+        focusedEdges.forEach((edge) => {
+          focusedNodeIds.add(String(edge.source))
+          focusedNodeIds.add(String(edge.target))
+        })
+
+        const focusedNodes = graphElements.nodes.filter((graphNode) =>
+          focusedNodeIds.has(graphNode.id)
+        )
+
+        if (focusedNodes.length === 0) {
+          focusedNodes.push({
+            id: node.id,
+            label: node.label,
+            properties: node.properties,
+            type: 'node',
+          })
+        }
+
+        return {
+          ...result,
+          graph_elements: {
+            ...graphElements,
+            nodes: focusedNodes,
+            edges: focusedEdges,
+          },
+        }
+      })
       const expandResult = await graphAPI.expandNode(currentGraph, node.id, { depth: 1, limit: 100 })
       type NormalizedEdge = { id: string; label: string; source: string; target: string; properties: Record<string, unknown>; type: string }
       const normalizedEdges: NormalizedEdge[] = expandResult.edges.map((e) => ({
@@ -196,7 +232,15 @@ export default function WorkspacePage() {
         depth: 1,
         limit: 100,
       })
-      mergeGraphElements(activeTabId, expandResult.nodes, expandResult.edges)
+      const normalizedEdges = expandResult.edges.map((e) => ({
+        id: e.id,
+        label: e.label,
+        type: e.type,
+        properties: e.properties,
+        source: typeof e.source === 'object' ? (e.source as { id: string }).id : e.source,
+        target: typeof e.target === 'object' ? (e.target as { id: string }).id : e.target,
+      }))
+      mergeGraphElements(activeTabId, expandResult.nodes, normalizedEdges)
     } catch (err) {
       console.error('Failed to expand node:', err)
     } finally {

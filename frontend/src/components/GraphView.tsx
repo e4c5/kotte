@@ -243,6 +243,7 @@ export default function GraphView({
       ? d3.scaleLog().domain([minVal, maxVal]).range([edgeWidthMapping.minWidth, edgeWidthMapping.maxWidth])
       : d3.scaleLinear().domain([minVal, maxVal]).range([edgeWidthMapping.minWidth, edgeWidthMapping.maxWidth])
   }, [filteredEdges, edgeWidthMapping])
+  const edgeWidthProperty = edgeWidthMapping.property ?? undefined
 
   const { exportToPNG } = useGraphExport({
     svgRef,
@@ -301,6 +302,17 @@ export default function GraphView({
         node.fy = node.y || viewportHeight / 2
       }
     })
+    const focusedNode = focusNodeIdRef.current
+      ? nodesWithPositions.find((node) => node.id === focusNodeIdRef.current)
+      : undefined
+    if (focusedNode) {
+      focusedNode.x = viewportWidth / 2
+      focusedNode.y = viewportHeight / 2
+      if (layout === 'force') {
+        focusedNode.fx = viewportWidth / 2
+        focusedNode.fy = viewportHeight / 2
+      }
+    }
     simulationRef.current = simulation
 
     const nodeStrokeColor = (d: GraphNode) => {
@@ -310,9 +322,9 @@ export default function GraphView({
     }
 
     const link = container.append('g').attr('class', 'links').selectAll('line').data(filteredEdges).enter().append('line')
-      .attr('stroke', (d) => pathEdgeIds.has(String(d.id)) ? '#0066cc' : getEdgeStyle(d, edgeStyles, edgeWidthScale, edgeWidthMapping.property).color)
+      .attr('stroke', (d) => pathEdgeIds.has(String(d.id)) ? '#0066cc' : getEdgeStyle(d, edgeStyles, edgeWidthScale, edgeWidthProperty).color)
       .attr('stroke-opacity', (d) => pathEdgeIds.has(String(d.id)) ? 1 : 0.6)
-      .attr('stroke-width', (d) => pathEdgeIds.has(String(d.id)) ? Math.max(3, getEdgeStyle(d, edgeStyles, edgeWidthScale, edgeWidthMapping.property).size) : getEdgeStyle(d, edgeStyles, edgeWidthScale, edgeWidthMapping.property).size)
+      .attr('stroke-width', (d) => pathEdgeIds.has(String(d.id)) ? Math.max(3, getEdgeStyle(d, edgeStyles, edgeWidthScale, edgeWidthProperty).size) : getEdgeStyle(d, edgeStyles, edgeWidthScale, edgeWidthProperty).size)
 
     if (onEdgeClickRef.current) {
       link.style('cursor', 'pointer')
@@ -376,7 +388,7 @@ export default function GraphView({
       .text((d) => getNodeCaption(d, nodeStyles)).attr('font-size', '12px').attr('dx', (d) => getNodeStyle(d, nodeStyles).size + 5).attr('dy', 4).style('pointer-events', 'none').style('fill', '#e4e4e7')
 
     const edgeLabels = container.append('g').attr('class', 'edge-labels').selectAll('text').data(filteredEdges).enter().append('text')
-      .text((d) => getEdgeCaption(d, edgeStyles, edgeWidthScale, edgeWidthMapping.property)).attr('font-size', '10px').attr('text-anchor', 'middle').attr('dy', -4).style('pointer-events', 'none').style('fill', '#a1a1aa')
+      .text((d) => getEdgeCaption(d, edgeStyles, edgeWidthScale, edgeWidthProperty)).attr('font-size', '10px').attr('text-anchor', 'middle').attr('dy', -4).style('pointer-events', 'none').style('fill', '#a1a1aa')
 
     const centerX = viewportWidth / 2, centerY = viewportHeight / 2
     const fitToView = (animate = true) => {
@@ -433,7 +445,7 @@ export default function GraphView({
       svg.on('.zoom', null);
       svg.selectAll('*').remove();
     }
-  }, [filteredNodes, filteredEdges, pathNodeIds, pathEdgeIds, width, height, layout, nodeStyles, edgeStyles, selectedNode, pinnedNodes, edgeWidthScale, edgeWidthMapping.property])
+  }, [filteredNodes, filteredEdges, pathNodeIds, pathEdgeIds, width, height, layout, nodeStyles, edgeStyles, selectedNode, pinnedNodes, edgeWidthScale, edgeWidthProperty])
 
   const zoomBy = (factor: number) => {
     const svg = svgSelectionRef.current, zoom = zoomBehaviorRef.current
