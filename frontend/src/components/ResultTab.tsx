@@ -12,6 +12,7 @@ interface ResultTabProps {
   onNodeExpand: (nodeId: string) => Promise<void>
   onNodeDelete: (nodeId: string) => Promise<void>
   onNodeSelect?: (node: GraphNode) => void
+  onNodeDoubleClick?: (node: GraphNode) => void
   onEdgeSelect?: (edge: GraphEdge) => void
   onExportReady: (exportFn: () => Promise<void>) => void
 }
@@ -23,6 +24,7 @@ export default function ResultTab({
   onNodeExpand,
   onNodeDelete,
   onNodeSelect,
+  onNodeDoubleClick,
   onEdgeSelect,
   onExportReady,
 }: ResultTabProps) {
@@ -232,6 +234,7 @@ export default function ResultTab({
                 edges={result.graph_elements?.edges as GraphEdge[] || []}
                 pathHighlights={pathHighlights}
                 onNodeClick={onNodeSelect}
+                onNodeDoubleClick={onNodeDoubleClick}
                 onNodeRightClick={handleNodeContextMenu}
                 onEdgeClick={onEdgeSelect}
                 onExportReady={handleExportReady}

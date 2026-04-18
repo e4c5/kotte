@@ -12,6 +12,7 @@ import SettingsModal from '../components/SettingsModal'
 import TabBar from '../components/TabBar'
 import ResultTab from '../components/ResultTab'
 import { graphAPI } from '../services/graph'
+import type { GraphNode } from '../components/GraphView'
 import { getNodeLabelColor } from '../utils/nodeColors'
 
 export default function WorkspacePage() {
@@ -161,6 +162,31 @@ export default function WorkspacePage() {
     setActiveTab(newTabId)
   }
 
+  const handleFocusNode = async (node: GraphNode) => {
+    if (!activeTabId || !currentGraph) return
+    try {
+      const expandResult = await graphAPI.expandNode(currentGraph, node.id, { depth: 1, limit: 100 })
+      type NormalizedEdge = { id: string; label: string; source: string; target: string; properties: Record<string, unknown>; type: string }
+      const normalizedEdges: NormalizedEdge[] = expandResult.edges.map((e) => ({
+        id: e.id,
+        label: e.label,
+        type: e.type,
+        properties: e.properties,
+        source: typeof e.source === 'object' ? (e.source as { id: string }).id : e.source,
+        target: typeof e.target === 'object' ? (e.target as { id: string }).id : e.target,
+      }))
+      updateResult(activeTabId, (result) => {
+        if (!result) return result
+        const existingNode = result.graph_elements?.nodes.find((n) => n.id === node.id)
+        const focusedNode = existingNode ?? { id: node.id, label: node.label, properties: node.properties, type: 'node' }
+        const focusedNodes = [focusedNode, ...expandResult.nodes.filter((n) => n.id !== node.id)]
+        return { ...result, graph_elements: { ...result.graph_elements, nodes: focusedNodes, edges: normalizedEdges } }
+      })
+    } catch (err) {
+      console.error('Failed to focus node:', err)
+    }
+  }
+
   const handleExpandNode = async (nodeId: string) => {
     if (!activeTabId || !currentGraph || expanding) return
     setExpanding(true)
@@ -298,6 +324,7 @@ export default function WorkspacePage() {
                 tab={activeTab}
                 tablePageSize={tablePageSize}
                 onViewModeChange={(mode) => handleTabViewModeChange(activeTab.id, mode)}
+                onNodeDoubleClick={handleFocusNode}
                 onNodeExpand={handleExpandNode}
                 onNodeDelete={handleDeleteNode}
                 onNodeSelect={(node) => setSelectedNode(node.id)}
