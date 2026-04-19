@@ -6,6 +6,10 @@ export interface NodeContextMenuProps {
   nodeId: string
   onExpand?: (nodeId: string) => void
   onDelete?: (nodeId: string) => void
+  onPin?: (nodeId: string) => void
+  onHide?: (nodeId: string) => void
+  isPinned?: boolean
+  isHidden?: boolean
   onClose: () => void
 }
 
@@ -15,6 +19,10 @@ export default function NodeContextMenu({
   nodeId,
   onExpand,
   onDelete,
+  onPin,
+  onHide,
+  isPinned = false,
+  isHidden = false,
   onClose,
 }: NodeContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null)
@@ -52,6 +60,19 @@ export default function NodeContextMenu({
     }
     onClose()
   }
+
+  const handlePin = () => {
+    onPin?.(nodeId)
+    onClose()
+  }
+
+  const handleHide = () => {
+    onHide?.(nodeId)
+    onClose()
+  }
+
+  const pinLabel = isPinned ? 'Unpin Node' : 'Pin Node'
+  const hideLabel = isHidden ? 'Show Node' : 'Hide Node'
 
   useEffect(() => {
     // Focus first button when menu opens
@@ -132,6 +153,72 @@ export default function NodeContextMenu({
           Expand Neighborhood
         </button>
       )}
+      {onPin && (
+        <button
+          onClick={handlePin}
+          role="menuitemcheckbox"
+          aria-label={`${pinLabel} ${nodeId}`}
+          aria-checked={isPinned}
+          style={{
+            width: '100%',
+            padding: '8px 16px',
+            textAlign: 'left',
+            border: 'none',
+            backgroundColor: 'transparent',
+            cursor: 'pointer',
+            fontSize: '14px',
+            borderTop: onExpand ? '1px solid #eee' : 'none',
+            outline: 'none',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.backgroundColor = '#f0f0f0'
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.backgroundColor = 'transparent'
+          }}
+          onFocus={(e) => {
+            e.currentTarget.style.backgroundColor = '#f0f0f0'
+          }}
+          onBlur={(e) => {
+            e.currentTarget.style.backgroundColor = 'transparent'
+          }}
+        >
+          {pinLabel}
+        </button>
+      )}
+      {onHide && (
+        <button
+          onClick={handleHide}
+          role="menuitemcheckbox"
+          aria-label={`${hideLabel} ${nodeId}`}
+          aria-checked={isHidden}
+          style={{
+            width: '100%',
+            padding: '8px 16px',
+            textAlign: 'left',
+            border: 'none',
+            backgroundColor: 'transparent',
+            cursor: 'pointer',
+            fontSize: '14px',
+            borderTop: (onExpand || onPin) ? '1px solid #eee' : 'none',
+            outline: 'none',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.backgroundColor = '#f0f0f0'
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.backgroundColor = 'transparent'
+          }}
+          onFocus={(e) => {
+            e.currentTarget.style.backgroundColor = '#f0f0f0'
+          }}
+          onBlur={(e) => {
+            e.currentTarget.style.backgroundColor = 'transparent'
+          }}
+        >
+          {hideLabel}
+        </button>
+      )}
       {onDelete && (
         <button
           onClick={handleDelete}
@@ -146,7 +233,7 @@ export default function NodeContextMenu({
             cursor: 'pointer',
             fontSize: '14px',
             color: '#dc3545',
-            borderTop: onExpand ? '1px solid #eee' : 'none',
+            borderTop: (onExpand || onPin || onHide) ? '1px solid #eee' : 'none',
             outline: 'none',
           }}
           onMouseEnter={(e) => {

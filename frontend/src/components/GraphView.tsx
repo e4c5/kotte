@@ -219,7 +219,14 @@ export default function GraphView({
     const nodeStrokeColor = (d: GraphNode) => {
       if (selectedNode === d.id) return '#ff0000'
       if (pathNodeIds.has(d.id)) return '#004499'
+      if (pinnedNodes.has(d.id)) return '#f59e0b'
       return '#fff'
+    }
+
+    const nodeStrokeWidth = (d: GraphNode) => {
+      if (selectedNode === d.id || pathNodeIds.has(d.id)) return 3
+      if (pinnedNodes.has(d.id)) return 3
+      return 2
     }
 
     const link = container.append('g').attr('class', 'links').selectAll('line').data(filteredEdges).enter().append('line')
@@ -249,7 +256,7 @@ export default function GraphView({
       .attr('r', (d) => getNodeStyle(d, nodeStyles).size)
       .attr('fill', (d) => pathNodeIds.has(d.id) ? '#0066cc' : getNodeStyle(d, nodeStyles).color)
       .attr('stroke', (d) => nodeStrokeColor(d))
-      .attr('stroke-width', (d) => selectedNode === d.id || pathNodeIds.has(d.id) ? 3 : 2)
+      .attr('stroke-width', (d) => nodeStrokeWidth(d))
       .style('cursor', 'pointer').attr('role', 'button').attr('tabindex', 0).attr('aria-label', (d) => `Node: ${d.label}, ID: ${d.id}`).attr('aria-pressed', (d) => selectedNode === d.id)
       .call(d3.drag<SVGCircleElement, GraphNode>().on('start', (event, d) => {
         if (!event.active && layout === 'force') simulation.alphaTarget(0.3).restart()

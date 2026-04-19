@@ -68,7 +68,7 @@ Cheap, high-value fixes that close the gap between _what's wired_ and _what user
 
 ---
 
-### A3. Add Pin / Hide actions in NodeContextMenu
+### A3. Add Pin / Hide actions in NodeContextMenu ✅ shipped
 
 **Why:** `togglePinNode` and `toggleHideNode` exist in `graphStore` but are unreachable from the UI.
 
@@ -83,6 +83,8 @@ Cheap, high-value fixes that close the gap between _what's wired_ and _what user
 **Acceptance:** Right-click a node → Pin → node stays put under force. Right-click → Hide → node and its edges disappear from view. Both reverse via the same menu.
 
 **Estimate:** 2–3 hours.
+
+**Status (2026-04-19, PR pending on `feat/a3-a5-pin-hide-and-viz-limits`):** shipped. `NodeContextMenu` props now accept `onPin?` / `onHide?` plus `isPinned` / `isHidden`; the menu renders four entries in the order Expand → Pin/Unpin → Hide/Show → Delete (each gated on its handler being supplied). The pin/hide buttons label-flip on the current state and expose `aria-pressed` so screen readers can read the toggle. `ResultTab` reads `pinnedNodes` / `hiddenNodes` / `togglePinNode` / `toggleHideNode` from `useGraphStore` and passes through the right state for the right `nodeId`. `GraphView` distinguishes pinned nodes with an amber stroke (`#f59e0b`, width 3), separate from the existing red (selected) and dark-blue (path) highlights; the existing simulation already honoured `pinnedNodes` for `fx`/`fy`, so the menu hits the working code path. Adds 8 unit tests on `NodeContextMenu` covering label flipping, conditional rendering, button ordering with all four handlers wired, and handler dispatch with the correct `nodeId`.
 
 ---
 
@@ -106,7 +108,7 @@ Cheap, high-value fixes that close the gap between _what's wired_ and _what user
 
 ---
 
-### A5. Enforce viz limits in WorkspacePage before rendering
+### A5. Enforce viz limits in WorkspacePage before rendering ✅ shipped
 
 **Why:** `settingsStore.maxNodesForGraph/maxEdgesForGraph` (5000/10000) are never checked client-side. A 50k-node accidental query freezes the browser.
 
@@ -127,6 +129,8 @@ Cheap, high-value fixes that close the gap between _what's wired_ and _what user
 **Acceptance:** Run a query returning 6000 nodes with default limits → table view auto-selected, banner visible, performance unaffected.
 
 **Estimate:** 1–2 hours.
+
+**Status (2026-04-19, PR pending on `feat/a3-a5-pin-hide-and-viz-limits`):** shipped. `WorkspacePage` now pulls `maxNodesForGraph` / `maxEdgesForGraph` from `useSettingsStore`, computes a single human-readable `vizDisabledReason` (`"Result has X,XXX nodes, exceeding the visualization limit of Y,YYY. ..."`) from the active tab's result counts, and force-flips the tab into `viewMode='table'` via a `useEffect` whenever the reason fires while the tab is on graph. The reason string is also passed to `ResultTab`, which generalised the existing `result.visualization_warning` plumbing into a unified `vizUnavailableReason` (server warning takes precedence; either source disables the Graph button + renders the banner). The banner now also exposes an "Open Settings" action when the reason is client-side, so the user can immediately raise the limit instead of hunting through the UI. Adds 5 unit tests on `ResultTab` covering banner rendering, button-disable, the Open-Settings affordance (rendered for client-side reasons but hidden for server-side warnings), and the no-reason baseline.
 
 ---
 
@@ -472,7 +476,7 @@ Only if you intend Kotte to be deployed beyond a single analyst. **Total: ~4–6
 
 ## Suggested execution order
 
-> **Status note (2026-04-19):** the week-numbered plan below was the original sequencing proposal. Actual progress is tracked in the **[Progress checklist](#progress-checklist)** below — that's the authoritative source for what's done. As of this writing, week 1 has shipped A2/A4/A7/A11.1 (still pending: A1, A3, A6, A11.2, A11.3); week 2 has shipped A8/A9/A10 (still pending: A5; B1/B2 not yet started). The "Path 1" decision (finish the rest of Milestone A, then start Milestone B) is being executed against this checklist rather than against the week numbers.
+> **Status note (2026-04-19):** the week-numbered plan below was the original sequencing proposal. Actual progress is tracked in the **[Progress checklist](#progress-checklist)** below — that's the authoritative source for what's done. As of this writing, week 1 has shipped A2/A3/A4/A6/A7/A11.1 (still pending: A1, A11.2, A11.3); week 2 has shipped A5/A8/A9/A10 (B1/B2 not yet started). The "Path 1" decision (finish the rest of Milestone A, then start Milestone B) is being executed against this checklist rather than against the week numbers; smaller related tickets are now bundled into one PR (A3+A5 ship together as the "graph-canvas safety" pair).
 
 1. **Week 1**: A1, A2, A3, A4, A6, A7, A11 phases 2–3 (UI quick wins + the AGE bug + finishing the additive double-click work). A11 phase 1 already shipped.
 2. **Week 2**: A5, A8, A9, A10 + start B1/B2 (CI for tests/lint).
@@ -492,9 +496,9 @@ Toggle `- [ ]` → `- [x]` as items ship, and add a short **Status** line under 
 
 - [ ] **A1** — Wire the Settings modal (gear button + theme)
 - [x] **A2** — Fix tab pin/unpin (PR #26 on `fix/tab-pin-unpin`; `onTabUnpin` wired through, pin button conditionally rendered as `tab.pinned ? onTabUnpin : onTabPin` so a parent supplying only one direction no longer renders a no-op button)
-- [ ] **A3** — Add Pin / Hide actions in NodeContextMenu
+- [x] **A3** — Add Pin / Hide actions in NodeContextMenu (PR on `feat/a3-a5-pin-hide-and-viz-limits`; bundled with A5. `NodeContextMenu` props extended with `onPin?` / `onHide?` plus `isPinned` / `isHidden`; menu now renders Expand → Pin/Unpin → Hide/Show → Delete with state-aware labels and `aria-pressed`; pinned nodes get a distinct amber stroke (`#f59e0b`, width 3) on the canvas; `ResultTab` reads pin/hide state from `useGraphStore`. 8 unit tests added.)
 - [x] **A4** — Remove the debug marker (or gate it on env) (PR #25 on `fix/graphview-debug-marker`; gated on `import.meta.env.DEV` with Vite ambient types added in `frontend/src/vite-env.d.ts`)
-- [ ] **A5** — Enforce viz limits in WorkspacePage before rendering
+- [x] **A5** — Enforce viz limits in WorkspacePage before rendering (PR on `feat/a3-a5-pin-hide-and-viz-limits`; bundled with A3. `WorkspacePage` reads `maxNodesForGraph` / `maxEdgesForGraph` from `settingsStore`, computes a single `vizDisabledReason`, force-flips `viewMode` to `table` via `useEffect`, and feeds the same string to `ResultTab`. The existing `result.visualization_warning` plumbing was generalised into a unified `vizUnavailableReason` (server warning takes precedence). Banner now exposes an "Open Settings" action when the reason is client-side. 5 unit tests added.)
 - [x] **A6** — Unify the label color palette (PR on `fix/unify-color-palette`; `graphStyles.getDefaultNodeColor` now delegates to `nodeColors.getNodeLabelColor`, dropping the duplicate `d3.scaleOrdinal` insertion-order map; sidebar pill and graph circle share one map and resolve to the same hex for the same label regardless of render order; new `graphStyles.test.ts` pins the contract with 7 regression tests; dead `scaleOrdinal`/`schemeCategory10` mocks pruned from `GraphView.test.tsx`)
 - [x] **A7** — Fix `expand_node` for `depth != 1` (PR #27 on `fix/expand-node-depth`; depth-2 now returns intermediate nodes via `nodes(path)`)
 - [x] **A8** — Make the per-user rate limit actually fire (PR #29 on `fix/per-user-rate-limit`; resolves user via `session_manager.get_user_id` so the cookie can't drift from the manager)

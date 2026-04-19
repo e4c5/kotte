@@ -76,6 +76,31 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   - `docs/ROADMAP.md` "Suggested execution order" got a status note
     pointing at the progress checklist as the authoritative source; B9
     itself is marked done with a description of what shipped.
+- **Pin / Hide actions surfaced in the node context menu (ROADMAP A3)** —
+  `togglePinNode` / `toggleHideNode` already existed in `graphStore` and
+  the force simulation already honoured `pinnedNodes` / `hiddenNodes`,
+  but the menu was the missing UI surface. Right-clicking a node now
+  exposes Pin/Unpin and Hide/Show entries (label flips on the current
+  state, `aria-pressed` reflects it). Pinned nodes get a distinct amber
+  stroke (`#f59e0b`, width 3) on the canvas so the indicator is visible
+  even while the simulation re-settles. `NodeContextMenu` props extended
+  with `onPin?`, `onHide?`, `isPinned`, `isHidden`; `ResultTab` reads the
+  state from `useGraphStore` and wires the toggles. Adds 8 unit tests
+  covering label flipping, conditional rendering, ordering, and handler
+  wiring.
+- **Client-side viz limit enforced before rendering (ROADMAP A5)** —
+  `settingsStore.maxNodesForGraph` / `maxEdgesForGraph` (default
+  5000 / 10000) were never checked, so a 50k-node accidental query would
+  freeze the canvas. `WorkspacePage` now computes a single
+  `vizDisabledReason` from the active result counts, force-flips the tab
+  to `viewMode='table'` via `useEffect`, and feeds the same string to
+  `ResultTab`. The existing `result.visualization_warning` plumbing was
+  generalised into a unified `vizUnavailableReason` (server warning
+  takes precedence; either source disables the Graph button + renders
+  the banner). Banner now carries an "Open Settings" action when the
+  reason is client-side, so the user can immediately raise the limit.
+  Adds 5 unit tests covering banner rendering, button-disable, the
+  Open-Settings affordance, and the no-reason baseline.
 
 ## [0.1.0] - 2026-04-19
 
