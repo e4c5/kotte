@@ -129,7 +129,7 @@ describe('QueryEditor — params validity wiring', () => {
     await focusAndExpand()
     const editor = screen.getByLabelText('Cypher query editor') as HTMLTextAreaElement
     editor.focus()
-    fireEvent.keyDown(window, { key: 'Enter', shiftKey: true })
+    fireEvent.keyDown(globalThis as unknown as Window, { key: 'Enter', shiftKey: true })
     expect(onExecute).not.toHaveBeenCalled()
   })
 
@@ -138,7 +138,7 @@ describe('QueryEditor — params validity wiring', () => {
     await focusAndExpand()
     const editor = screen.getByLabelText('Cypher query editor') as HTMLTextAreaElement
     editor.focus()
-    fireEvent.keyDown(window, { key: 'Enter', shiftKey: true })
+    fireEvent.keyDown(globalThis as unknown as Window, { key: 'Enter', shiftKey: true })
     expect(onExecute).toHaveBeenCalledTimes(1)
   })
 })

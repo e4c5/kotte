@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect, useMemo } from 'react'
+import { useState, useRef, useEffect, useMemo, useCallback } from 'react'
+import { useQueryEditorKeyboard } from '../hooks/useQueryEditorKeyboard'
 
 interface QueryEditorProps {
   value: string
@@ -9,6 +10,18 @@ interface QueryEditorProps {
   onCancel?: () => void
   loading?: boolean
   history?: string[]
+}
+
+function pickExecuteAriaLabel(loading: boolean, paramsInvalid: boolean): string {
+  if (loading) return 'Query is executing'
+  if (paramsInvalid) return 'Execute query (disabled: parameters JSON is invalid)'
+  return 'Execute query'
+}
+
+function pickParamsToggleAriaLabel(showParams: boolean, paramsInvalid: boolean): string {
+  if (showParams) return 'Hide parameters'
+  if (paramsInvalid) return 'Show parameters (parameters JSON is invalid)'
+  return 'Show parameters'
 }
 
 export default function QueryEditor({
@@ -35,7 +48,11 @@ export default function QueryEditor({
   const paramsInvalid = !paramsResult.ok
   const paramsErrorMessage = paramsResult.ok ? null : paramsResult.error
 
-  const isEditorFocused = () => textareaRef.current === document.activeElement
+  const isEditorFocused = useCallback(
+    () => textareaRef.current === document.activeElement,
+    []
+  )
+  const blurEditor = useCallback(() => textareaRef.current?.blur(), [])
 
   const applyHistoryAtIndex = (index: number) => {
     if (index >= 0) {
@@ -45,55 +62,38 @@ export default function QueryEditor({
     onChange('')
   }
 
-  const stepHistory = (direction: 'up' | 'down') => {
-    if (direction === 'up') {
-      if (history.length === 0) return
-      const newIndex = historyIndex < history.length - 1 ? historyIndex + 1 : historyIndex
+  const stepHistory = useCallback(
+    (direction: 'up' | 'down') => {
+      if (direction === 'up') {
+        if (history.length === 0) return
+        const newIndex = historyIndex < history.length - 1 ? historyIndex + 1 : historyIndex
+        setHistoryIndex(newIndex)
+        applyHistoryAtIndex(newIndex)
+        return
+      }
+
+      if (historyIndex < 0) return
+      const newIndex = historyIndex > 0 ? historyIndex - 1 : -1
       setHistoryIndex(newIndex)
       applyHistoryAtIndex(newIndex)
-      return
-    }
+    },
+    // applyHistoryAtIndex closes over `history` and `onChange`; tracking
+    // those keeps the callback stable for the keyboard hook below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [history, historyIndex, onChange]
+  )
 
-    if (historyIndex < 0) return
-    const newIndex = historyIndex > 0 ? historyIndex - 1 : -1
-    setHistoryIndex(newIndex)
-    applyHistoryAtIndex(newIndex)
-  }
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.shiftKey || e.ctrlKey || e.metaKey) && e.key === 'Enter' && isEditorFocused()) {
-        e.preventDefault()
-        if (paramsInvalid) return
-        onExecute()
-        setExpanded(false)
-        return
-      }
-
-      if (e.key === 'Escape' && isEditorFocused()) {
-        e.preventDefault()
-        setExpanded(false)
-        textareaRef.current?.blur()
-        return
-      }
-
-      if (!(e.ctrlKey || e.metaKey) || !isEditorFocused()) return
-
-      if (e.key === 'ArrowUp') {
-        e.preventDefault()
-        stepHistory('up')
-        return
-      }
-
-      if (e.key === 'ArrowDown') {
-        e.preventDefault()
-        stepHistory('down')
-      }
-    }
-
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [history, historyIndex, onChange, onExecute, paramsInvalid])
+  useQueryEditorKeyboard({
+    history,
+    historyIndex,
+    isEditorFocused,
+    paramsInvalid,
+    onExecute,
+    onChange,
+    setExpanded,
+    stepHistory,
+    blurEditor,
+  })
 
   useEffect(() => {
     if (!expanded) return
@@ -109,6 +109,13 @@ export default function QueryEditor({
   const handleParamsChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setParams(e.target.value)
   }
+
+  const executeAriaLabel = pickExecuteAriaLabel(loading, paramsInvalid)
+  const paramsToggleAriaLabel = pickParamsToggleAriaLabel(showParams, paramsInvalid)
+  const paramsToggleTitle =
+    paramsInvalid && !showParams
+      ? 'Parameters JSON is invalid \u2014 click to view error'
+      : undefined
 
   return (
     <div ref={containerRef} className="relative w-full">
@@ -189,13 +196,7 @@ export default function QueryEditor({
                   disabled={loading || paramsInvalid}
                   title={paramsInvalid ? 'Fix the invalid JSON in Parameters to enable Execute' : undefined}
                   className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium transition-colors"
-                  aria-label={
-                    loading
-                      ? 'Query is executing'
-                      : paramsInvalid
-                        ? 'Execute query (disabled: parameters JSON is invalid)'
-                        : 'Execute query'
-                  }
+                  aria-label={executeAriaLabel}
                   aria-busy={loading}
                   aria-disabled={loading || paramsInvalid}
                 >
@@ -220,19 +221,9 @@ export default function QueryEditor({
                     ? 'bg-zinc-600 text-zinc-100'
                     : 'bg-zinc-700 hover:bg-zinc-600 text-zinc-400'
                 }`}
-                aria-label={
-                  showParams
-                    ? 'Hide parameters'
-                    : paramsInvalid
-                      ? 'Show parameters (parameters JSON is invalid)'
-                      : 'Show parameters'
-                }
+                aria-label={paramsToggleAriaLabel}
                 aria-pressed={showParams}
-                title={
-                  paramsInvalid && !showParams
-                    ? 'Parameters JSON is invalid \u2014 click to view error'
-                    : undefined
-                }
+                title={paramsToggleTitle}
               >
                 Parameters {showParams ? '▼' : '{ }'}
                 {paramsInvalid && !showParams && (
