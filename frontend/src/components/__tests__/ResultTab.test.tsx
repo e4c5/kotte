@@ -153,6 +153,34 @@ describe('ResultTab — viz limit enforcement (ROADMAP A5)', () => {
     expect(screen.queryByRole('button', { name: /open settings/i })).toBeNull()
   })
 
+  it('hides Open Settings when the server warning preempts the client cap', () => {
+    // Both reasons set simultaneously: the server warning wins (per the ?? in
+    // vizUnavailableReason) so the banner shows the server message. Open
+    // Settings would not fix that, so it must not appear.
+    const tab = makeTab({
+      result: {
+        ...makeTab().result!,
+        visualization_warning: 'Server truncated the result',
+      },
+    })
+    render(
+      <ResultTab
+        tab={tab}
+        tablePageSize={50}
+        vizDisabledReason="Result has 6,000 nodes, exceeding the visualization limit of 5,000."
+        onOpenSettings={vi.fn()}
+        onViewModeChange={vi.fn()}
+        onNodeExpand={vi.fn()}
+        onNodeDelete={vi.fn()}
+        onExportReady={vi.fn()}
+      />,
+    )
+    const banner = screen.getByTestId('viz-unavailable-banner')
+    expect(banner.textContent).toMatch(/Server truncated the result/)
+    expect(banner.textContent).not.toMatch(/6,000 nodes/)
+    expect(screen.queryByRole('button', { name: /open settings/i })).toBeNull()
+  })
+
   it('renders no banner when neither reason is present', () => {
     render(
       <ResultTab

@@ -266,7 +266,12 @@ export default function ResultTab({
           <span className="flex-1">
             <strong>Visualization unavailable:</strong> {vizUnavailableReason}
           </span>
-          {vizDisabledReason && onOpenSettings && (
+          {/* Only offer "Open Settings" when the message actually being shown
+              is the client-side cap. If the server warning takes precedence
+              (per the ?? in vizUnavailableReason), changing the local node/
+              edge limits won't make the warning go away, so the affordance
+              would be misleading. */}
+          {vizUnavailableReason === vizDisabledReason && onOpenSettings && (
             <button
               type="button"
               onClick={onOpenSettings}
