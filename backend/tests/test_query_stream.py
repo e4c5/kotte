@@ -123,15 +123,24 @@ async def test_stream_query_empty_params_dict_reaches_execute_cypher():
 
 @pytest.mark.asyncio
 async def test_stream_query_respects_max_rows_and_emits_error_line():
-    """Chunks never exceed remaining budget; cap reached yields QUERY_VALIDATION_ERROR line."""
+    """Chunks never exceed remaining budget; cap reached yields QUERY_VALIDATION_ERROR line.
+
+    The streaming loop probes for one extra row after hitting the cap so it can
+    distinguish "user got everything and it happened to equal max_rows" from
+    "we truncated". This test exercises the truncation branch: the probe must
+    see at least one row beyond the cap for the error chunk to fire.
+    """
     request_id = "stream-max-rows-cap"
 
     def exec_side_effect(_graph, cypher_query, params=None, **_kwargs):
-        if "$__skip" in cypher_query and "$__limit" in cypher_query:
-            skip = params.get("__skip")
-            limit = params.get("__limit")
-            if skip == 0 and limit == 5:
-                return [{"x": i} for i in range(5)]
+        if "$__skip" not in cypher_query or "$__limit" not in cypher_query:
+            return []
+        skip = params.get("__skip")
+        limit = params.get("__limit")
+        if skip == 0 and limit == 5:
+            return [{"x": i} for i in range(5)]
+        if skip == 5 and limit == 1:
+            return [{"x": 5}]
         return []
 
     mock_db = _stream_mock_db(exec_side_effect)
@@ -158,21 +167,70 @@ async def test_stream_query_respects_max_rows_and_emits_error_line():
 
 
 @pytest.mark.asyncio
+async def test_stream_query_no_cap_warning_when_results_exactly_match_max_rows():
+    """If the user happens to have exactly max_rows of data and nothing more,
+    the probe should come back empty and NO cap-warning chunk must be emitted.
+    Anything else would tell the UI 'we truncated your data' when we did not.
+    """
+    request_id = "stream-max-rows-exact"
+
+    def exec_side_effect(_graph, cypher_query, params=None, **_kwargs):
+        if "$__skip" not in cypher_query or "$__limit" not in cypher_query:
+            return []
+        skip = params.get("__skip")
+        limit = params.get("__limit")
+        if skip == 0 and limit == 5:
+            return [{"x": i} for i in range(5)]
+        return []
+
+    mock_db = _stream_mock_db(exec_side_effect)
+    query_tracker.unregister_query(request_id)
+
+    with patch.object(settings, "query_max_result_rows", 5):
+        chunks = []
+        async for ch in stream_query_results(
+            graph_name="test_graph",
+            cypher_query="MATCH (n) RETURN n",
+            chunk_size=100,
+            offset=0,
+            db_conn=mock_db,
+            request_id=request_id,
+            params={},
+        ):
+            chunks.append(json.loads(ch))
+
+    data_rows = sum(c.get("chunk_size", 0) for c in chunks if "rows" in c)
+    assert data_rows == 5
+    errs = [c for c in chunks if "error" in c]
+    assert errs == [], f"expected no cap warning, got {errs}"
+    probe_calls = [
+        call for call in mock_db.execute_cypher.await_args_list
+        if call.kwargs.get("params", {}).get("__limit") == 1
+    ]
+    assert len(probe_calls) == 1, "exactly one 1-row probe should have happened"
+
+
+@pytest.mark.asyncio
 async def test_stream_query_multi_chunk_then_cap_error():
-    """Several full pages then a partial fetch up to max_rows, then error NDJSON."""
+    """Several full pages then a partial fetch up to max_rows, then error NDJSON.
+
+    Like the cap test above, the probe must see at least one row beyond the
+    cap for the error chunk to fire. We mock that probe explicitly here.
+    """
     request_id = "stream-max-rows-multi"
 
     def exec_side_effect(_graph, cypher_query, params=None, **_kwargs):
         if "$__skip" not in cypher_query or "$__limit" not in cypher_query:
             return []
-        
+
         skip = params.get("__skip")
         limit = params.get("__limit")
-        # Returns 40, then 40, then 20 = 100 total
         if (skip, limit) in [(0, 40), (40, 40)]:
             return [{"i": i} for i in range(40)]
         if (skip, limit) == (80, 20):
             return [{"i": i} for i in range(20)]
+        if (skip, limit) == (100, 1):
+            return [{"i": 100}]
         return []
 
     mock_db = _stream_mock_db(exec_side_effect)
