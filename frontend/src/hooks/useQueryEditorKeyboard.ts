@@ -9,6 +9,12 @@ interface UseQueryEditorKeyboardOptions {
   isEditorFocused: () => boolean
   /** True when the JSON parameters textarea cannot be parsed. */
   paramsInvalid: boolean
+  /**
+   * True while a query is already in flight. Mirrors the Execute button's
+   * `disabled` state so Shift/Ctrl/Meta+Enter cannot re-enter `onExecute`
+   * (and double-submit) from the keyboard while the UI button is disabled.
+   */
+  loading: boolean
   /** Submit the current query. */
   onExecute: () => void
   /** Replace the query text (used by history stepping and Clear). */
@@ -34,6 +40,7 @@ export function useQueryEditorKeyboard({
   historyIndex,
   isEditorFocused,
   paramsInvalid,
+  loading,
   onExecute,
   onChange,
   setExpanded,
@@ -46,7 +53,10 @@ export function useQueryEditorKeyboard({
 
       if ((e.shiftKey || e.ctrlKey || e.metaKey) && e.key === 'Enter') {
         e.preventDefault()
-        if (paramsInvalid) return
+        // Mirror the Execute button's `disabled={loading || paramsInvalid}`
+        // guard so keyboard shortcuts can't double-submit a query that's
+        // already in flight or send params we know the backend will reject.
+        if (loading || paramsInvalid) return
         onExecute()
         setExpanded(false)
         return
@@ -80,6 +90,7 @@ export function useQueryEditorKeyboard({
     historyIndex,
     isEditorFocused,
     paramsInvalid,
+    loading,
     onExecute,
     onChange,
     setExpanded,

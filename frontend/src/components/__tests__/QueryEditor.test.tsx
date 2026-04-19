@@ -189,4 +189,18 @@ describe('QueryEditor — params validity wiring', () => {
     fireEvent.keyDown(globalThis as unknown as Window, { key: 'Enter', shiftKey: true })
     expect(onExecute).toHaveBeenCalledTimes(1)
   })
+
+  // Regression: the keyboard handler used to only check paramsInvalid, so
+  // Shift/Ctrl/Meta+Enter would re-enter onExecute even while a query was
+  // already in flight (the Execute button is disabled in that state, but
+  // the keyboard shortcut bypassed that guard). Mirror the button's
+  // `disabled={loading || paramsInvalid}` contract here.
+  it('blocks Shift+Enter from re-firing onExecute while a query is already in flight', async () => {
+    const { onExecute } = renderEditor('{"a":1}', { loading: true, onCancel: vi.fn() })
+    await focusAndExpand()
+    const editor = screen.getByLabelText('Cypher query editor') as HTMLTextAreaElement
+    editor.focus()
+    fireEvent.keyDown(globalThis as unknown as Window, { key: 'Enter', shiftKey: true })
+    expect(onExecute).not.toHaveBeenCalled()
+  })
 })

@@ -196,6 +196,7 @@ export default function QueryEditor({
     historyIndex,
     isEditorFocused,
     paramsInvalid,
+    loading,
     onExecute,
     onChange,
     setExpanded,
