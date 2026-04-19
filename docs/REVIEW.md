@@ -1,8 +1,8 @@
 # Kotte — Holistic Review & Proposed Improvements
 
-_Review date: 2026-04-18 (amended same day with G11; G11 phase 1 shipped on `overhaul` branch)._
+_Review date: 2026-04-18 (amended same day with G11; G11 phase 1 merged to `main` via PR #23 on 2026-04-19)._
 
-This document is a **holistic** review of the Kotte project (a web visualizer for Apache AGE), not a line-by-line code review. It frames where the product sits today, the structural gaps that matter, and a prioritized improvement plan. Pair this with `docs/ROADMAP.md` (the ticketed implementation plan derived from this review), `docs/BACKLOG.md` (engineering follow-ups already shipped), and `docs/ARCHITECTURE.md` (system design).
+This document is a **holistic** review of the Kotte project (a web visualizer for Apache AGE), not a line-by-line code review. It frames where the product sits today, the structural gaps that matter, and a prioritized improvement plan. Pair this with `docs/ROADMAP.md` (the ticketed implementation plan derived from this review) and `docs/ARCHITECTURE.md` (system design).
 
 ---
 
@@ -35,7 +35,7 @@ These are the issues that change how to plan the next 1–2 quarters, not just b
 
 ### G1. The visualizer is the product but is its weakest layer
 
-You're competing for mindshare against people who have used Neo4j Browser. `GraphView.tsx` is **SVG-only**, single force layout actually animated, no arrowheads, no curved/parallel edges, no self-loop rendering, no minimap, no LOD/canvas/WebGL fallback, and **no client-side enforcement** of `maxNodesForGraph` / `maxEdgesForGraph`. A debug banner (`GraphView marker: 2026-02-23-v3`) is permanently visible (`frontend/src/components/GraphView.tsx:461-463`).
+You're competing for mindshare against people who have used Neo4j Browser. `GraphView.tsx` is **SVG-only**, single force layout actually animated, no arrowheads, no curved/parallel edges, no self-loop rendering, no minimap, no LOD/canvas/WebGL fallback, and **no client-side enforcement** of `maxNodesForGraph` / `maxEdgesForGraph`. A debug banner is permanently visible — search `GraphView.tsx` for `GraphView marker:` to find it (currently around line 358).
 
 The store has `togglePinNode` / `toggleHideNode` but **no UI calls them**. There is a tab pin button but it can never _unpin_ — `TabBar` doesn't accept the `onTabUnpin` prop the workspace passes (`frontend/src/components/TabBar.tsx:3-10` vs `pages/WorkspacePage.tsx:328-329`).
 
@@ -104,14 +104,14 @@ A first attempt to add one (on the now-discarded `double-click` branch) introduc
 
 The correct primitive already existed: `handleExpandNode` (the right-click "Expand neighborhood" handler) uses `mergeGraphElements` on `queryStore` and is purely additive. The right move was to make double-click reuse that flow, not to duplicate its data-fetch path with destructive semantics.
 
-**Status (2026-04-18, `overhaul` branch):** Phase 1 of the additive design has shipped.
+**Status (2026-04-19, merged to `main` via PR #23):** Phase 1 of the additive design has shipped.
 
 - A pure helper `frontend/src/utils/graphMerge.ts` now owns the merge contract (node dedup by id, edge dedup by `(source, target, label)`, no input mutation, returns the ids of newly-added elements).
 - `queryStore.mergeGraphElements` delegates to that helper, fixing a pre-existing edge-dedup bug that was silently producing duplicate links every time the right-click expand path was used.
 - `GraphView` exposes `onNodeDoubleClick`; `ResultTab` and `WorkspacePage` wire it to the same flow as the right-click expand. Double-click is now additive from day one.
 - `d3-zoom`'s default dblclick-to-zoom is suppressed on nodes via `event.stopPropagation()`.
 
-Phases 2 and 3 (camera focus animation, and an explicit reversible "isolate" mode in the context menu) are tracked as separate PRs against the `overhaul` branch — see ROADMAP §A11.
+Phases 2 and 3 (camera focus animation, and an explicit reversible "isolate" mode in the context menu) are tracked as separate PRs against `main` — see ROADMAP §A11.
 
 ---
 
@@ -132,7 +132,7 @@ Cheap, high-value fixes that close the gap between _what's wired_ and _what user
 7. **Fix `expand_node` for `depth != 1`** (`api/v1/graph.py:339`) — keep `n` in scope.
 8. **Fix per-user rate limit** — store `user_id` in the signed cookie session at login, or read from `session_manager` instead of `request.scope["session"]`.
 9. **Add `LICENSE`, `CHANGELOG.md`, `backend/.env.example`** at repo root.
-10. **Add additive double-click expand** (G11) — wire the double-click handler to the existing `mergeGraphElements` primitive (✅ shipped on `overhaul`); animate camera focus on the newly-added neighbourhood (PR #2); add an explicit reversible "show only this & neighbourhood" context-menu action with a one-step undo (PR #3).
+10. **Add additive double-click expand** (G11) — wire the double-click handler to the existing `mergeGraphElements` primitive (✅ shipped via PR #23 to `main`); animate camera focus on the newly-added neighbourhood (ROADMAP A11 Phase 2); add an explicit reversible "show only this & neighbourhood" context-menu action with a one-step undo (ROADMAP A11 Phase 3).
 
 ### Milestone B — "CI and production deployment are real" (2–3 weeks)
 

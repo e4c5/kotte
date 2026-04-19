@@ -1,6 +1,6 @@
 # Kotte — Implementation Roadmap
 
-_Created: 2026-04-18. Companion to `docs/REVIEW.md` (the holistic review) and `docs/BACKLOG.md` (already-shipped engineering items)._
+_Created: 2026-04-18. Companion to `docs/REVIEW.md` (the holistic review)._
 
 This is a **concrete, ticketed plan** derived from `REVIEW.md`. Every Milestone A ticket has the file, the location, the change shape, an acceptance check, and an estimate. Milestones B–D are sketched at the next-action level — drill into any of them when you're ready to start.
 
@@ -88,11 +88,11 @@ Cheap, high-value fixes that close the gap between _what's wired_ and _what user
 
 ### A4. Remove the debug marker (or gate it on env)
 
-**Why:** Production users see `GraphView marker: 2026-02-23-v3 | prop:1024x768 | view:...` permanently (`GraphView.tsx:461-463`).
+**Why:** Production users see `GraphView marker: 2026-02-23-v3 | prop:1024x768 | view:...` permanently. Search `GraphView.tsx` for `GraphView marker:` to find the JSX (currently around line 358; line numbers will keep drifting, the marker string is the stable anchor).
 
 **Files & changes:**
 
-- `frontend/src/components/GraphView.tsx:461-463`: replace with
+- `frontend/src/components/GraphView.tsx`, the `<text>` node containing `GraphView marker:` — replace with
 
   ```tsx
   {import.meta.env.DEV && (
@@ -210,7 +210,7 @@ Cheap, high-value fixes that close the gap between _what's wired_ and _what user
 **Files:**
 
 - `LICENSE`: pick a license (Apache AGE is Apache-2.0; Apache-2.0 or MIT are both fine for Kotte). Add the standard text and copyright line.
-- `CHANGELOG.md`: seed with `## [0.1.0] - 2026-04-18` and bullet the items shipped per `BACKLOG.md` plus the Milestone A items as you ship them.
+- `CHANGELOG.md`: seed with `## [0.1.0] - 2026-04-18` and bullet the items shipped to date (the P0–P4 backlog work that predates this roadmap, plus the Milestone A items as you ship them).
 - `backend/.env.example`: enumerate every key from `backend/app/core/config.py:Settings` with a default and a one-line comment. Mark required-in-prod ones (`SESSION_SECRET_KEY`, `MASTER_ENCRYPTION_KEY`).
 
 **Acceptance:** `cp backend/.env.example backend/.env` produces a working dev config; root `LICENSE` and `CHANGELOG.md` exist.
@@ -249,7 +249,7 @@ The work splits cleanly into three PRs, sized to ship and merge independently.
 
 #### Phase 1 — Additive double-click expand ✅ shipped
 
-**Status:** Shipped on `overhaul` (commits `52e4d3a` test scaffold, `4eed46e` implementation).
+**Status:** Merged to `main` via PR #23 on 2026-04-19 (commits `461b202` test scaffold, `dc11d06` implementation).
 
 - Added `frontend/src/utils/graphMerge.ts` — pure helper. Dedups nodes by `id` and edges by `(source, target, label)`. Tolerates edges whose endpoints have been mutated to `GraphNode` references by D3's force layout. Returns the ids of newly-added elements so callers can drive camera focus or pin animations later. 10 unit tests pin the contract.
 - Refactored `queryStore.mergeGraphElements` to delegate to the pure helper and to return `{ addedNodeIds, addedEdgeIds }` instead of `void`. As a side effect, the right-click expand path no longer accumulates duplicate edges across repeated expansions of the same neighbourhood (the previous id-based dedup missed AGE-generated edge ids that change across expansions).
@@ -462,7 +462,7 @@ Only if you intend Kotte to be deployed beyond a single analyst. **Total: ~4–6
 
 ## Progress checklist
 
-Toggle `- [ ]` → `- [x]` as items ship, and add a short **Status** line under the ticket (date + what shipped) to mirror the `BACKLOG.md` convention.
+Toggle `- [ ]` → `- [x]` as items ship, and add a short **Status** line under the ticket (date + what shipped + PR #) so the next reader can reconstruct what changed.
 
 ### Milestone A — Stop the bleeding
 
@@ -477,7 +477,7 @@ Toggle `- [ ]` → `- [x]` as items ship, and add a short **Status** line under 
 - [ ] **A9** — Add `LICENSE`, `CHANGELOG.md`, `backend/.env.example`
 - [ ] **A10** — Surface JSON parameter parse errors instead of silently dropping them
 - [~] **A11** — Add additive double-click expand (with reversible "isolate" mode)
-  - [x] Phase 1 — additive double-click via shared `mergeGraphElements` (commits `52e4d3a`, `4eed46e` on `overhaul`)
+  - [x] Phase 1 — additive double-click via shared `mergeGraphElements` (PR #23, commits `461b202`, `dc11d06` on `main`)
   - [ ] Phase 2 — camera focus animation on newly-added neighbourhood
   - [ ] Phase 3 — explicit reversible "isolate" context-menu action with `← Back to full result` breadcrumb
 
