@@ -6,6 +6,7 @@ interface TabBarProps {
   onTabClick: (tabId: string) => void
   onTabClose: (tabId: string, e: React.MouseEvent) => void
   onTabPin?: (tabId: string, e: React.MouseEvent) => void
+  onTabUnpin?: (tabId: string, e: React.MouseEvent) => void
   onNewTab: () => void
 }
 
@@ -15,6 +16,7 @@ export default function TabBar({
   onTabClick,
   onTabClose,
   onTabPin,
+  onTabUnpin,
   onNewTab,
 }: TabBarProps) {
   const sortedTabs = [...tabs].sort((a, b) => {
@@ -78,12 +80,13 @@ export default function TabBar({
           )}
           <span className="flex-1 truncate">{tab.name}</span>
           <div className="flex items-center gap-0.5 shrink-0">
-            {onTabPin && (
+            {(tab.pinned ? onTabUnpin : onTabPin) && (
               <button
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation()
-                  onTabPin(tab.id, e)
+                  if (tab.pinned) onTabUnpin?.(tab.id, e)
+                  else onTabPin?.(tab.id, e)
                 }}
                 aria-label={tab.pinned ? `Unpin tab: ${tab.name}` : `Pin tab: ${tab.name}`}
                 className="p-0.5 rounded text-zinc-500 hover:text-emerald-400 text-[10px] leading-none"
