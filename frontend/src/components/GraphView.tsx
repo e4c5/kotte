@@ -354,9 +354,11 @@ export default function GraphView({
 
   return (
     <div className="w-full h-full bg-zinc-950 relative">
-      <div className="absolute left-2 top-2 z-10 pointer-events-none rounded bg-emerald-500/20 border border-emerald-400/40 px-2 py-1 text-[10px] text-emerald-300 font-mono">
-        GraphView marker: 2026-02-23-v3 | prop:{width}x{height} | view:{resolvedSize.width}x{resolvedSize.height} | fit:{debugFitScale?.toFixed(2) ?? 'n/a'}
-      </div>
+      {import.meta.env.DEV && (
+        <div className="absolute left-2 top-2 z-10 pointer-events-none rounded bg-emerald-500/20 border border-emerald-400/40 px-2 py-1 text-[10px] text-emerald-300 font-mono">
+          GraphView marker: 2026-02-23-v3 | prop:{width}x{height} | view:{resolvedSize.width}x{resolvedSize.height} | fit:{debugFitScale?.toFixed(2) ?? 'n/a'}
+        </div>
+      )}
       <div className="absolute right-3 bottom-3 z-20 flex items-center gap-1 rounded border border-zinc-700 bg-zinc-900/85 p-1">
         <button type="button" onClick={() => zoomBy(1.2)} className="h-8 w-8 rounded bg-zinc-800 text-zinc-200 hover:bg-zinc-700" aria-label="Zoom in" title="Zoom in">+</button>
         <button type="button" onClick={() => zoomBy(0.8)} className="h-8 w-8 rounded bg-zinc-800 text-zinc-200 hover:bg-zinc-700" aria-label="Zoom out" title="Zoom out">-</button>
