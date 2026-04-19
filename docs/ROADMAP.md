@@ -211,19 +211,21 @@ The fixture monkeypatches `settings` via `app.core.middleware`'s namespace (not 
 
 ---
 
-### A9. Add `LICENSE`, `CHANGELOG.md`, `backend/.env.example`
+### A9. Add `LICENSE`, `CHANGELOG.md`, `backend/.env.example` — ✅ shipped (PR #30, branch `chore/license-changelog-env`)
 
-**Why:** Repo hygiene; QUICKSTART references `cp .env.example`.
+**Why:** Repo hygiene; QUICKSTART referenced `cp .env.example` but the file didn't exist; no LICENSE meant the repo wasn't legally reusable; commit cadence had reached the point where a CHANGELOG starts to pay off.
 
-**Files:**
+**Shipped:**
 
-- `LICENSE`: pick a license (Apache AGE is Apache-2.0; Apache-2.0 or MIT are both fine for Kotte). Add the standard text and copyright line.
-- `CHANGELOG.md`: seed with `## [0.1.0] - 2026-04-18` and bullet the items shipped to date (the P0–P4 backlog work that predates this roadmap, plus the Milestone A items as you ship them).
-- `backend/.env.example`: enumerate every key from `backend/app/core/config.py:Settings` with a default and a one-line comment. Mark required-in-prod ones (`SESSION_SECRET_KEY`, `MASTER_ENCRYPTION_KEY`).
+- **`LICENSE`** — verbatim Apache License 2.0 text from `https://www.apache.org/licenses/LICENSE-2.0.txt`. Apache-2.0 chosen to match Apache AGE itself and for the explicit patent grant; MIT and AGPLv3 were also under consideration but the user explicitly skipped the choice and Apache-2.0 was applied as the conservative default. Trivial to swap before the first tagged release if a different license is preferred.
+- **`NOTICE`** — Apache-convention attribution file (`Copyright 2026 Raditha Dissanayake and the Kotte contributors`). Keeping `LICENSE` as the verbatim Apache text avoids the modify-the-license trap.
+- **`CHANGELOG.md`** — Keep-a-Changelog 1.1.0 / SemVer format. Seeded with an `[Unreleased]` section (capturing this PR's additions) and a `[0.1.0] - 2026-04-19` entry that summarises the Milestone A work shipped so far (review docs, A11 phase 1, A2, A4, A7, A8) plus the test-stream cap-warning fixes from PR #28. Pre-roadmap commit history is intentionally not enumerated.
+- **`backend/.env.example`** — enumerates every key on `app.core.config.Settings` plus `ADMIN_PASSWORD` (which lives in `services/user.py`, not `Settings`), grouped by concern with one-line comments and explicit `**REQUIRED IN PRODUCTION**` markers on `SESSION_SECRET_KEY`, `ADMIN_PASSWORD`, and `MASTER_ENCRYPTION_KEY`. Closes the QUICKSTART reference.
+- **README** — added LICENSE / CHANGELOG / NOTICE entries to the documentation list.
 
-**Acceptance:** `cp backend/.env.example backend/.env` produces a working dev config; root `LICENSE` and `CHANGELOG.md` exist.
+**Drift caught while writing the env example (recorded for a follow-up ticket, not fixed in A9):** pydantic-settings parses `List[str]` env vars as JSON, so `CORS_ORIGINS=http://a,http://b` raises `JSONDecodeError` at startup. Today's `.env.example` uses the JSON-array form (`CORS_ORIGINS=["http://a","http://b"]`) which works, but `docs/CONFIGURATION.md` documents the comma-separated form, which doesn't. Proper fix is a `field_validator` on `Settings.cors_origins` that accepts both forms. Filed as a future task; out of scope for A9.
 
-**Estimate:** 1 hour.
+**Acceptance:** `cp backend/.env.example backend/.env` boots `Settings()` cleanly (verified via a temp-rename script that imported `Settings` and printed every nontrivial field); root `LICENSE`, `NOTICE`, and `CHANGELOG.md` exist. Backend test suite still 235 passed / 8 skipped.
 
 ---
 
@@ -475,14 +477,14 @@ Toggle `- [ ]` → `- [x]` as items ship, and add a short **Status** line under 
 ### Milestone A — Stop the bleeding
 
 - [ ] **A1** — Wire the Settings modal (gear button + theme)
-- [ ] **A2** — Fix tab pin/unpin
+- [x] **A2** — Fix tab pin/unpin (PR #26 on `fix/tab-pin-unpin`; `onTabUnpin` wired through, pin button conditionally rendered as `tab.pinned ? onTabUnpin : onTabPin` so a parent supplying only one direction no longer renders a no-op button)
 - [ ] **A3** — Add Pin / Hide actions in NodeContextMenu
-- [ ] **A4** — Remove the debug marker (or gate it on env)
+- [x] **A4** — Remove the debug marker (or gate it on env) (PR #25 on `fix/graphview-debug-marker`; gated on `import.meta.env.DEV` with Vite ambient types added in `frontend/src/vite-env.d.ts`)
 - [ ] **A5** — Enforce viz limits in WorkspacePage before rendering
 - [ ] **A6** — Unify the label color palette
 - [x] **A7** — Fix `expand_node` for `depth != 1` (PR #27 on `fix/expand-node-depth`; depth-2 now returns intermediate nodes via `nodes(path)`)
 - [x] **A8** — Make the per-user rate limit actually fire (PR #29 on `fix/per-user-rate-limit`; resolves user via `session_manager.get_user_id` so the cookie can't drift from the manager)
-- [ ] **A9** — Add `LICENSE`, `CHANGELOG.md`, `backend/.env.example`
+- [x] **A9** — Add `LICENSE`, `CHANGELOG.md`, `backend/.env.example` (PR #30 on `chore/license-changelog-env`; Apache-2.0 LICENSE + matching NOTICE, Keep-a-Changelog-style CHANGELOG seeded with 0.1.0, full env example covering every `Settings` key + `ADMIN_PASSWORD` with required-in-prod markers; verified that `cp backend/.env.example backend/.env` boots cleanly. Caught a doc/code drift along the way: pydantic-settings parses `List[str]` as JSON, so `CORS_ORIGINS` must be a JSON array even though `docs/CONFIGURATION.md` shows the comma form — recorded as follow-up)
 - [ ] **A10** — Surface JSON parameter parse errors instead of silently dropping them
 - [~] **A11** — Add additive double-click expand (with reversible "isolate" mode)
   - [x] Phase 1 — additive double-click via shared `mergeGraphElements` (PR #23, commits `461b202`, `dc11d06` on `main`)

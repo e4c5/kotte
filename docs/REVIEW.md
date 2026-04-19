@@ -62,7 +62,7 @@ No Cypher highlighting, no autocomplete from discovered labels/properties, no er
 - No multi-stage builds.
 - `docs/KUBERNETES_DEPLOYMENT.md` is a **plan**, not artifacts. No `deployment/k8s/`, no Helm chart.
 - No migrations system. `init-db.sql` only runs `CREATE EXTENSION age`. The "indices migration" is a one-shot Python script.
-- No `LICENSE`, no `CHANGELOG`, no `backend/.env.example` (referenced by QUICKSTART), no `pre-commit` config.
+- ~~No `LICENSE`, no `CHANGELOG`, no `backend/.env.example` (referenced by QUICKSTART)~~ — resolved in ROADMAP A9 (PR #30): Apache-2.0 `LICENSE` + `NOTICE`, Keep-a-Changelog `CHANGELOG.md` seeded with 0.1.0, and `backend/.env.example` enumerating every `Settings` key + `ADMIN_PASSWORD`. No `pre-commit` config yet (Milestone B).
 - **`.github/workflows/` only contains `docs.yml`** — markdown lint, link check, spell check. There is **no CI for pytest, vitest, ruff/black/mypy/eslint, container builds, or security scans.** This is the single most urgent ops gap.
 
 ### G7. Multi-user is a façade
@@ -131,7 +131,7 @@ Cheap, high-value fixes that close the gap between _what's wired_ and _what user
 6. **Unify color palette** — make `nodeColors` and `graphStyles` share one source of truth so sidebar pills match graph circles.
 7. **Fix `expand_node` for `depth != 1`** (`api/v1/graph.py:339`) — done in ROADMAP A7 (PR #27): the real bug was missing intermediate nodes, not the originally-flagged scope error; switched to `nodes(path)` so depth-2 expansions are no longer truncated.
 8. **Fix per-user rate limit** — done in ROADMAP A8 (PR #29): `RateLimitMiddleware` now resolves the user via `session_manager.get_user_id(session_id)` instead of reading a non-existent `user_id` off the cookie session. Per-user 429 is reachable; `rate_limit_per_user` is a real knob.
-9. **Add `LICENSE`, `CHANGELOG.md`, `backend/.env.example`** at repo root.
+9. **Add `LICENSE`, `CHANGELOG.md`, `backend/.env.example`** — done in ROADMAP A9 (PR #30): Apache-2.0 `LICENSE` + `NOTICE`, Keep-a-Changelog `CHANGELOG.md` seeded with 0.1.0, full `backend/.env.example` covering every `Settings` key + `ADMIN_PASSWORD`. Verified `cp backend/.env.example backend/.env` boots cleanly. Caught a `CORS_ORIGINS` doc/code drift along the way (env requires JSON-array form, not the comma-separated form `CONFIGURATION.md` shows) — recorded as a follow-up.
 10. **Add additive double-click expand** (G11) — wire the double-click handler to the existing `mergeGraphElements` primitive (✅ shipped via PR #23 to `main`); animate camera focus on the newly-added neighbourhood (ROADMAP A11 Phase 2); add an explicit reversible "show only this & neighbourhood" context-menu action with a one-step undo (ROADMAP A11 Phase 3).
 
 ### Milestone B — "CI and production deployment are real" (2–3 weeks)
