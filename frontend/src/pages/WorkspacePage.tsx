@@ -43,7 +43,7 @@ export default function WorkspacePage() {
     error,
   } = useQueryStore()
 
-  const { tablePageSize, defaultLayout } = useSettingsStore()
+  const { tablePageSize, defaultLayout, maxNodesForGraph, maxEdgesForGraph } = useSettingsStore()
   const [showSettings, setShowSettings] = useState(false)
   const [expanding, setExpanding] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
@@ -237,6 +237,35 @@ export default function WorkspacePage() {
     setSelectedEdge(null)
   }
 
+  // Derive viz state up here (before the early `return` for !status.connected)
+  // so the `useEffect` below it isn't called conditionally.
+  const activeTab = tabs.find((t) => t.id === activeTabId)
+  const graphNodes = activeTab?.result?.graph_elements?.nodes ?? []
+  const graphEdges = activeTab?.result?.graph_elements?.edges ?? []
+  const inspectorOpen = !!selectedNode || !!selectedEdge
+
+  // Client-side viz limit (ROADMAP A5). The 5000/10000 defaults in
+  // `settingsStore` were never enforced, so an accidental 50k-node query would
+  // freeze the canvas. We compute a single human-readable reason here, force
+  // the tab into table view if it's currently graph, and feed the same string
+  // to ResultTab which uses it to disable the Graph button + render a banner.
+  const activeNodeCount = graphNodes.length
+  const activeEdgeCount = graphEdges.length
+  const vizDisabledReason: string | null =
+    activeNodeCount > maxNodesForGraph
+      ? `Result has ${activeNodeCount.toLocaleString()} nodes, exceeding the visualization limit of ${maxNodesForGraph.toLocaleString()}. Switch to Table view, refine the query, or raise the limit in Settings.`
+      : activeEdgeCount > maxEdgesForGraph
+        ? `Result has ${activeEdgeCount.toLocaleString()} edges, exceeding the visualization limit of ${maxEdgesForGraph.toLocaleString()}. Switch to Table view, refine the query, or raise the limit in Settings.`
+        : null
+
+  const activeTabId_ = activeTab?.id
+  const activeTabViewMode = activeTab?.viewMode
+  useEffect(() => {
+    if (vizDisabledReason && activeTabId_ && activeTabViewMode === 'graph') {
+      updateTab(activeTabId_, { viewMode: 'table' })
+    }
+  }, [vizDisabledReason, activeTabId_, activeTabViewMode, updateTab])
+
   if (!status || !status.connected) {
     return (
       <div className="h-screen bg-zinc-950 flex items-center justify-center text-zinc-400">
@@ -244,11 +273,6 @@ export default function WorkspacePage() {
       </div>
     )
   }
-
-  const activeTab = tabs.find((t) => t.id === activeTabId)
-  const graphNodes = activeTab?.result?.graph_elements?.nodes ?? []
-  const graphEdges = activeTab?.result?.graph_elements?.edges ?? []
-  const inspectorOpen = !!selectedNode || !!selectedEdge
 
   return (
     <div className="relative h-screen w-full bg-zinc-950 text-zinc-100 overflow-hidden">
@@ -313,6 +337,8 @@ export default function WorkspacePage() {
               <ResultTab
                 tab={activeTab}
                 tablePageSize={tablePageSize}
+                vizDisabledReason={vizDisabledReason}
+                onOpenSettings={() => setShowSettings(true)}
                 onViewModeChange={(mode) => handleTabViewModeChange(activeTab.id, mode)}
                 onNodeExpand={handleExpandNode}
                 onNodeDelete={handleDeleteNode}

@@ -4,10 +4,19 @@ import TableView from './TableView'
 import GraphControls from './GraphControls'
 import NodeContextMenu from './NodeContextMenu'
 import type { QueryTab } from '../stores/queryStore'
+import { useGraphStore } from '../stores/graphStore'
 
 interface ResultTabProps {
   tab: QueryTab
   tablePageSize: number
+  /**
+   * Client-side reason the graph view is unavailable for this result
+   * (e.g. result exceeds `maxNodesForGraph` / `maxEdgesForGraph` from
+   * `settingsStore`). Merges with `result.visualization_warning` from the
+   * server: either source disables the Graph button and shows a banner.
+   */
+  vizDisabledReason?: string | null
+  onOpenSettings?: () => void
   onViewModeChange: (mode: 'graph' | 'table') => void
   onNodeExpand: (nodeId: string) => Promise<void>
   onNodeDelete: (nodeId: string) => Promise<void>
@@ -20,6 +29,8 @@ interface ResultTabProps {
 export default function ResultTab({
   tab,
   tablePageSize,
+  vizDisabledReason = null,
+  onOpenSettings,
   onViewModeChange,
   onNodeExpand,
   onNodeDelete,
@@ -30,6 +41,13 @@ export default function ResultTab({
 }: ResultTabProps) {
   const [showControls, setShowControls] = useState(false)
   const [contextMenu, setContextMenu] = useState<{x: number, y: number, nodeId: string} | null>(null)
+  // ROADMAP A3: Pin/Hide actions exposed via NodeContextMenu. The store
+  // already had `togglePinNode`/`toggleHideNode` and the simulation already
+  // honoured `pinnedNodes`; the menu was the missing UI surface.
+  const pinnedNodes = useGraphStore((s) => s.pinnedNodes)
+  const hiddenNodes = useGraphStore((s) => s.hiddenNodes)
+  const togglePinNode = useGraphStore((s) => s.togglePinNode)
+  const toggleHideNode = useGraphStore((s) => s.toggleHideNode)
   const [exportGraph, setExportGraph] = useState<(() => Promise<void>) | null>(null)
   const [graphSize, setGraphSize] = useState({ width: 800, height: 600 })
   const graphContainerRef = useRef<HTMLDivElement>(null)
@@ -75,6 +93,14 @@ export default function ResultTab({
     result?.graph_elements?.nodes?.length ||
     result?.graph_elements?.edges?.length
   )
+
+  // Single source of truth for "graph view is unavailable for this result".
+  // `result.visualization_warning` comes from the server (e.g. the backend
+  // truncated the result); `vizDisabledReason` comes from WorkspacePage's
+  // client-side check against `maxNodesForGraph` / `maxEdgesForGraph`. Either
+  // disables the Graph button and surfaces a banner above the canvas.
+  const vizUnavailableReason: string | null =
+    result?.visualization_warning ?? vizDisabledReason
 
   const pathHighlights = useMemo((): PathHighlights | undefined => {
     const paths = result?.graph_elements?.paths
@@ -126,6 +152,14 @@ export default function ResultTab({
     }
   }
 
+  const handleNodePin = (nodeId: string) => {
+    togglePinNode(nodeId)
+  }
+
+  const handleNodeHide = (nodeId: string) => {
+    toggleHideNode(nodeId)
+  }
+
   const handleNodeContextMenu = (node: GraphNode, event: MouseEvent) => {
     setContextMenu({ nodeId: node.id, x: event.clientX, y: event.clientY })
   }
@@ -158,18 +192,18 @@ export default function ResultTab({
         <button
           type="button"
           onClick={() => onViewModeChange('graph')}
-          disabled={!hasGraphData || !!result.visualization_warning}
+          disabled={!hasGraphData || !!vizUnavailableReason}
           aria-label="Switch to graph view"
           aria-pressed={tab.viewMode === 'graph'}
           title={
             !hasGraphData
               ? 'Return nodes and/or edges in your query (e.g. RETURN n, r, m) to see the graph.'
-              : result.visualization_warning ?? undefined
+              : vizUnavailableReason ?? undefined
           }
           className={`px-3 py-1.5 rounded-t text-sm font-medium transition-colors ${
             tab.viewMode === 'graph'
               ? 'bg-zinc-700 text-blue-400'
-              : hasGraphData && !result.visualization_warning
+              : hasGraphData && !vizUnavailableReason
                 ? 'text-zinc-400 hover:bg-zinc-700/50'
                 : 'text-zinc-500 cursor-not-allowed opacity-70'
           }`}
@@ -217,9 +251,24 @@ export default function ResultTab({
         )}
       </div>
 
-      {result.visualization_warning && (
-        <div className="shrink-0 px-3 py-2 bg-amber-900/30 border-b border-amber-700/50 text-amber-200 text-sm">
-          <strong>Warning:</strong> {result.visualization_warning}
+      {vizUnavailableReason && (
+        <div
+          role="status"
+          data-testid="viz-unavailable-banner"
+          className="shrink-0 px-3 py-2 bg-amber-900/30 border-b border-amber-700/50 text-amber-200 text-sm flex items-center gap-3 flex-wrap"
+        >
+          <span className="flex-1">
+            <strong>Visualization unavailable:</strong> {vizUnavailableReason}
+          </span>
+          {vizDisabledReason && onOpenSettings && (
+            <button
+              type="button"
+              onClick={onOpenSettings}
+              className="shrink-0 px-2 py-1 rounded border border-amber-500/60 text-amber-100 hover:bg-amber-800/40 text-xs font-medium"
+            >
+              Open Settings
+            </button>
+          )}
         </div>
       )}
 
@@ -246,6 +295,10 @@ export default function ResultTab({
                   nodeId={contextMenu.nodeId}
                   onExpand={handleNodeExpand}
                   onDelete={handleNodeDelete}
+                  onPin={handleNodePin}
+                  onHide={handleNodeHide}
+                  isPinned={pinnedNodes.has(contextMenu.nodeId)}
+                  isHidden={hiddenNodes.has(contextMenu.nodeId)}
                   onClose={closeContextMenu}
                 />
               )}
