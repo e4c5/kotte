@@ -22,6 +22,38 @@ def _stream_mock_db(exec_side_effect):
     return mock_db
 
 
+async def _collect_stream_chunks(
+    *,
+    request_id: str,
+    exec_side_effect,
+    max_rows: int,
+    chunk_size: int,
+):
+    """Drive ``stream_query_results`` against a mocked DB and collect parsed chunks.
+
+    Centralises the ``MagicMock`` wiring + ``settings.query_max_result_rows``
+    patch + async iteration that every cap-related test would otherwise repeat.
+    Returns the parsed NDJSON chunks alongside the mock so callers can also
+    inspect ``execute_cypher.await_args_list`` (e.g. to assert probe calls).
+    """
+    mock_db = _stream_mock_db(exec_side_effect)
+    query_tracker.unregister_query(request_id)
+
+    chunks: list[dict] = []
+    with patch.object(settings, "query_max_result_rows", max_rows):
+        async for ch in stream_query_results(
+            graph_name="test_graph",
+            cypher_query="MATCH (n) RETURN n",
+            chunk_size=chunk_size,
+            offset=0,
+            db_conn=mock_db,
+            request_id=request_id,
+            params={},
+        ):
+            chunks.append(json.loads(ch))
+    return chunks, mock_db
+
+
 @pytest.mark.asyncio
 async def test_stream_query_unregisters_tracker_on_completion():
     """Tracked streaming query should always be unregistered when stream completes."""
@@ -130,8 +162,6 @@ async def test_stream_query_respects_max_rows_and_emits_error_line():
     "we truncated". This test exercises the truncation branch: the probe must
     see at least one row beyond the cap for the error chunk to fire.
     """
-    request_id = "stream-max-rows-cap"
-
     def exec_side_effect(_graph, cypher_query, params=None, **_kwargs):
         if "$__skip" not in cypher_query or "$__limit" not in cypher_query:
             return []
@@ -143,21 +173,12 @@ async def test_stream_query_respects_max_rows_and_emits_error_line():
             return [{"x": 5}]
         return []
 
-    mock_db = _stream_mock_db(exec_side_effect)
-    query_tracker.unregister_query(request_id)
-
-    with patch.object(settings, "query_max_result_rows", 5):
-        chunks = []
-        async for ch in stream_query_results(
-            graph_name="test_graph",
-            cypher_query="MATCH (n) RETURN n",
-            chunk_size=100,
-            offset=0,
-            db_conn=mock_db,
-            request_id=request_id,
-            params={},
-        ):
-            chunks.append(json.loads(ch))
+    chunks, _mock_db = await _collect_stream_chunks(
+        request_id="stream-max-rows-cap",
+        exec_side_effect=exec_side_effect,
+        max_rows=5,
+        chunk_size=100,
+    )
 
     data_rows = sum(c.get("chunk_size", 0) for c in chunks if "rows" in c)
     assert data_rows == 5
@@ -172,8 +193,6 @@ async def test_stream_query_no_cap_warning_when_results_exactly_match_max_rows()
     the probe should come back empty and NO cap-warning chunk must be emitted.
     Anything else would tell the UI 'we truncated your data' when we did not.
     """
-    request_id = "stream-max-rows-exact"
-
     def exec_side_effect(_graph, cypher_query, params=None, **_kwargs):
         if "$__skip" not in cypher_query or "$__limit" not in cypher_query:
             return []
@@ -183,21 +202,12 @@ async def test_stream_query_no_cap_warning_when_results_exactly_match_max_rows()
             return [{"x": i} for i in range(5)]
         return []
 
-    mock_db = _stream_mock_db(exec_side_effect)
-    query_tracker.unregister_query(request_id)
-
-    with patch.object(settings, "query_max_result_rows", 5):
-        chunks = []
-        async for ch in stream_query_results(
-            graph_name="test_graph",
-            cypher_query="MATCH (n) RETURN n",
-            chunk_size=100,
-            offset=0,
-            db_conn=mock_db,
-            request_id=request_id,
-            params={},
-        ):
-            chunks.append(json.loads(ch))
+    chunks, mock_db = await _collect_stream_chunks(
+        request_id="stream-max-rows-exact",
+        exec_side_effect=exec_side_effect,
+        max_rows=5,
+        chunk_size=100,
+    )
 
     data_rows = sum(c.get("chunk_size", 0) for c in chunks if "rows" in c)
     assert data_rows == 5
@@ -217,8 +227,6 @@ async def test_stream_query_multi_chunk_then_cap_error():
     Like the cap test above, the probe must see at least one row beyond the
     cap for the error chunk to fire. We mock that probe explicitly here.
     """
-    request_id = "stream-max-rows-multi"
-
     def exec_side_effect(_graph, cypher_query, params=None, **_kwargs):
         if "$__skip" not in cypher_query or "$__limit" not in cypher_query:
             return []
@@ -233,21 +241,12 @@ async def test_stream_query_multi_chunk_then_cap_error():
             return [{"i": 100}]
         return []
 
-    mock_db = _stream_mock_db(exec_side_effect)
-    query_tracker.unregister_query(request_id)
-
-    with patch.object(settings, "query_max_result_rows", 100):
-        chunks = []
-        async for ch in stream_query_results(
-            graph_name="test_graph",
-            cypher_query="MATCH (n) RETURN n",
-            chunk_size=40,
-            offset=0,
-            db_conn=mock_db,
-            request_id=request_id,
-            params={},
-        ):
-            chunks.append(json.loads(ch))
+    chunks, _mock_db = await _collect_stream_chunks(
+        request_id="stream-max-rows-multi",
+        exec_side_effect=exec_side_effect,
+        max_rows=100,
+        chunk_size=40,
+    )
 
     data_rows = sum(c.get("chunk_size", 0) for c in chunks if "rows" in c)
     assert data_rows == 100
