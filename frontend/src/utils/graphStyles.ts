@@ -1,9 +1,13 @@
-import * as d3 from 'd3'
 import type { GraphNode, GraphEdge } from '../components/GraphView'
 import type { LabelStyle } from '../stores/graphStore'
+import { getNodeLabelColor } from './nodeColors'
 
-// Color mapping for node labels
-const colorScale = d3.scaleOrdinal(d3.schemeCategory10)
+// Node label colors are routed through `getNodeLabelColor` so the graph
+// canvas, the metadata sidebar pills, and any other surface that displays
+// a label-coloured swatch agree on the colour for a given label
+// (ROADMAP A6 — fixes the case where d3.scaleOrdinal and nodeColors had
+// independent insertion-order counters and the same label could land on
+// two different palette indices).
 
 /** Parse a numeric edge-width property; objects/symbols do not stringify to useful numbers. */
 function coerceNumericFromProperty(value: unknown): number | null {
@@ -32,8 +36,13 @@ function stringFromNonObject(value: unknown): string {
   return ''
 }
 
+/**
+ * Default colour for a node label, when the user hasn't overridden it via
+ * `nodeStyles`. Delegates to the shared `getNodeLabelColor` so this returns
+ * the same hex as the metadata-sidebar pill for the same label.
+ */
 export function getDefaultNodeColor(label: string): string {
-  return colorScale(label) || '#999'
+  return getNodeLabelColor(label)
 }
 
 export const getNodeStyle = (node: GraphNode, nodeStyles: Record<string, LabelStyle>): LabelStyle => {
