@@ -97,8 +97,6 @@ vi.mock('d3', async (importOriginal) => {
     drag: vi.fn().mockReturnValue({
       on: vi.fn().mockReturnThis(),
     }),
-    scaleOrdinal: vi.fn().mockReturnValue(vi.fn().mockReturnValue('#999')),
-    schemeCategory10: [],
   }
 })
 

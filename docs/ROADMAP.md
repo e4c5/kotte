@@ -130,7 +130,7 @@ Cheap, high-value fixes that close the gap between _what's wired_ and _what user
 
 ---
 
-### A6. Unify the label color palette
+### A6. Unify the label color palette ✅ shipped
 
 **Why:** `nodeColors.ts:LABEL_COLORS` is a fixed array indexed in **insertion order**, while `graphStyles.ts` uses `d3.scaleOrdinal(d3.schemeCategory10)` with **its own** insertion map. Same labels can get different colors in pill vs node depending on which is rendered first.
 
@@ -144,6 +144,8 @@ Cheap, high-value fixes that close the gap between _what's wired_ and _what user
 **Acceptance:** Sidebar pill color for label `Person` matches the node circle color in the graph.
 
 **Estimate:** 1 hour.
+
+**Status (2026-04-19, PR pending on `fix/unify-color-palette`):** shipped. `graphStyles.ts` no longer instantiates its own `d3.scaleOrdinal`; `getDefaultNodeColor` is now a thin delegating wrapper around `getNodeLabelColor`, so the metadata-sidebar pill and the graph-canvas circle share one module-level insertion-order map and converge on the same hex for any given label regardless of which surface renders it first. `d3` import dropped from `graphStyles.ts` (it was only used for the colour scale). Added a dedicated `frontend/src/utils/graphStyles.test.ts` with 7 regression tests pinning the contract: parity between `getDefaultNodeColor` and `getNodeLabelColor`, parity through `getNodeStyle({}, ...)`, both call orders (graph-first then sidebar-first, and vice versa), hex shape, distinctness across labels, and that user-supplied `nodeStyles` overrides still win. Also pruned the now-dead `scaleOrdinal` / `schemeCategory10` mocks from `GraphView.test.tsx`. 66/66 frontend tests green; no new tsc or eslint issues introduced.
 
 ---
 
@@ -493,7 +495,7 @@ Toggle `- [ ]` → `- [x]` as items ship, and add a short **Status** line under 
 - [ ] **A3** — Add Pin / Hide actions in NodeContextMenu
 - [x] **A4** — Remove the debug marker (or gate it on env) (PR #25 on `fix/graphview-debug-marker`; gated on `import.meta.env.DEV` with Vite ambient types added in `frontend/src/vite-env.d.ts`)
 - [ ] **A5** — Enforce viz limits in WorkspacePage before rendering
-- [ ] **A6** — Unify the label color palette
+- [x] **A6** — Unify the label color palette (PR on `fix/unify-color-palette`; `graphStyles.getDefaultNodeColor` now delegates to `nodeColors.getNodeLabelColor`, dropping the duplicate `d3.scaleOrdinal` insertion-order map; sidebar pill and graph circle share one map and resolve to the same hex for the same label regardless of render order; new `graphStyles.test.ts` pins the contract with 7 regression tests; dead `scaleOrdinal`/`schemeCategory10` mocks pruned from `GraphView.test.tsx`)
 - [x] **A7** — Fix `expand_node` for `depth != 1` (PR #27 on `fix/expand-node-depth`; depth-2 now returns intermediate nodes via `nodes(path)`)
 - [x] **A8** — Make the per-user rate limit actually fire (PR #29 on `fix/per-user-rate-limit`; resolves user via `session_manager.get_user_id` so the cookie can't drift from the manager)
 - [x] **A9** — Add `LICENSE`, `CHANGELOG.md`, `backend/.env.example` (PR #30 on `chore/license-changelog-env`; Apache-2.0 LICENSE + matching NOTICE, Keep-a-Changelog-style CHANGELOG seeded with 0.1.0, full env example covering every `Settings` key + `ADMIN_PASSWORD` with required-in-prod markers; verified that `cp backend/.env.example backend/.env` boots cleanly. Caught a doc/code drift along the way: pydantic-settings parses `List[str]` as JSON, so `CORS_ORIGINS` must be a JSON array even though `docs/CONFIGURATION.md` shows the comma form — recorded as follow-up)

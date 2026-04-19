@@ -32,6 +32,20 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - `WorkspacePage.handleExecute` now bails when params don't parse, instead
   of passing the previous `{}` fallback through to `executeQuery` (defensive
   follow-on from the A10 fix).
+- **Unified the label colour palette (ROADMAP A6)** —
+  `frontend/src/utils/graphStyles.ts` no longer instantiates its own
+  `d3.scaleOrdinal(d3.schemeCategory10)`; `getDefaultNodeColor` is now a
+  thin delegating wrapper around `nodeColors.getNodeLabelColor`. The
+  metadata-sidebar pill and the graph-canvas circle now share one
+  module-level insertion-order map, so the same label resolves to the
+  same hex regardless of which surface renders it first. Previously the
+  two modules each had their own counter and could disagree on a colour
+  whenever labels were encountered in different orders. Dropped the now-
+  unused `d3` import from `graphStyles.ts`. Added
+  `frontend/src/utils/graphStyles.test.ts` with 7 regression tests
+  covering parity, both call orders, hex shape, distinctness, and that
+  user-supplied `nodeStyles` overrides still win. Pruned the dead
+  `scaleOrdinal`/`schemeCategory10` mocks from `GraphView.test.tsx`.
 - **Doc reconciliation pass (ROADMAP B9)** — closes the four bullets B9
   enumerated, plus a few neighbours that drifted in the same direction:
   - `docs/QUICKSTART.md` "Next Steps" rewritten — the old list claimed D3
