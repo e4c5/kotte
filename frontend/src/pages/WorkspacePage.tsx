@@ -177,6 +177,15 @@ export default function WorkspacePage() {
     }
   }
 
+  // Double-clicking a node is a discoverable shortcut for the right-click
+  // "Expand neighborhood" action: it merges the node's first-level neighbours
+  // into the current view (additive — never destructive). See ROADMAP.md A11.
+  // Typed against the structural minimum so it accepts both the GraphView and
+  // services/graph GraphNode shapes without coupling the page to either.
+  const handleDoubleClickNode = (node: { id: string }) => {
+    void handleExpandNode(node.id)
+  }
+
   const handleDeleteNode = async (nodeId: string) => {
     if (!activeTabId || !currentGraph) return
     const confirmMessage =
@@ -301,6 +310,7 @@ export default function WorkspacePage() {
                 onNodeExpand={handleExpandNode}
                 onNodeDelete={handleDeleteNode}
                 onNodeSelect={(node) => setSelectedNode(node.id)}
+                onNodeDoubleClick={handleDoubleClickNode}
                 onEdgeSelect={(edge) => setSelectedEdge(edge.id)}
                 onExportReady={(exportFn) => handleTabExportReady(activeTab.id, exportFn)}
               />

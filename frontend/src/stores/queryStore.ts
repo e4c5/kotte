@@ -5,6 +5,8 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { queryAPI, type QueryExecuteRequest, type QueryExecuteResponse } from '../services/query'
+import type { GraphEdge, GraphNode } from '../services/graph'
+import { mergeGraphElements as mergeGraphElementsPure } from '../utils/graphMerge'
 
 export interface QueryTab {
   id: string
@@ -64,7 +66,11 @@ interface QueryState {
   clearError: (tabId: string) => void
   
   // Graph operations
-  mergeGraphElements: (tabId: string, nodes: Array<{id: string, label: string, properties: Record<string, unknown>, type: string}>, edges: Array<{id: string, label: string, source: string, target: string, properties: Record<string, unknown>, type: string}>) => void
+  mergeGraphElements: (
+    tabId: string,
+    nodes: GraphNode[],
+    edges: GraphEdge[]
+  ) => { addedNodeIds: string[]; addedEdgeIds: string[] }
   updateResult: (tabId: string, updater: (result: QueryExecuteResponse | null) => QueryExecuteResponse | null) => void
   
   // Legacy support (for components that haven't been updated)
@@ -308,42 +314,42 @@ export const useQueryStore = create<QueryState>()(
         mergeGraphElements: (tabId: string, newNodes, newEdges) => {
           const tab = get().tabs.find(t => t.id === tabId)
           if (!tab?.result?.graph_elements) {
-            return
+            return { addedNodeIds: [], addedEdgeIds: [] }
           }
-          
-          const existingNodeIds = new Set(tab.result.graph_elements.nodes?.map(n => n.id) || [])
-          const mergedNodes = [...(tab.result.graph_elements.nodes || [])]
-          for (const node of newNodes) {
-            if (!existingNodeIds.has(node.id)) {
-              mergedNodes.push(node)
-              existingNodeIds.add(node.id)
-            }
+
+          const existing = {
+            nodes: (tab.result.graph_elements.nodes ?? []) as GraphNode[],
+            edges: (tab.result.graph_elements.edges ?? []) as GraphEdge[],
           }
-          
-          const existingEdgeIds = new Set(tab.result.graph_elements.edges?.map(e => e.id) || [])
-          const mergedEdges = [...(tab.result.graph_elements.edges || [])]
-          for (const edge of newEdges) {
-            if (!existingEdgeIds.has(edge.id)) {
-              mergedEdges.push(edge)
-              existingEdgeIds.add(edge.id)
-            }
+          const merged = mergeGraphElementsPure(existing, { nodes: newNodes, edges: newEdges })
+
+          if (merged.added.nodeIds.length === 0 && merged.added.edgeIds.length === 0) {
+            return { addedNodeIds: [], addedEdgeIds: [] }
           }
-          
+
           get().updateResult(tabId, (currentResult) => {
             if (!currentResult) return null
             return {
               ...currentResult,
+              // The QueryExecuteResponse type narrowly types edge endpoints as
+              // strings, but D3's force layout may have already mutated existing
+              // edges to hold GraphNode references. The pre-refactor code
+              // preserved that mutation too — the cast just makes the long-
+              // standing reality explicit.
               graph_elements: {
-                nodes: mergedNodes,
-                edges: mergedEdges,
-              },
+                ...currentResult.graph_elements,
+                nodes: merged.nodes,
+                edges: merged.edges,
+              } as QueryExecuteResponse['graph_elements'],
               stats: {
                 ...currentResult.stats,
-                nodes_extracted: mergedNodes.length,
-                edges_extracted: mergedEdges.length,
+                nodes_extracted: merged.nodes.length,
+                edges_extracted: merged.edges.length,
               },
             }
           })
+
+          return { addedNodeIds: merged.added.nodeIds, addedEdgeIds: merged.added.edgeIds }
         },
         
         // Legacy support
