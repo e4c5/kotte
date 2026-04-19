@@ -56,8 +56,12 @@ describe('mergeGraphElements', () => {
 
     const result = mergeGraphElements(existing, incoming)
 
-    expect(result.nodes.map((n) => n.id).sort()).toEqual(['a', 'b', 'c'])
-    expect(result.added.nodeIds.sort()).toEqual(['b', 'c'])
+    expect(result.nodes.map((n) => n.id).sort((a, b) => a.localeCompare(b))).toEqual([
+      'a',
+      'b',
+      'c',
+    ])
+    expect([...result.added.nodeIds].sort((a, b) => a.localeCompare(b))).toEqual(['b', 'c'])
   })
 
   it('dedupes nodes by id and prefers the existing copy', () => {
@@ -82,8 +86,17 @@ describe('mergeGraphElements', () => {
 
     const result = mergeGraphElements(existing, incoming)
 
-    expect(result.nodes.map((n) => n.id).sort()).toEqual(['a', 'b', 'c', 'd'])
-    expect(result.edges.map((e) => e.id).sort()).toEqual(['e1', 'e2', 'e3'])
+    expect(result.nodes.map((n) => n.id).sort((a, b) => a.localeCompare(b))).toEqual([
+      'a',
+      'b',
+      'c',
+      'd',
+    ])
+    expect(result.edges.map((e) => e.id).sort((a, b) => a.localeCompare(b))).toEqual([
+      'e1',
+      'e2',
+      'e3',
+    ])
   })
 
   it('dedupes edges by (source, target, label) even when ids differ', () => {
