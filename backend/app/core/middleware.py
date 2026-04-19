@@ -238,9 +238,23 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if time.time() - self._last_cleanup > self._cleanup_interval:
             self._cleanup_old_entries()
 
-        # Get client identifier
+        # Get client identifier.
+        # The Starlette signed-cookie session only carries `session_id` (see
+        # api/v1/auth.py login handler); the actual user_id lives in
+        # session_manager. Look it up there so the per-user rate limit can
+        # actually fire and so the cookie can never silently drift from the
+        # manager. Lazy-import to mirror CSRFMiddleware and avoid pulling
+        # auth.py into module import order.
         client_ip = request.client.host if request.client else "unknown"
-        user_id = request.scope.get("session", {}).get("user_id") if "session" in request.scope else None
+        session_id = (
+            request.scope.get("session", {}).get("session_id")
+            if "session" in request.scope
+            else None
+        )
+        user_id = None
+        if session_id:
+            from app.core.auth import session_manager
+            user_id = session_manager.get_user_id(session_id)
 
         now = time.time()
         cutoff = now - 60  # Last minute

@@ -67,7 +67,7 @@ No Cypher highlighting, no autocomplete from discovered labels/properties, no er
 
 ### G7. Multi-user is a façade
 
-The data model imagines users (there's `services/user.py`, `api/v1/auth.py`, login flow), but in practice a single built-in `admin` from `ADMIN_PASSWORD` is the only path. There is no user CRUD route, no roles, no per-user resource quotas, no audit trail beyond log lines. The per-user rate limiter reads `request.scope["session"]["user_id"]`, but the login flow stores `session_id` / `csrf_token` in that signed cookie session and not `user_id` (`core/middleware.py:241-243` vs `core/auth.py:54-59`) — so per-user rate limiting effectively doesn't fire.
+The data model imagines users (there's `services/user.py`, `api/v1/auth.py`, login flow), but in practice a single built-in `admin` from `ADMIN_PASSWORD` is the only path. There is no user CRUD route, no roles, no per-user resource quotas, no audit trail beyond log lines. The per-user rate limiter used to read `request.scope["session"]["user_id"]`, but the login flow stores `session_id` / `csrf_token` in that signed cookie session and not `user_id` — so per-user rate limiting was unreachable. **Resolved (ROADMAP A8, PR #29):** the middleware now resolves the user via `session_manager.get_user_id(session_id)`, so the cookie can never silently drift from `SessionManager`. (One follow-up remains: when the cap fires, `BaseHTTPMiddleware` raising `APIException` doesn't reach FastAPI's exception handlers, so the response currently surfaces as a 500 instead of a clean 429 JSON — tracked separately.)
 
 Per-session pools amplify this: every connect builds an `AsyncConnectionPool` with `max_size=10`, so 50 concurrent users = **up to 500 PostgreSQL connections**, and stale sessions don't aggressively call `DatabaseConnection.disconnect()` on idle expiry — that is a real connection-leak risk in long-running processes.
 
@@ -130,7 +130,7 @@ Cheap, high-value fixes that close the gap between _what's wired_ and _what user
 5. **Enforce `maxNodesForGraph` / `maxEdgesForGraph` in `WorkspacePage`** before passing data into `GraphView`; fall back to `TableView` with a banner.
 6. **Unify color palette** — make `nodeColors` and `graphStyles` share one source of truth so sidebar pills match graph circles.
 7. **Fix `expand_node` for `depth != 1`** (`api/v1/graph.py:339`) — done in ROADMAP A7 (PR #27): the real bug was missing intermediate nodes, not the originally-flagged scope error; switched to `nodes(path)` so depth-2 expansions are no longer truncated.
-8. **Fix per-user rate limit** — store `user_id` in the signed cookie session at login, or read from `session_manager` instead of `request.scope["session"]`.
+8. **Fix per-user rate limit** — done in ROADMAP A8 (PR #29): `RateLimitMiddleware` now resolves the user via `session_manager.get_user_id(session_id)` instead of reading a non-existent `user_id` off the cookie session. Per-user 429 is reachable; `rate_limit_per_user` is a real knob.
 9. **Add `LICENSE`, `CHANGELOG.md`, `backend/.env.example`** at repo root.
 10. **Add additive double-click expand** (G11) — wire the double-click handler to the existing `mergeGraphElements` primitive (✅ shipped via PR #23 to `main`); animate camera focus on the newly-added neighbourhood (ROADMAP A11 Phase 2); add an explicit reversible "show only this & neighbourhood" context-menu action with a one-step undo (ROADMAP A11 Phase 3).
 
