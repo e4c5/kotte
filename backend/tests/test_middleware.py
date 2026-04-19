@@ -1,5 +1,7 @@
 """Tests for middleware."""
 
+import asyncio
+
 import pytest
 import pytest_asyncio
 import httpx
@@ -89,7 +91,7 @@ class TestRateLimitMiddleware:
             assert response.status_code == 401  # No auth, but not 429
 
 
-def _make_request(*, session: dict | None = None, client_ip: str = "1.2.3.4") -> Request:
+def _make_request(*, session: dict | None = None, client_ip: str = "127.0.0.1") -> Request:
     """Build a ``Request`` whose scope mirrors what SessionMiddleware would set.
 
     Unit-testing ``RateLimitMiddleware.dispatch`` directly avoids a known
@@ -149,10 +151,21 @@ class TestRateLimitPerUser:
         monkeypatch.setattr(mw_module.settings, "rate_limit_per_user", 2)
 
         async def call_next(_request):
+            # BaseHTTPMiddleware.dispatch awaits the result of call_next, so
+            # the callable must be async-shaped. Yield to the loop once so
+            # we satisfy the async contract honestly rather than declaring
+            # `async` for shape only.
+            await asyncio.sleep(0)
             return JSONResponse({"ok": True})
 
         async def noop_app(scope, receive, send):
-            pass
+            """Intentionally empty ASGI app stub.
+
+            ``BaseHTTPMiddleware.__init__`` requires an ``app`` callable, but
+            these tests drive ``dispatch`` directly so the inner app is never
+            actually invoked. Kept as a placeholder solely to satisfy the
+            constructor signature.
+            """
 
         middleware = RateLimitMiddleware(noop_app)
 
