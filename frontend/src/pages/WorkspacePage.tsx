@@ -103,13 +103,20 @@ export default function WorkspacePage() {
     }
 
     try {
-      const queryParams = getQueryParams(params)
+      const parseResult = getQueryParams(params)
+      if (!parseResult.ok) {
+        // Defensive guard: QueryEditor already disables Execute and blocks
+        // Shift+Enter when params are unparseable (ROADMAP A10), so reaching
+        // here would mean a future caller bypassed the editor's checks.
+        // Fail closed rather than silently sending {} like the old code did.
+        return
+      }
       const currentTab = tabs.find((t) => t.id === activeTabId)
       await executeQuery(
         activeTabId,
         currentGraph,
         query,
-        queryParams,
+        parseResult.value,
         currentTab?.viewMode === 'graph'
       )
 

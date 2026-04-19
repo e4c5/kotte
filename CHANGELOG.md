@@ -18,6 +18,20 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   plus `ADMIN_PASSWORD`, with one-line comments and "required-in-prod" markers.
   This makes `cp backend/.env.example backend/.env` a real onboarding step
   rather than a broken doc reference (ROADMAP A9).
+- `QueryEditor` now surfaces JSON parameter parse errors instead of silently
+  coercing them to `{}` (ROADMAP A10). The exported helper
+  `getQueryParams` now returns a discriminated union
+  `{ ok: true; value } | { ok: false; error }`; the editor renders an
+  inline `role="alert"` caption + red border under the params textarea,
+  disables the Execute button with a tooltip, blocks Shift+Enter from
+  firing the query, and shows a red dot on the `Parameters` toggle button
+  when the panel is collapsed so the disabled state has a visible cause.
+  Adds 12 unit tests covering the parser and the new UI wiring.
+
+### Changed
+- `WorkspacePage.handleExecute` now bails when params don't parse, instead
+  of passing the previous `{}` fallback through to `executeQuery` (defensive
+  follow-on from the A10 fix).
 
 ## [0.1.0] - 2026-04-19
 

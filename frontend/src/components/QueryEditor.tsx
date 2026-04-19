@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 
 interface QueryEditorProps {
   value: string
@@ -31,6 +31,10 @@ export default function QueryEditor({
   const params = onParamsChange !== undefined ? controlledParams : localParams
   const setParams = onParamsChange ?? setLocalParams
 
+  const paramsResult = useMemo(() => getQueryParams(params), [params])
+  const paramsInvalid = !paramsResult.ok
+  const paramsErrorMessage = paramsResult.ok ? null : paramsResult.error
+
   const isEditorFocused = () => textareaRef.current === document.activeElement
 
   const applyHistoryAtIndex = (index: number) => {
@@ -60,6 +64,7 @@ export default function QueryEditor({
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.shiftKey || e.ctrlKey || e.metaKey) && e.key === 'Enter' && isEditorFocused()) {
         e.preventDefault()
+        if (paramsInvalid) return
         onExecute()
         setExpanded(false)
         return
@@ -88,7 +93,7 @@ export default function QueryEditor({
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [history, historyIndex, onChange, onExecute])
+  }, [history, historyIndex, onChange, onExecute, paramsInvalid])
 
   useEffect(() => {
     if (!expanded) return
@@ -143,9 +148,24 @@ export default function QueryEditor({
                   onChange={handleParamsChange}
                   placeholder='{"name": "Alice"}'
                   aria-label="Query parameters"
+                  aria-invalid={paramsInvalid}
+                  aria-describedby={paramsInvalid ? 'query-params-error' : undefined}
                   rows={3}
-                  className="w-full px-3 py-2 bg-zinc-900 border border-zinc-600 rounded text-zinc-100 font-mono text-xs resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className={`w-full px-3 py-2 bg-zinc-900 border rounded text-zinc-100 font-mono text-xs resize-none focus:outline-none focus:ring-2 ${
+                    paramsInvalid
+                      ? 'border-red-500 focus:ring-red-500'
+                      : 'border-zinc-600 focus:ring-blue-500'
+                  }`}
                 />
+                {paramsInvalid && (
+                  <p
+                    id="query-params-error"
+                    role="alert"
+                    className="mt-1 text-xs text-red-400 font-mono"
+                  >
+                    Invalid JSON: {paramsErrorMessage}
+                  </p>
+                )}
               </div>
             )}
 
@@ -166,10 +186,18 @@ export default function QueryEditor({
                     onExecute()
                     setExpanded(false)
                   }}
-                  disabled={loading}
+                  disabled={loading || paramsInvalid}
+                  title={paramsInvalid ? 'Fix the invalid JSON in Parameters to enable Execute' : undefined}
                   className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium transition-colors"
-                  aria-label={loading ? 'Query is executing' : 'Execute query'}
+                  aria-label={
+                    loading
+                      ? 'Query is executing'
+                      : paramsInvalid
+                        ? 'Execute query (disabled: parameters JSON is invalid)'
+                        : 'Execute query'
+                  }
                   aria-busy={loading}
+                  aria-disabled={loading || paramsInvalid}
                 >
                   <span aria-hidden="true">▶</span>
                   {loading ? 'Executing...' : 'Execute'}
@@ -187,15 +215,33 @@ export default function QueryEditor({
               <button
                 type="button"
                 onClick={() => setShowParams(!showParams)}
-                className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                className={`relative inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                   showParams
                     ? 'bg-zinc-600 text-zinc-100'
                     : 'bg-zinc-700 hover:bg-zinc-600 text-zinc-400'
                 }`}
-                aria-label={showParams ? 'Hide parameters' : 'Show parameters'}
+                aria-label={
+                  showParams
+                    ? 'Hide parameters'
+                    : paramsInvalid
+                      ? 'Show parameters (parameters JSON is invalid)'
+                      : 'Show parameters'
+                }
                 aria-pressed={showParams}
+                title={
+                  paramsInvalid && !showParams
+                    ? 'Parameters JSON is invalid \u2014 click to view error'
+                    : undefined
+                }
               >
                 Parameters {showParams ? '▼' : '{ }'}
+                {paramsInvalid && !showParams && (
+                  <span
+                    aria-hidden="true"
+                    data-testid="params-invalid-dot"
+                    className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-red-500 ring-2 ring-zinc-800"
+                  />
+                )}
               </button>
             </div>
           </>
@@ -205,10 +251,29 @@ export default function QueryEditor({
   )
 }
 
-export function getQueryParams(paramsString: string): Record<string, unknown> {
+export type QueryParamsResult =
+  | { ok: true; value: Record<string, unknown> }
+  | { ok: false; error: string }
+
+/**
+ * Parse the contents of the parameters textarea.
+ *
+ * Returns a discriminated union so the editor can:
+ *   - keep the Execute button enabled / disabled in lock-step with validity,
+ *   - render an inline error caption under the textarea,
+ *   - and refuse to fire onExecute via Shift+Enter when params are unparseable.
+ *
+ * Per ROADMAP A10 we deliberately do _not_ add new shape validation here:
+ * if `JSON.parse` succeeds, the value is returned as-is. The historical
+ * "swallow the error and silently send {}" behaviour is gone.
+ */
+export function getQueryParams(paramsString: string): QueryParamsResult {
   try {
-    return JSON.parse(paramsString)
-  } catch {
-    return {}
+    return { ok: true, value: JSON.parse(paramsString) }
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : 'Invalid JSON',
+    }
   }
 }
