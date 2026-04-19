@@ -54,4 +54,10 @@ Or run manually: [docs/QUICKSTART.md](docs/QUICKSTART.md)
 - [Configuration](docs/CONFIGURATION.md) — Environment variables and options
 - [Architecture](docs/ARCHITECTURE.md) — Technical design
 - [Contributing](docs/CONTRIBUTING.md) — Development guide
-- [Backlog](docs/BACKLOG.md) — Prioritized engineering follow-ups from internal review
+- [Roadmap](docs/ROADMAP.md) — Prioritised engineering follow-ups; see [REVIEW.md](docs/REVIEW.md) for the holistic gap analysis that fed it
+- [Changelog](CHANGELOG.md) — Notable changes per release
+
+## License
+
+Kotte is released under the [Apache License 2.0](LICENSE). See [NOTICE](NOTICE)
+for attribution.
