@@ -6,8 +6,6 @@ import type { QueryTab } from '../../stores/queryStore'
 
 function makeTab(overrides: Partial<QueryTab> & { id: string; name: string }): QueryTab {
   return {
-    id: overrides.id,
-    name: overrides.name,
     query: '',
     params: '{}',
     graph: null,
@@ -103,6 +101,40 @@ describe('TabBar', () => {
       />
     )
     expect(screen.getByLabelText('Pinned tab')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Unpin tab: Pinned' })).toBeInTheDocument()
+  })
+
+  it('calls onTabUnpin (not onTabPin) when pin button is clicked on pinned tab', () => {
+    const onTabPin = vi.fn()
+    const onTabUnpin = vi.fn()
+    const tabs = [makeTab({ id: '1', name: 'Pinned', pinned: true })]
+    const { container } = render(
+      <TabBar
+        {...defaultProps}
+        tabs={tabs}
+        activeTabId="1"
+        onTabPin={onTabPin}
+        onTabUnpin={onTabUnpin}
+      />
+    )
+    const tab1 = container.querySelector('#tab-1') as HTMLElement
+    const unpinBtn = within(tab1).getByRole('button', { name: 'Unpin tab: Pinned' })
+    fireEvent.click(unpinBtn)
+    expect(onTabUnpin).toHaveBeenCalledWith('1', expect.anything())
+    expect(onTabPin).not.toHaveBeenCalled()
+  })
+
+  it('renders the pin button when only onTabUnpin is supplied (e.g. pinned-only views)', () => {
+    const tabs = [makeTab({ id: '1', name: 'Pinned', pinned: true })]
+    render(
+      <TabBar
+        {...defaultProps}
+        tabs={tabs}
+        activeTabId="1"
+        onTabPin={undefined}
+        onTabUnpin={vi.fn()}
+      />
+    )
     expect(screen.getByRole('button', { name: 'Unpin tab: Pinned' })).toBeInTheDocument()
   })
 
