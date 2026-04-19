@@ -363,6 +363,8 @@ Bigger but well-scoped. Listed as headline tickets here; expand into A-style det
 - `docs/ARCHITECTURE.md`: change `app/core/security.py` references to `app/core/middleware.py`, `app/core/auth.py`, `app/core/credentials.py`.
 - `docs/KUBERNETES_DEPLOYMENT.md`: add a banner "Status: planned, not shipped" until manifests land.
 
+**Status (2026-04-19, PR pending on `docs/sync-post-a10`):** all four bullets above shipped, plus REVIEW.md was strikethrough-updated for A2/A4/A10 (and §3/§4 annotated for A2/A4 done), `CONFIGURATION.md` got a `CORS_ORIGINS` JSON-array correction (the live shape `pydantic-settings` actually accepts), and the "Suggested execution order" section above got a status-note pointer at the progress checklist. CHANGELOG `[Unreleased]` records the doc sync. The remaining open follow-up under this banner is the `Settings.cors_origins` validator that would accept both comma-separated and JSON-array forms — that one is a code change, tracked separately.
+
 ---
 
 ## Milestone C — Make it a graph product
@@ -468,6 +470,8 @@ Only if you intend Kotte to be deployed beyond a single analyst. **Total: ~4–6
 
 ## Suggested execution order
 
+> **Status note (2026-04-19):** the week-numbered plan below was the original sequencing proposal. Actual progress is tracked in the **[Progress checklist](#progress-checklist)** below — that's the authoritative source for what's done. As of this writing, week 1 has shipped A2/A4/A7/A11.1 (still pending: A1, A3, A6, A11.2, A11.3); week 2 has shipped A8/A9/A10 (still pending: A5; B1/B2 not yet started). The "Path 1" decision (finish the rest of Milestone A, then start Milestone B) is being executed against this checklist rather than against the week numbers.
+
 1. **Week 1**: A1, A2, A3, A4, A6, A7, A11 phases 2–3 (UI quick wins + the AGE bug + finishing the additive double-click work). A11 phase 1 already shipped.
 2. **Week 2**: A5, A8, A9, A10 + start B1/B2 (CI for tests/lint).
 3. **Weeks 3–4**: B3–B6 (containers + compose split + first deployment dry-run).
@@ -509,7 +513,7 @@ Toggle `- [ ]` → `- [x]` as items ship, and add a short **Status** line under 
 - [ ] **B6** — Compose split (dev / prod)
 - [ ] **B7** — Migrations system (Alembic)
 - [ ] **B8** — Pre-commit
-- [ ] **B9** — Doc reconciliation pass
+- [x] **B9** — Doc reconciliation pass (PR on `docs/sync-post-a10`; QUICKSTART "Next Steps" rewritten, ARCHITECTURE pointer fixed off the non-existent `app/core/security.py` and onto `middleware.py` / `auth.py` / `credentials.py` / `validation.py`, CONFIGURATION drops the unimplemented `sqlite`/`postgresql`/`redis` credential backends and corrects `CORS_ORIGINS` to the JSON-array form `pydantic-settings` actually accepts, KUBERNETES_DEPLOYMENT now flagged "planned, not shipped." REVIEW.md strikethrough-updated for A2/A4/A10. One follow-up code change tracked separately: `Settings.cors_origins` validator that accepts both comma-separated and JSON-array forms.)
 
 ### Milestone C — Make it a graph product
 

@@ -54,7 +54,7 @@ Configuration is done via environment variables. Create a `.env` file in the `ba
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `CORS_ORIGINS` | `http://localhost:5173,http://localhost:3000` | Allowed origins (comma-separated) |
+| `CORS_ORIGINS` | `["http://localhost:5173","http://localhost:3000"]` | Allowed origins. **Must be a JSON array** — `pydantic-settings` parses `List[str]` env vars as JSON, so a comma-separated value will fail at startup. A future change to `Settings.cors_origins` may add a validator that accepts both shapes; until then, use the JSON form shown. |
 | `ENVIRONMENT` | `development` | `development` or `production` |
 | `DEBUG` | `false` | Enable debug mode |
 | `LOG_LEVEL` | `INFO` | Log level |
@@ -63,8 +63,8 @@ Configuration is done via environment variables. Create a `.env` file in the `ba
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `CREDENTIAL_STORAGE_TYPE` | `json_file` | Storage type: `json_file`, `sqlite`, `postgresql`, `redis` |
-| `CREDENTIAL_STORAGE_PATH` | `./data/connections.json` | Path for `json_file` storage |
+| `CREDENTIAL_STORAGE_TYPE` | `json_file` | Storage backend. **Only `json_file` is currently implemented** — `app/core/connection_storage.py` does not yet dispatch on this value, so other settings are inert. SQLite, PostgreSQL, and Redis backends are tracked as a Milestone D item; setting this to anything other than `json_file` today is silently a no-op. |
+| `CREDENTIAL_STORAGE_PATH` | `./data/connections.json` | Path for the encrypted JSON file. |
 | `MASTER_ENCRYPTION_KEY` | *(empty)* | Encryption key for stored credentials. **Development:** If unset, a key is auto-generated on first use and persisted to `.master_encryption_key` (next to the connections file). **Production:** Must be set—otherwise the app raises an error when using credential storage. |
 
 ### Key Rotation

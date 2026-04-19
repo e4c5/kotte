@@ -66,12 +66,17 @@ backend/app/
 │   ├── csv_importer.py  # CSV import endpoints (mounted via import_router.py)
 │   └── health.py        # Health check endpoints
 ├── core/                # Core functionality
-│   ├── auth.py          # Session authentication
-│   ├── config.py        # Configuration management
-│   ├── database/        # Modular DB: pool connection, Cypher executor, query manager
-│   ├── errors.py        # Error handling and definitions
-│   ├── middleware.py    # CORS, rate limiting, request ID
-│   └── security.py      # Security utilities (CSRF, encryption)
+│   ├── auth.py                  # SessionManager, login/logout, CSRF token mint
+│   ├── config.py                # Pydantic-Settings configuration
+│   ├── connection_storage.py    # Encrypted-JSON saved-connection store
+│   ├── credentials.py           # AES-256-GCM CredentialEncryption
+│   ├── database/                # Modular DB: pool, Cypher executor, query manager
+│   ├── deps.py                  # FastAPI dependency injectors
+│   ├── errors.py                # APIException + error classification
+│   ├── logging.py               # Structured JSON logging + request_id
+│   ├── metrics.py               # Prometheus counters / histograms
+│   ├── middleware.py            # Security headers, CSRF, rate limit
+│   └── validation.py            # validate_graph_name / validate_label_name
 ├── models/              # Pydantic models
 │   ├── session.py       # Session request/response models
 │   ├── graph.py         # Graph data models
@@ -79,8 +84,7 @@ backend/app/
 │   └── errors.py        # Error response models
 ├── services/            # Business logic
 │   ├── agtype.py        # Apache AGE type parsing
-│   ├── metadata.py      # Graph metadata discovery
-│   └── connection_storage.py  # Encrypted credential storage
+│   └── metadata.py      # Graph metadata discovery
 └── main.py              # Application entry point
 ```
 
@@ -133,14 +137,16 @@ class ErrorResponse:
 - `not_found` - Resource not found errors
 - `server` - Internal server errors
 
-#### Security (`app/core/security.py`)
+#### Security
 
-Security utilities and middleware:
+Security concerns are split across several focused modules under `app/core/` rather than a single file:
 
-- **CSRF Protection**: Token-based CSRF protection
-- **Rate Limiting**: Per-IP and per-user rate limits
-- **Input Validation**: Strict validation on all inputs
-- **Credential Encryption**: AES-256-GCM for stored credentials
+- **`app/core/middleware.py`** — `SecurityHeadersMiddleware` (HSTS, CSP, frame-ancestors), `CSRFMiddleware` (token-based CSRF for state-changing requests), `RateLimitMiddleware` (per-IP and per-user sliding windows; per-user lookup goes through `session_manager.get_user_id` so the cookie session can't drift from the manager).
+- **`app/core/auth.py`** — `SessionManager`, login/logout flow, session validity checks, CSRF token generation.
+- **`app/core/credentials.py`** — `CredentialEncryption` providing AES-256-GCM at-rest encryption for saved database connections; key handling and the dev-mode `.master_encryption_key` fallback.
+- **`app/core/validation.py`** — input validators (`validate_graph_name`, `validate_label_name`) used by all routes that interpolate identifiers into Cypher / SQL.
+
+A previous version of this document referenced `app/core/security.py`; that file has never existed in the codebase and the pointer has been corrected.
 
 ### Services
 

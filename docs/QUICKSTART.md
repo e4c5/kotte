@@ -118,9 +118,15 @@ make lint-frontend
 
 ## Next Steps
 
-- Implement D3.js graph visualization
-- Add query editor with history
-- Implement CSV import
-- Add graph interaction features
-- Write comprehensive tests
+Once you're connected and looking at a graph:
+
+- **Run a Cypher query** in the editor (`Shift+Enter` to execute). Try `MATCH (n) RETURN n LIMIT 25` against any populated graph.
+- **Pass JSON parameters** via the Parameters panel — `{"name": "Alice"}` then reference `$name` in the query.
+- **Toggle between graph and table views** per result tab. Pin a tab to keep it across query reruns.
+- **Right-click a node** to expand its first-hop neighbourhood, or **double-click** to additively merge it onto the current canvas.
+- **Browse metadata** in the left sidebar: graphs, node labels, edge types, sample row counts.
+- **Export results** — CSV / JSON for the table, PNG / SVG for the graph view.
+- **Review the [User Guide](USER_GUIDE.md)** for keyboard shortcuts and the deeper feature surface.
+
+For where the project itself is heading, see [`ROADMAP.md`](ROADMAP.md) (prioritised tickets) and [`REVIEW.md`](REVIEW.md) (holistic gap analysis). The [`CHANGELOG.md`](../CHANGELOG.md) tracks what's shipped per release.
 

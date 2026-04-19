@@ -1,5 +1,7 @@
 # Kubernetes Deployment Plan for Kotte
 
+> **Status: planned, not shipped.** This document is an _implementation plan_, not a record of artifacts in the repo. There are currently **no Kubernetes manifests, no Helm chart, and no CloudNativePG configuration** under `deployment/`; only a dev-grade `docker-compose.yml` exists today. The PostgreSQL-backed session and credential stores described below are likewise not yet implemented (see `app/core/connection_storage.py` — only the `json_file` backend is wired). Treat this file as the design we'd build _to_, not the deployment recipe you can run today. Tracked as ROADMAP B5 (and the credential backends as a Milestone D item).
+
 This document describes how to deploy Kotte to Kubernetes with CloudNativePG, PostgreSQL-backed sessions and credentials, and high availability. Use this as the implementation guide when building the deployment.
 
 ---
