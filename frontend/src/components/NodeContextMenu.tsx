@@ -156,9 +156,9 @@ export default function NodeContextMenu({
       {onPin && (
         <button
           onClick={handlePin}
-          role="menuitem"
+          role="menuitemcheckbox"
           aria-label={`${pinLabel} ${nodeId}`}
-          aria-pressed={isPinned}
+          aria-checked={isPinned}
           style={{
             width: '100%',
             padding: '8px 16px',
@@ -189,9 +189,9 @@ export default function NodeContextMenu({
       {onHide && (
         <button
           onClick={handleHide}
-          role="menuitem"
+          role="menuitemcheckbox"
           aria-label={`${hideLabel} ${nodeId}`}
-          aria-pressed={isHidden}
+          aria-checked={isHidden}
           style={{
             width: '100%',
             padding: '8px 16px',

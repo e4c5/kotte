@@ -9,9 +9,15 @@ import type { QueryTab } from '../../stores/queryStore'
 beforeAll(() => {
   if (!('ResizeObserver' in globalThis)) {
     class ResizeObserverStub {
-      observe(): void {}
-      unobserve(): void {}
-      disconnect(): void {}
+      observe(): void {
+        /* no-op: jsdom test stub */
+      }
+      unobserve(): void {
+        /* no-op: jsdom test stub */
+      }
+      disconnect(): void {
+        /* no-op: jsdom test stub */
+      }
     }
     const g = globalThis as unknown as { ResizeObserver: unknown }
     g.ResizeObserver = ResizeObserverStub

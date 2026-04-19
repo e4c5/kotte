@@ -184,6 +184,23 @@ export default function ResultTab({
     )
   }
 
+  let graphTabStateClasses: string
+  if (tab.viewMode === 'graph') {
+    graphTabStateClasses = 'bg-zinc-700 text-blue-400'
+  } else if (hasGraphData && !vizUnavailableReason) {
+    graphTabStateClasses = 'text-zinc-400 hover:bg-zinc-700/50'
+  } else {
+    graphTabStateClasses = 'text-zinc-500 cursor-not-allowed opacity-70'
+  }
+
+  let graphTabTitle: string | undefined
+  if (!hasGraphData) {
+    graphTabTitle =
+      'Return nodes and/or edges in your query (e.g. RETURN n, r, m) to see the graph.'
+  } else {
+    graphTabTitle = vizUnavailableReason ?? undefined
+  }
+
   return (
     <div className="h-full flex flex-col min-h-0">
       {/* View mode bar: Graph | Table + Export / Controls when graph */}
@@ -195,18 +212,8 @@ export default function ResultTab({
           disabled={!hasGraphData || !!vizUnavailableReason}
           aria-label="Switch to graph view"
           aria-pressed={tab.viewMode === 'graph'}
-          title={
-            !hasGraphData
-              ? 'Return nodes and/or edges in your query (e.g. RETURN n, r, m) to see the graph.'
-              : vizUnavailableReason ?? undefined
-          }
-          className={`px-3 py-1.5 rounded-t text-sm font-medium transition-colors ${
-            tab.viewMode === 'graph'
-              ? 'bg-zinc-700 text-blue-400'
-              : hasGraphData && !vizUnavailableReason
-                ? 'text-zinc-400 hover:bg-zinc-700/50'
-                : 'text-zinc-500 cursor-not-allowed opacity-70'
-          }`}
+          title={graphTabTitle}
+          className={`px-3 py-1.5 rounded-t text-sm font-medium transition-colors ${graphTabStateClasses}`}
         >
           Graph View
           {result.graph_elements && (
@@ -252,10 +259,9 @@ export default function ResultTab({
       </div>
 
       {vizUnavailableReason && (
-        <div
-          role="status"
+        <output
           data-testid="viz-unavailable-banner"
-          className="shrink-0 px-3 py-2 bg-amber-900/30 border-b border-amber-700/50 text-amber-200 text-sm flex items-center gap-3 flex-wrap"
+          className="shrink-0 px-3 py-2 bg-amber-900/30 border-b border-amber-700/50 text-amber-200 text-sm flex flex-wrap items-center gap-3"
         >
           <span className="flex-1">
             <strong>Visualization unavailable:</strong> {vizUnavailableReason}
@@ -269,7 +275,7 @@ export default function ResultTab({
               Open Settings
             </button>
           )}
-        </div>
+        </output>
       )}
 
       <div className="flex-1 flex min-h-0 relative">

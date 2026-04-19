@@ -14,6 +14,24 @@ import ResultTab from '../components/ResultTab'
 import { graphAPI } from '../services/graph'
 import { getNodeLabelColor } from '../utils/nodeColors'
 
+// Builds the human-readable reason a result cannot be visualised, or null when
+// the active result fits within the configured node/edge caps. Extracted to
+// avoid nested ternaries (Sonar S3358) and to keep the render path readable.
+function computeVizDisabledReason(
+  nodes: number,
+  edges: number,
+  maxNodes: number,
+  maxEdges: number,
+): string | null {
+  if (nodes > maxNodes) {
+    return `Result has ${nodes.toLocaleString()} nodes, exceeding the visualization limit of ${maxNodes.toLocaleString()}. Switch to Table view, refine the query, or raise the limit in Settings.`
+  }
+  if (edges > maxEdges) {
+    return `Result has ${edges.toLocaleString()} edges, exceeding the visualization limit of ${maxEdges.toLocaleString()}. Switch to Table view, refine the query, or raise the limit in Settings.`
+  }
+  return null
+}
+
 export default function WorkspacePage() {
   const navigate = useNavigate()
   const { status, refreshStatus, disconnect } = useSessionStore()
@@ -251,12 +269,12 @@ export default function WorkspacePage() {
   // to ResultTab which uses it to disable the Graph button + render a banner.
   const activeNodeCount = graphNodes.length
   const activeEdgeCount = graphEdges.length
-  const vizDisabledReason: string | null =
-    activeNodeCount > maxNodesForGraph
-      ? `Result has ${activeNodeCount.toLocaleString()} nodes, exceeding the visualization limit of ${maxNodesForGraph.toLocaleString()}. Switch to Table view, refine the query, or raise the limit in Settings.`
-      : activeEdgeCount > maxEdgesForGraph
-        ? `Result has ${activeEdgeCount.toLocaleString()} edges, exceeding the visualization limit of ${maxEdgesForGraph.toLocaleString()}. Switch to Table view, refine the query, or raise the limit in Settings.`
-        : null
+  const vizDisabledReason: string | null = computeVizDisabledReason(
+    activeNodeCount,
+    activeEdgeCount,
+    maxNodesForGraph,
+    maxEdgesForGraph,
+  )
 
   const activeTabId_ = activeTab?.id
   const activeTabViewMode = activeTab?.viewMode
