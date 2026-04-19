@@ -233,49 +233,63 @@ Cheap, high-value fixes that close the gap between _what's wired_ and _what user
 
 ---
 
-### A11. Make double-click additive instead of destructive
+### A11. Add additive double-click expand (with reversible "isolate" mode)
 
-**Why:** `handleFocusNode` (`WorkspacePage.tsx:164-225`) currently wipes the canvas in two phases — first by filtering the existing `graph_elements` to only the clicked node's incident edges, then by replacing the entire result with the API expansion's nodes/edges. This is the **opposite** of the universal pattern in graph explorers (Neo4j Browser, Apache AGE Viewer, Memgraph Lab, Linkurious, Bloom): in all of those, **double-click expands the clicked node's neighbours additively, preserving the existing canvas**. The destructive "show only this node and its neighbours" behaviour belongs on an explicit menu action with an undo, not on the primary navigation gesture.
+**Why:** Until very recently Kotte had no double-click affordance on a node at all. A first attempt to add one (on the now-discarded `double-click` branch) wiped the canvas in two phases on every double-click — first by filtering the existing `graph_elements` to the clicked node's incident edges, then by replacing the entire result with the API expansion. That code never landed on `main`. Every comparable tool (Neo4j Browser, Apache AGE Viewer, Memgraph Lab, Linkurious, Bloom) instead treats double-click as **additive expansion**: the clicked node's neighbours are merged into the existing canvas, preserving positions, pins, and prior expansions. The destructive "show only this node and its neighbours" behaviour belongs on an explicit menu action with an undo, not on the primary navigation gesture.
 
-Concrete problems with the current behaviour:
+Why the additive design matters (and why the destructive attempt was rightly discarded):
 
-- Existing nodes' positions, drag offsets, pin state, and properties are wiped on every double-click.
+- Wiping prior context (query result, earlier expansions, drag positions, pin state) on every double-click is intolerable in a graph explorer. There is no undo and re-running the original query won't restore positions.
 - A two-phase rebuild creates a visible flicker (sparse → API result, ~50–500 ms apart).
-- Off-screen connections from previous expansions are silently lost.
-- `limit: 100` is silent — celebrity nodes with 5,000 neighbours show 100 random ones with no indicator.
-- `focusNodeIdRef` is a `useRef` outside React's reactive flow (`GraphView.tsx:154`), so camera focus only takes effect on the next simulation rebuild.
-- No `expanding` guard on this path — rapid double-clicks race.
-- `handleFocusNode` conflates three orthogonal operations (move camera, fetch new data, discard old data) under one gesture.
-- The right-click "Expand neighborhood" path (`handleExpandNode`, `WorkspacePage.tsx:227-249`) already does the right thing via `mergeGraphElements`. Double-click should reuse it.
+- A celebrity node with 5,000 neighbours silently shows 100 random ones when the `limit` cap is not surfaced — and the user has no UI to pick a relationship type or direction.
+- A `useRef` for camera focus that lives outside React's reactive flow makes the camera land in the wrong place on rebuilds.
+- The right-click "Expand neighborhood" path already had the correct primitive — `mergeGraphElements` on `queryStore`. Double-click should reuse it, not duplicate it destructively.
+
+The work splits cleanly into three PRs, sized to ship and merge independently.
+
+#### Phase 1 — Additive double-click expand ✅ shipped
+
+**Status:** Shipped on `overhaul` (commits `52e4d3a` test scaffold, `4eed46e` implementation).
+
+- Added `frontend/src/utils/graphMerge.ts` — pure helper. Dedups nodes by `id` and edges by `(source, target, label)`. Tolerates edges whose endpoints have been mutated to `GraphNode` references by D3's force layout. Returns the ids of newly-added elements so callers can drive camera focus or pin animations later. 10 unit tests pin the contract.
+- Refactored `queryStore.mergeGraphElements` to delegate to the pure helper and to return `{ addedNodeIds, addedEdgeIds }` instead of `void`. As a side effect, the right-click expand path no longer accumulates duplicate edges across repeated expansions of the same neighbourhood (the previous id-based dedup missed AGE-generated edge ids that change across expansions).
+- Added `onNodeDoubleClick` prop to `GraphView`; the dblclick listener calls `preventDefault()` and `stopPropagation()` so `d3-zoom`'s default dblclick-to-zoom does not fire on top of the expand.
+- Threaded `onNodeDoubleClick` through `ResultTab` to `WorkspacePage`, where `handleDoubleClickNode` delegates to the existing `handleExpandNode`.
+- Acceptance check: double-clicking a node merges its first-hop neighbours; existing nodes keep positions; pinned nodes stay pinned; double-clicking the same node twice does not duplicate edges. Frontend tests: 34/34 passing. tsc error count dropped by 1 (a pre-existing `GraphEdge` type lie at the queryStore boundary is now resolved).
+
+#### Phase 2 — Camera focus on newly-added neighbourhood
+
+**Why:** Today the canvas just shifts whatever D3's simulation does after the merge. Users expect the view to centre on what they just expanded. The pure helper already returns the newly-added node ids; phase 2 consumes them.
 
 **Files & changes:**
 
-- `frontend/src/pages/WorkspacePage.tsx`
-  - Replace the body of `handleFocusNode` (lines 164–225) with the same flow as `handleExpandNode`: call `graphAPI.expandNode`, then `mergeGraphElements(activeTabId, ...)`. After merge, animate the camera to the union of `{clicked node} ∪ {newly added neighbours}` (or just the clicked node if no new neighbours).
-  - Reuse the `expanding` flag (or key it by node id) so consecutive double-clicks queue cleanly.
-- `frontend/src/stores/graphStore.ts`
-  - Add `cameraFocusNodeId: string | null` plus `setCameraFocusNodeId(id: string | null)`.
-- `frontend/src/components/GraphView.tsx`
-  - Remove `focusNodeIdRef` (line 154); read `cameraFocusNodeId` from the store and pass it to `calculateFitToViewMetrics` as the `anchorNodeId`.
-  - On focus, briefly pin the focused node (`fx`/`fy` set, then cleared on a `setTimeout(2000)`) instead of permanently fixing it.
-- `frontend/src/components/NodeContextMenu.tsx`
-  - Add a new menu item `Show only this & its neighbourhood` wired to a new `onIsolateNeighborhood` prop.
-- `frontend/src/components/ResultTab.tsx`
-  - Pass an `onIsolateNeighborhood` handler to `NodeContextMenu` that calls a new `isolateNeighborhood(activeTabId, nodeId)` action on `queryStore`.
-  - When `tab.previousGraphElements` is set, render a `← Back to full result` breadcrumb above the graph; clicking it calls `restoreGraphElements(tab.id)`.
+- `frontend/src/stores/graphStore.ts` — add `cameraFocusNodeId: string | null` and `cameraFocusAnchorIds: string[]` (the union of `{clicked node} ∪ addedNodeIds`), plus setters.
+- `frontend/src/pages/WorkspacePage.tsx` — in `handleDoubleClickNode`, after the merge, call `setCameraFocusAnchorIds([nodeId, ...addedNodeIds])`. (Use the new return value from `mergeGraphElements`.)
+- `frontend/src/components/GraphView.tsx` — read `cameraFocusAnchorIds` from the store; when it changes and is non-empty, animate the d3-zoom transform to fit those nodes in the viewport with a smooth `transition().duration(400)`. Briefly pin the anchor for ~2s (`fx`/`fy` set, then cleared on `setTimeout(2000)`) so the simulation settles around the focus.
+- After the animation the page clears `cameraFocusAnchorIds` so subsequent simulation ticks don't keep retriggering it.
+
+**Acceptance:** Double-clicking a node smoothly recentres the view on the union of the clicked node and its newly-added neighbours. The clicked node is briefly pinned then released. The animation does not re-fit on every simulation tick.
+
+**Estimate:** 2–3 hours.
+
+#### Phase 3 — Explicit reversible "isolate" mode
+
+**Why:** The "show only this node and its neighbourhood" gesture is genuinely useful — but as an explicit, reversible action, not as an accident of double-clicking.
+
+**Files & changes:**
+
+- `frontend/src/components/NodeContextMenu.tsx` — add a new menu item `Show only this & its neighbourhood`, wired to a new `onIsolateNeighborhood` prop.
 - `frontend/src/stores/queryStore.ts`
   - Add `previousGraphElements?: GraphElements | null` per tab.
-  - Add `isolateNeighborhood(tabId, nodeId)`: snapshots `tab.result.graph_elements` into `previousGraphElements`, then rewrites `graph_elements` to keep only the node and its incident edges/endpoints from the **current canvas** (no API call — this is purely a client-side filter, deterministic and instant).
-  - Add `restoreGraphElements(tabId)`: copies `previousGraphElements` back into `graph_elements` and clears the snapshot.
+  - Add `isolateNeighborhood(tabId, nodeId)`: snapshots `tab.result.graph_elements` into `previousGraphElements`, then rewrites `graph_elements` to keep only the node and its incident edges/endpoints **from the current canvas** (no API call — this is a deterministic client-side filter).
+  - Add `restoreGraphElements(tabId)`: copies `previousGraphElements` back and clears the snapshot.
+- `frontend/src/components/ResultTab.tsx`
+  - Pass an `onIsolateNeighborhood` handler to `NodeContextMenu` that calls `isolateNeighborhood(activeTabId, nodeId)`.
+  - When `tab.previousGraphElements` is set, render a `← Back to full result` breadcrumb above the graph; clicking it calls `restoreGraphElements(tab.id)`.
 
-**Acceptance:**
+**Acceptance:** Right-click → `Show only this & its neighbourhood` collapses the canvas to the local neighbourhood; a `← Back to full result` breadcrumb appears; clicking it restores the previous canvas exactly. A unit test on `queryStore.isolateNeighborhood` + `restoreGraphElements` confirms the snapshot round-trips.
 
-- Double-clicking a node adds its first-hop neighbours to the canvas. Existing nodes keep their positions; pinned nodes stay pinned; the camera animates smoothly to centre on the clicked node.
-- Double-clicking the same node twice does not duplicate edges or reset positions.
-- Right-click → `Show only this & its neighbourhood` collapses the canvas to the local neighbourhood. A `← Back to full result` breadcrumb appears; clicking it restores the previous canvas exactly.
-- Tests: a unit test on `queryStore.isolateNeighborhood` + `restoreGraphElements` confirms the snapshot/restore round-trips. A `WorkspacePage` integration test asserts that double-clicking a node calls `mergeGraphElements`, not `updateResult`.
-
-**Estimate:** 4–6 hours (mostly the store changes and the breadcrumb UI; the WorkspacePage delta is small).
+**Estimate:** 2–3 hours.
 
 ---
 
@@ -436,7 +450,7 @@ Only if you intend Kotte to be deployed beyond a single analyst. **Total: ~4–6
 
 ## Suggested execution order
 
-1. **Week 1**: A1, A2, A3, A4, A6, A7, A11 (UI quick wins + the AGE bug + non-destructive double-click).
+1. **Week 1**: A1, A2, A3, A4, A6, A7, A11 phases 2–3 (UI quick wins + the AGE bug + finishing the additive double-click work). A11 phase 1 already shipped.
 2. **Week 2**: A5, A8, A9, A10 + start B1/B2 (CI for tests/lint).
 3. **Weeks 3–4**: B3–B6 (containers + compose split + first deployment dry-run).
 4. **Weeks 5–6**: B7–B9 (migrations, pre-commit, doc reconciliation) + start C1 (CodeMirror).
@@ -462,7 +476,10 @@ Toggle `- [ ]` → `- [x]` as items ship, and add a short **Status** line under 
 - [ ] **A8** — Make the per-user rate limit actually fire
 - [ ] **A9** — Add `LICENSE`, `CHANGELOG.md`, `backend/.env.example`
 - [ ] **A10** — Surface JSON parameter parse errors instead of silently dropping them
-- [ ] **A11** — Make double-click additive instead of destructive (with reversible "isolate" mode)
+- [~] **A11** — Add additive double-click expand (with reversible "isolate" mode)
+  - [x] Phase 1 — additive double-click via shared `mergeGraphElements` (commits `52e4d3a`, `4eed46e` on `overhaul`)
+  - [ ] Phase 2 — camera focus animation on newly-added neighbourhood
+  - [ ] Phase 3 — explicit reversible "isolate" context-menu action with `← Back to full result` breadcrumb
 
 ### Milestone B — CI and production deployment are real
 

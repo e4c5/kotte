@@ -1,6 +1,6 @@
 # Kotte — Holistic Review & Proposed Improvements
 
-_Review date: 2026-04-18 (amended same day with G11)._
+_Review date: 2026-04-18 (amended same day with G11; G11 phase 1 shipped on `overhaul` branch)._
 
 This document is a **holistic** review of the Kotte project (a web visualizer for Apache AGE), not a line-by-line code review. It frames where the product sits today, the structural gaps that matter, and a prioritized improvement plan. Pair this with `docs/ROADMAP.md` (the ticketed implementation plan derived from this review), `docs/BACKLOG.md` (engineering follow-ups already shipped), and `docs/ARCHITECTURE.md` (system design).
 
@@ -90,26 +90,28 @@ After P1.1 the backend cache uses prefix-based invalidation under a lock (good).
 - `ARCHITECTURE.md` references `app/core/security.py` but that file doesn't exist (concerns are split across `auth.py` / `middleware.py` / `credentials.py`).
 - `KUBERNETES_DEPLOYMENT.md` reads as if it ships with the repo; it doesn't.
 
-### G11. Double-click on a node is destructive — the opposite of the universal pattern
+### G11. Double-click on a node was missing — and the first attempt to add it went the wrong way
 
-Every comparable tool — Neo4j Browser, Apache AGE Viewer (Bitnine), Memgraph Lab, Linkurious, Bloom — treats the canvas as a **growing scratch space**: double-click _adds_ a node's first-hop neighbours to whatever is already on screen, preserving positions, pins, and prior expansions. Kotte does the **opposite**.
+Every comparable tool — Neo4j Browser, Apache AGE Viewer (Bitnine), Memgraph Lab, Linkurious, Bloom — treats the canvas as a **growing scratch space**: double-click _adds_ a node's first-hop neighbours to whatever is already on screen, preserving positions, pins, and prior expansions. Until very recently Kotte had no double-click affordance at all.
 
-`handleFocusNode` (`frontend/src/pages/WorkspacePage.tsx:164-225`) runs in two phases:
+A first attempt to add one (on the now-discarded `double-click` branch) introduced a destructive `handleFocusNode` that wiped the canvas in two phases — first by filtering the existing `graph_elements` to only the clicked node's incident edges, then by replacing the entire result with the API expansion's nodes/edges. That code never landed on `main`. The lesson it leaves behind is worth recording, because it informs the design of the additive replacement:
 
-1. **Synchronous destructive rewrite** — filters the current `graph_elements` to only the clicked node's incident edges and their endpoints, throwing everything else away.
-2. **Async fetch** of `graphAPI.expandNode(graph, nodeId, { depth: 1, limit: 100 })`, then a **second destructive rewrite** that overwrites `graph_elements.nodes` and `.edges` entirely with the API response.
+- Wiping the user's prior context (query result, earlier expansions, drag positions, pin state) on every double-click is intolerable in a graph explorer — there is no undo, and re-running the original query will not restore positions.
+- A two-phase rebuild creates a visible flicker (sparse "clicked node + visible neighbours" → API result, ~50–500 ms apart).
+- A celebrity node with 5,000 neighbours silently shows 100 random ones when the `limit` cap is not surfaced.
+- An untyped, undirected expansion (`(n)-[rel]-(m)`) gives the user no control over relationship type or direction.
+- A `useRef` for camera focus that lives outside React's reactive flow makes the camera land in the wrong place on rebuilds.
 
-Concrete consequences:
+The correct primitive already existed: `handleExpandNode` (the right-click "Expand neighborhood" handler) uses `mergeGraphElements` on `queryStore` and is purely additive. The right move was to make double-click reuse that flow, not to duplicate its data-fetch path with destructive semantics.
 
-- The user's prior context (query result, earlier expansions, drag positions, pin state) is wiped on every double-click. There is no undo — they must re-run the original query, and even that won't restore positions.
-- The two-phase rewrite produces a visible flicker: a sparse "clicked node + visible neighbours" view paints, then ~50–500 ms later the API response paints over it.
-- A celebrity node with 5,000 neighbours silently shows 100 random ones — the `limit: 100` cap is not surfaced.
-- The expansion is undirected (`(n)-[rel]-(m)`) and untyped — no UI to pick a relationship type or direction.
-- `focusNodeIdRef` (`GraphView.tsx:154`) is a `useRef` outside React's reactive flow, so the camera-pinning behaviour only takes effect on the next simulation rebuild — sometimes the camera ends up wrong.
-- No `expanding` guard on this path (the right-click expansion has one); rapid double-clicks race.
-- Ironically, **`handleExpandNode` (`WorkspacePage.tsx:227-249`) — the right-click "Expand neighborhood" handler — already does the right additive thing via `mergeGraphElements`.** Kotte has the correct primitive; double-click just doesn't use it.
+**Status (2026-04-18, `overhaul` branch):** Phase 1 of the additive design has shipped.
 
-This belongs in Milestone A: the fix is small (point double-click at the existing additive primitive, move the destructive behaviour to an explicit menu item with a one-step undo), and the user-visible improvement is large.
+- A pure helper `frontend/src/utils/graphMerge.ts` now owns the merge contract (node dedup by id, edge dedup by `(source, target, label)`, no input mutation, returns the ids of newly-added elements).
+- `queryStore.mergeGraphElements` delegates to that helper, fixing a pre-existing edge-dedup bug that was silently producing duplicate links every time the right-click expand path was used.
+- `GraphView` exposes `onNodeDoubleClick`; `ResultTab` and `WorkspacePage` wire it to the same flow as the right-click expand. Double-click is now additive from day one.
+- `d3-zoom`'s default dblclick-to-zoom is suppressed on nodes via `event.stopPropagation()`.
+
+Phases 2 and 3 (camera focus animation, and an explicit reversible "isolate" mode in the context menu) are tracked as separate PRs against the `overhaul` branch — see ROADMAP §A11.
 
 ---
 
@@ -130,7 +132,7 @@ Cheap, high-value fixes that close the gap between _what's wired_ and _what user
 7. **Fix `expand_node` for `depth != 1`** (`api/v1/graph.py:339`) — keep `n` in scope.
 8. **Fix per-user rate limit** — store `user_id` in the signed cookie session at login, or read from `session_manager` instead of `request.scope["session"]`.
 9. **Add `LICENSE`, `CHANGELOG.md`, `backend/.env.example`** at repo root.
-10. **Make double-click additive** (G11) — point the double-click handler at the existing `mergeGraphElements` primitive, animate camera focus on the new neighbourhood, and move the destructive "show only this & neighbourhood" behaviour to an explicit context-menu action with a one-step undo.
+10. **Add additive double-click expand** (G11) — wire the double-click handler to the existing `mergeGraphElements` primitive (✅ shipped on `overhaul`); animate camera focus on the newly-added neighbourhood (PR #2); add an explicit reversible "show only this & neighbourhood" context-menu action with a one-step undo (PR #3).
 
 ### Milestone B — "CI and production deployment are real" (2–3 weeks)
 
