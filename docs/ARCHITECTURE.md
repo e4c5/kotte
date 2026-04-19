@@ -133,14 +133,16 @@ class ErrorResponse:
 - `not_found` - Resource not found errors
 - `server` - Internal server errors
 
-#### Security (`app/core/security.py`)
+#### Security
 
-Security utilities and middleware:
+Security concerns are split across several focused modules under `app/core/` rather than a single file:
 
-- **CSRF Protection**: Token-based CSRF protection
-- **Rate Limiting**: Per-IP and per-user rate limits
-- **Input Validation**: Strict validation on all inputs
-- **Credential Encryption**: AES-256-GCM for stored credentials
+- **`app/core/middleware.py`** — `SecurityHeadersMiddleware` (HSTS, CSP, frame-ancestors), `CSRFMiddleware` (token-based CSRF for state-changing requests), `RateLimitMiddleware` (per-IP and per-user sliding windows; per-user lookup goes through `session_manager.get_user_id` so the cookie session can't drift from the manager).
+- **`app/core/auth.py`** — `SessionManager`, login/logout flow, session validity checks, CSRF token generation.
+- **`app/core/credentials.py`** — `CredentialEncryption` providing AES-256-GCM at-rest encryption for saved database connections; key handling and the dev-mode `.master_encryption_key` fallback.
+- **`app/core/validation.py`** — input validators (`validate_graph_name`, `validate_label_name`) used by all routes that interpolate identifiers into Cypher / SQL.
+
+A previous version of this document referenced `app/core/security.py`; that file has never existed in the codebase and the pointer has been corrected.
 
 ### Services
 

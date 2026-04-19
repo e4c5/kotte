@@ -32,6 +32,36 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - `WorkspacePage.handleExecute` now bails when params don't parse, instead
   of passing the previous `{}` fallback through to `executeQuery` (defensive
   follow-on from the A10 fix).
+- **Doc reconciliation pass (ROADMAP B9)** — closes the four bullets B9
+  enumerated, plus a few neighbours that drifted in the same direction:
+  - `docs/QUICKSTART.md` "Next Steps" rewritten — the old list claimed D3
+    visualisation, the query editor, CSV import, and graph interactions
+    were still to be implemented; all of those have shipped. New copy is
+    user-facing (run a query, expand a node, browse metadata, export
+    results) with pointers to the User Guide and ROADMAP.
+  - `docs/ARCHITECTURE.md` no longer points at `app/core/security.py`
+    (which has never existed); the security section now correctly
+    describes the actual split across `app/core/middleware.py`,
+    `app/core/auth.py`, `app/core/credentials.py`, and
+    `app/core/validation.py`.
+  - `docs/CONFIGURATION.md` `CREDENTIAL_STORAGE_TYPE` row no longer
+    advertises `sqlite` / `postgresql` / `redis` backends — only
+    `json_file` is wired in `app/core/connection_storage.py`; the others
+    are tracked under Milestone D.
+  - `docs/CONFIGURATION.md` `CORS_ORIGINS` row corrected to the JSON-array
+    form `pydantic-settings` actually accepts; comma-separated values
+    fail at startup. A `Settings.cors_origins` validator that accepts
+    both shapes is recorded as a follow-up.
+  - `docs/KUBERNETES_DEPLOYMENT.md` now opens with a "planned, not
+    shipped" banner — there are no manifests, no Helm chart, and no
+    PostgreSQL-backed session/credential stores in the repo today; the
+    document is design intent, not a deployment recipe.
+  - `docs/REVIEW.md` G1, G2, §3 Milestone A items 2/4, and §4 item 3
+    updated with strikethroughs + ✅ done annotations for the work that
+    has shipped (A2, A4, A7, A8, A9, A10).
+  - `docs/ROADMAP.md` "Suggested execution order" got a status note
+    pointing at the progress checklist as the authoritative source; B9
+    itself is marked done with a description of what shipped.
 
 ## [0.1.0] - 2026-04-19
 

@@ -1,6 +1,6 @@
 # Kotte — Holistic Review & Proposed Improvements
 
-_Review date: 2026-04-18 (amended same day with G11; G11 phase 1 merged to `main` via PR #23 on 2026-04-19)._
+_Review date: 2026-04-18 (amended 2026-04-19 with G11; G11 phase 1 merged to `main` via PR #23. Further amended 2026-04-19 with strikethroughs for A2/A4/A7/A8/A9/A10 as those tickets shipped in PRs `#25`, `#26`, `#27`, `#29`, `#30`, `#31`.)_
 
 This document is a **holistic** review of the Kotte project (a web visualizer for Apache AGE), not a line-by-line code review. It frames where the product sits today, the structural gaps that matter, and a prioritized improvement plan. Pair this with `docs/ROADMAP.md` (the ticketed implementation plan derived from this review) and `docs/ARCHITECTURE.md` (system design).
 
@@ -35,13 +35,13 @@ These are the issues that change how to plan the next 1–2 quarters, not just b
 
 ### G1. The visualizer is the product but is its weakest layer
 
-You're competing for mindshare against people who have used Neo4j Browser. `GraphView.tsx` is **SVG-only**, single force layout actually animated, no arrowheads, no curved/parallel edges, no self-loop rendering, no minimap, no LOD/canvas/WebGL fallback, and **no client-side enforcement** of `maxNodesForGraph` / `maxEdgesForGraph`. A debug banner is permanently visible — search `GraphView.tsx` for `GraphView marker:` to find it (currently around line 358).
+You're competing for mindshare against people who have used Neo4j Browser. `GraphView.tsx` is **SVG-only**, single force layout actually animated, no arrowheads, no curved/parallel edges, no self-loop rendering, no minimap, no LOD/canvas/WebGL fallback, and **no client-side enforcement** of `maxNodesForGraph` / `maxEdgesForGraph`. ~~A debug banner is permanently visible — search `GraphView.tsx` for `GraphView marker:` to find it (currently around line 358).~~ **Resolved (ROADMAP A4, PR #25):** the marker is now gated on `import.meta.env.DEV` so it never ships in production builds.
 
-The store has `togglePinNode` / `toggleHideNode` but **no UI calls them**. There is a tab pin button but it can never _unpin_ — `TabBar` doesn't accept the `onTabUnpin` prop the workspace passes (`frontend/src/components/TabBar.tsx:3-10` vs `pages/WorkspacePage.tsx:328-329`).
+The store has `togglePinNode` / `toggleHideNode` but **no UI calls them** (Pin/Hide on canvas — still tracked as ROADMAP A3). ~~There is a tab pin button but it can never _unpin_ — `TabBar` doesn't accept the `onTabUnpin` prop the workspace passes.~~ **Resolved (ROADMAP A2, PR #26):** `TabBar.Props` now declares `onTabUnpin` and the pin button is conditionally rendered as `tab.pinned ? onTabUnpin : onTabPin`, so a parent supplying only one direction no longer renders a no-op button.
 
 ### G2. The query editor is a textarea
 
-No Cypher highlighting, no autocomplete from discovered labels/properties, no error squiggles, no parameter inspector beyond a "paste JSON" textarea that **silently** falls back to `{}` on parse failure (`QueryEditor.tsx:208-214`). For a tool that markets itself on Cypher exploration, this is the second-biggest UX gap after G1.
+No Cypher highlighting, no autocomplete from discovered labels/properties, no error squiggles, no parameter inspector beyond a "paste JSON" textarea. ~~that **silently** falls back to `{}` on parse failure (`QueryEditor.tsx:208-214`).~~ **Param-error surfacing resolved (ROADMAP A10, PR #31):** `getQueryParams` now returns a `{ ok: true; value } | { ok: false; error }` discriminated union; the editor shows an inline `role="alert"` caption + red border under the params textarea, disables Execute (with tooltip + ARIA), blocks Shift+Enter, and renders a small red dot on the collapsed Parameters toggle so the disabled state has a visible cause. The deeper "textarea → real Cypher editor with highlighting / autocomplete" gap remains tracked under Milestone C. _(Note: a code-review bot also flagged that `JSON.parse` accepts arrays, primitives, and `null` — adding an object-shape guard in `getQueryParams` is captured as a follow-up on PR #31; not yet merged.)_ For a tool that markets itself on Cypher exploration, this is the second-biggest UX gap after G1.
 
 ### G3. Settings, theme, and many configurable behaviors are dead surface
 
@@ -124,9 +124,9 @@ Group the improvements into four chunks. Each milestone is roughly 2–4 weeks o
 Cheap, high-value fixes that close the gap between _what's wired_ and _what users see_.
 
 1. **Wire the Settings modal** — add a gear button in `Layout` / `WorkspacePage` and consume `theme`, `defaultViewMode`, `queryHistoryLimit`, `autoExecuteQuery`, viz limits, table page size, default layout, export format.
-2. **Fix tab pin/unpin** — accept `onTabUnpin` in `TabBar.Props` and dispatch based on `tab.pinned`.
+2. **Fix tab pin/unpin** — done in ROADMAP A2 (PR #26): `TabBar.Props` now accepts `onTabUnpin`; the pin button picks `tab.pinned ? onTabUnpin : onTabPin` so a parent passing only one direction no longer renders a no-op button.
 3. **Add Pin / Hide UI** for nodes — extend `NodeContextMenu` to call `togglePinNode` / `toggleHideNode` already in the store.
-4. **Remove the debug marker** from `GraphView` and replace with a dev-only toggle.
+4. **Remove the debug marker** from `GraphView` — done in ROADMAP A4 (PR #25): the `GraphView marker:` overlay is now gated on `import.meta.env.DEV` (with Vite ambient types added in `frontend/src/vite-env.d.ts`), so production builds never render it.
 5. **Enforce `maxNodesForGraph` / `maxEdgesForGraph` in `WorkspacePage`** before passing data into `GraphView`; fall back to `TableView` with a banner.
 6. **Unify color palette** — make `nodeColors` and `graphStyles` share one source of truth so sidebar pills match graph circles.
 7. **Fix `expand_node` for `depth != 1`** (`api/v1/graph.py:339`) — done in ROADMAP A7 (PR #27): the real bug was missing intermediate nodes, not the originally-flagged scope error; switched to `nodes(path)` so depth-2 expansions are no longer truncated.
@@ -181,4 +181,4 @@ Only if you intend Kotte to be deployed beyond a single analyst.
 
 1. **CI + production-grade Docker images + LICENSE/CHANGELOG (Milestone B core).** Without this the project doesn't look maintained, no matter how good the code is.
 2. **CodeMirror Cypher editor + schema-aware autocomplete + canvas renderer for >1500 nodes.** These two changes do more for perceived quality than anything else.
-3. **Wire the existing settings, fix the pin/unpin and `expand_node` bugs, and reconcile the docs.** Tiny diffs that close the gap between "what we built" and "what the user can find."
+3. **Wire the existing settings, finish the rest of the Milestone A wiring fixes, and reconcile the docs.** ~~Pin/unpin~~ (A2), ~~`expand_node` depth-2~~ (A7), ~~per-user rate limit~~ (A8), ~~debug marker~~ (A4), ~~JSON-param error surfacing~~ (A10), and ~~LICENSE / CHANGELOG / `.env.example`~~ (A9) are all shipped or in flight; the still-open Milestone A diffs are the Settings modal wiring (A1), Pin / Hide UI on the canvas (A3), the viz-limit guard (A5), and the colour-palette unification (A6). Tiny diffs that close the gap between "what we built" and "what the user can find."
