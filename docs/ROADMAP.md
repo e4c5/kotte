@@ -176,33 +176,38 @@ Full backend suite: 228 passed, 8 skipped, 2 unrelated `test_query_stream` failu
 
 ---
 
-### A8. Make the per-user rate limit actually fire
+### A8. Make the per-user rate limit actually fire — ✅ shipped (PR #29, branch `fix/per-user-rate-limit`)
 
-**Why:** `RateLimitMiddleware` reads `request.scope["session"]["user_id"]` (`middleware.py:243`). The signed cookie session set at login stores `session_id`, not `user_id`. Looking at `auth.py:50-72`, the `SessionManager` knows the user_id but it isn't reflected into the Starlette session.
+**Why (original):** `RateLimitMiddleware` read `request.scope["session"]["user_id"]`. The signed cookie session set at login stores `session_id`, not `user_id`. The `SessionManager` knew the `user_id` but never reflected it into the Starlette session, so the per-user branch was unreachable and `rate_limit_per_user` was dead config.
 
-**Pick one of two fixes (recommend B):**
+**Fix shipped (option B):** in `backend/app/core/middleware.py:241-257`, the lookup now resolves the user via `session_manager` instead of off the cookie:
 
-- **A.** In `backend/app/api/v1/auth.py` login handler, after `request.session["session_id"] = sid`, also `request.session["user_id"] = user.id`.
-- **B.** In `backend/app/core/middleware.py:243`, replace
+```python
+session_id = (
+    request.scope.get("session", {}).get("session_id")
+    if "session" in request.scope
+    else None
+)
+user_id = None
+if session_id:
+    from app.core.auth import session_manager
+    user_id = session_manager.get_user_id(session_id)
+```
 
-  ```python
-  user_id = request.scope.get("session", {}).get("user_id") if "session" in request.scope else None
-  ```
+This means the cookie can never silently drift from `SessionManager` (option A would have required the login handler and the middleware to agree on what's in `request.session` forever). The `session_manager` import is lazy to mirror `CSRFMiddleware` and to keep `app.core.middleware` independent of `app.core.auth` at module-load time.
 
-  with
+**Tests added (`backend/tests/test_middleware.py::TestRateLimitPerUser`):**
 
-  ```python
-  sess_id = request.scope.get("session", {}).get("session_id")
-  user_id = session_manager.get_user_id(sess_id) if sess_id else None
-  ```
+1. `test_per_user_rate_limit_raises_429_after_n_calls` — `rate_limit_per_user + 1` calls raise `APIException(429, RATE_LIMITED)` (driven by calling `dispatch` directly to bypass FastAPI's middleware-exception plumbing).
+2. `test_per_user_buckets_are_independent` — user A hitting their cap doesn't throttle user B.
+3. `test_unknown_session_id_does_not_enforce_per_user_quota` — stale/forgotten session IDs in the cookie don't cause all such traffic to be bucketed under one empty key.
+4. `test_no_session_in_scope_does_not_enforce_per_user_quota` — anonymous traffic skips the per-user check entirely.
 
-  This avoids drift between the cookie and `SessionManager`. Add `from app.core.auth import session_manager` at top.
+The fixture monkeypatches `settings` via `app.core.middleware`'s namespace (not via a fresh `from app.core.config import settings`) because the `test_app` conftest fixture reloads `app.core.config`, which would leave the middleware reading a stale `settings` instance.
 
-**Test:** add a regression test in `backend/tests/test_middleware.py` that mocks the request, sets `scope["session"]["session_id"]`, registers a session in `session_manager`, fires `rate_limit_per_user + 1` calls, and asserts the final one raises 429.
+**Acceptance:** Per-user 429 is reachable; `rate_limit_per_user` is a real knob. Verified by the 4 new tests; full suite at 235 passed / 8 skipped.
 
-**Acceptance:** Per-user 429 is reachable; `rate_limit_per_minute_per_user` becomes a real knob.
-
-**Estimate:** 1–2 hours.
+**Follow-up known but out of scope here:** when the per-IP or per-user cap fires, the resulting `APIException` is raised from a `BaseHTTPMiddleware`, where FastAPI's `add_exception_handler` doesn't intercept it. In production this currently lands as a 500 (with `INTERNAL_ERROR` logged) rather than a clean 429 JSON response, for both the IP and user paths. Tracking separately — likely fix is to have `RateLimitMiddleware` return a `JSONResponse(status_code=429)` directly instead of raising.
 
 ---
 
@@ -476,7 +481,7 @@ Toggle `- [ ]` → `- [x]` as items ship, and add a short **Status** line under 
 - [ ] **A5** — Enforce viz limits in WorkspacePage before rendering
 - [ ] **A6** — Unify the label color palette
 - [x] **A7** — Fix `expand_node` for `depth != 1` (PR #27 on `fix/expand-node-depth`; depth-2 now returns intermediate nodes via `nodes(path)`)
-- [ ] **A8** — Make the per-user rate limit actually fire
+- [x] **A8** — Make the per-user rate limit actually fire (PR #29 on `fix/per-user-rate-limit`; resolves user via `session_manager.get_user_id` so the cookie can't drift from the manager)
 - [ ] **A9** — Add `LICENSE`, `CHANGELOG.md`, `backend/.env.example`
 - [ ] **A10** — Surface JSON parameter parse errors instead of silently dropping them
 - [~] **A11** — Add additive double-click expand (with reversible "isolate" mode)

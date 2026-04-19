@@ -1,10 +1,14 @@
 """Tests for middleware."""
 
+import asyncio
+
 import pytest
 import pytest_asyncio
 import httpx
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 
+from app.core.errors import APIException, ErrorCode
 from app.core.middleware import RequestIDMiddleware, CSRFMiddleware, RateLimitMiddleware
 
 
@@ -85,3 +89,159 @@ class TestRateLimitMiddleware:
         for _ in range(5):
             response = await async_client.get("/api/v1/auth/me")
             assert response.status_code == 401  # No auth, but not 429
+
+
+def _make_request(*, session: dict | None = None, client_ip: str = "127.0.0.1") -> Request:
+    """Build a ``Request`` whose scope mirrors what SessionMiddleware would set.
+
+    Unit-testing ``RateLimitMiddleware.dispatch`` directly avoids a known
+    Starlette gotcha where exceptions raised from a ``BaseHTTPMiddleware``
+    don't always reach FastAPI's registered exception handlers, so an
+    end-to-end HTTP test would tell us about FastAPI's exception plumbing
+    rather than about the rate-limit logic we actually care about here.
+    """
+    scope: dict = {
+        "type": "http",
+        "asgi": {"version": "3.0"},
+        "http_version": "1.1",
+        "method": "GET",
+        "scheme": "http",
+        "path": "/x",
+        "raw_path": b"/x",
+        "query_string": b"",
+        "root_path": "",
+        "headers": [],
+        "client": (client_ip, 12345),
+        "server": ("testserver", 80),
+        "state": {},
+    }
+    if session is not None:
+        scope["session"] = session
+    return Request(scope)
+
+
+class TestRateLimitPerUser:
+    """The per-user rate limit must fire when a session_id in the signed
+    cookie maps to a known user in session_manager. Regression coverage for
+    the fact that the middleware used to read user_id directly off the
+    cookie session, which never contained it -- so the per-user branch was
+    unreachable and ``rate_limit_per_user`` was dead config.
+    """
+
+    @pytest_asyncio.fixture
+    async def per_user_dispatch(self, monkeypatch):
+        """Yield a ``call(request)`` helper that drives ``RateLimitMiddleware.dispatch``.
+
+        IP limit is set very high so the per-user branch is the one that
+        fires; otherwise the IP cap would mask the bug we're guarding
+        against.
+
+        We monkeypatch ``settings`` via ``app.core.middleware``'s own
+        namespace rather than reimporting from ``app.core.config``: the
+        ``test_app`` conftest fixture does ``del sys.modules["app.core.config"]``
+        between tests, which spawns a *new* ``settings`` instance, but
+        ``app.core.middleware`` still holds its original module-load
+        reference. Patching via the middleware module guarantees we're
+        modifying the same object the middleware reads at runtime.
+        """
+        from app.core import middleware as mw_module
+
+        monkeypatch.setattr(mw_module.settings, "rate_limit_enabled", True)
+        monkeypatch.setattr(mw_module.settings, "rate_limit_per_minute", 10_000)
+        monkeypatch.setattr(mw_module.settings, "rate_limit_per_user", 2)
+
+        async def call_next(_request):
+            # BaseHTTPMiddleware.dispatch awaits the result of call_next, so
+            # the callable must be async-shaped. Yield to the loop once so
+            # we satisfy the async contract honestly rather than declaring
+            # `async` for shape only.
+            await asyncio.sleep(0)
+            return JSONResponse({"ok": True})
+
+        async def noop_app(scope, receive, send):
+            """Intentionally empty ASGI app stub.
+
+            ``BaseHTTPMiddleware.__init__`` requires an ``app`` callable, but
+            these tests drive ``dispatch`` directly so the inner app is never
+            actually invoked. Kept as a placeholder solely to satisfy the
+            constructor signature.
+            """
+
+        middleware = RateLimitMiddleware(noop_app)
+
+        async def call(request):
+            return await middleware.dispatch(request, call_next)
+
+        yield call
+
+    @pytest.mark.asyncio
+    async def test_per_user_rate_limit_raises_429_after_n_calls(self, per_user_dispatch):
+        """rate_limit_per_user + 1 calls → final call raises APIException(429).
+
+        Without the fix the middleware reads ``user_id`` from the cookie
+        session (which never holds it), keeps ``user_id = None``, and
+        therefore never enters the per-user branch -- all 3 calls succeed
+        and the cap is silently unreachable.
+        """
+        from app.core.auth import session_manager
+
+        sid = session_manager.create_session(user_id="rate-limit-test-user")
+        session = {"session_id": sid}
+
+        r1 = await per_user_dispatch(_make_request(session=session))
+        assert r1.status_code == 200
+        r2 = await per_user_dispatch(_make_request(session=session))
+        assert r2.status_code == 200
+        with pytest.raises(APIException) as exc_info:
+            await per_user_dispatch(_make_request(session=session))
+        assert exc_info.value.status_code == 429
+        assert exc_info.value.code == ErrorCode.RATE_LIMITED
+
+    @pytest.mark.asyncio
+    async def test_per_user_buckets_are_independent(self, per_user_dispatch):
+        """User A hitting their cap must not throttle User B."""
+        from app.core.auth import session_manager
+
+        sid_a = session_manager.create_session(user_id="user-a")
+        sid_b = session_manager.create_session(user_id="user-b")
+
+        for _ in range(2):
+            assert (
+                await per_user_dispatch(_make_request(session={"session_id": sid_a}))
+            ).status_code == 200
+        with pytest.raises(APIException) as exc_a:
+            await per_user_dispatch(_make_request(session={"session_id": sid_a}))
+        assert exc_a.value.status_code == 429
+
+        for _ in range(2):
+            assert (
+                await per_user_dispatch(_make_request(session={"session_id": sid_b}))
+            ).status_code == 200
+        with pytest.raises(APIException) as exc_b:
+            await per_user_dispatch(_make_request(session={"session_id": sid_b}))
+        assert exc_b.value.status_code == 429
+
+    @pytest.mark.asyncio
+    async def test_unknown_session_id_does_not_enforce_per_user_quota(
+        self, per_user_dispatch
+    ):
+        """If the cookie carries a session_id that session_manager doesn't know
+        (e.g. backend restarted, session expired and was purged), the per-user
+        branch must stay dormant rather than wrongly bucketing all such
+        traffic under a single empty key. Only the IP cap applies.
+        """
+        session = {"session_id": "session-id-that-was-never-registered"}
+        for _ in range(5):
+            resp = await per_user_dispatch(_make_request(session=session))
+            assert resp.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_no_session_in_scope_does_not_enforce_per_user_quota(
+        self, per_user_dispatch
+    ):
+        """Anonymous traffic (no session in scope at all) must skip the
+        per-user check entirely. Only the IP cap applies.
+        """
+        for _ in range(5):
+            resp = await per_user_dispatch(_make_request(session=None))
+            assert resp.status_code == 200
