@@ -229,17 +229,25 @@ The fixture monkeypatches `settings` via `app.core.middleware`'s namespace (not 
 
 ---
 
-### A10. (Bonus, free) Surface JSON parameter parse errors instead of silently dropping them
+### A10. Surface JSON parameter parse errors instead of silently dropping them — ✅ shipped (PR #31, branch `fix/query-params-error-surface`)
 
-**Why:** `QueryEditor.tsx:208-214` returns `{}` on bad JSON. Users get "no rows" with no indication why.
+**Why:** `QueryEditor.tsx:getQueryParams` swallowed `JSON.parse` errors and returned `{}`. Users typing invalid params got "no rows" back with no indication that their query had been silently re-parameterised.
 
-**Files & changes:**
+**Shipped:**
 
-- `frontend/src/components/QueryEditor.tsx`: change `getQueryParams` to return `{ ok: true, value }` or `{ ok: false, error }`. In the editor, render a small red caption under the params textarea on parse failure and disable Run.
+- **Parser:** `getQueryParams` now returns a discriminated union `QueryParamsResult = { ok: true; value: Record<string, unknown> } | { ok: false; error: string }`. The error string is the underlying `Error.message` (typically the engine's `SyntaxError` text, e.g. `"Expected property name or '}' in JSON at position 1"`). Per the explicit scope decision, no new shape validation was added — if `JSON.parse` succeeds, the value is returned as-is.
+- **Editor UI** (only the param-related bits — no other markup churn):
+  - Inline `role="alert"` caption under the params textarea: `Invalid JSON: <engine message>`. Wired via `aria-describedby` to the textarea and gated on `aria-invalid`.
+  - Red border + red focus ring on the textarea when invalid.
+  - Execute button: `disabled` + `aria-disabled` + tooltip `"Fix the invalid JSON in Parameters to enable Execute"` + screen-reader-only suffix on `aria-label`.
+  - Shift+Enter (and Ctrl/Cmd+Enter) keyboard shortcut now no-ops when params are invalid, matching the disabled-button behaviour so power users get the same guard.
+  - When the params panel is **closed** and params are invalid, a 10px red dot (`absolute -top-1 -right-1`) appears on the `Parameters` toggle button so the user understands why Execute is dimmed without having to expand the panel. Dot disappears once the panel is open (caption replaces it).
+- **Call site:** `WorkspacePage.handleExecute` now checks `parseResult.ok` and bails on `false` rather than passing `{}` onward — defensive belt-and-suspenders since the editor already disables Execute / Shift+Enter, but ensures any future caller can't bypass the editor and silently re-parameterise the query.
+- **Tests:** new `frontend/src/components/__tests__/QueryEditor.test.tsx` with 12 cases — 6 for the pure parser (including a regression test that explicitly forbids the old `→ {}` coercion) and 6 for the editor wiring (Execute disable, alert caption gating, dot visibility, Shift+Enter blocked-vs-allowed, ARIA attributes).
 
-**Acceptance:** Type `{bad json` → red error appears, Run button disabled.
+**Acceptance (verified):** typing `{bad` into the params textarea shows an inline red `Invalid JSON: …` caption, the Execute button is disabled with a tooltip, the toggle button shows a red dot when collapsed, Shift+Enter no longer fires the query. 12/12 new tests pass; full frontend suite still 50/50; backend regression suite still 235 passed / 8 skipped.
 
-**Estimate:** 1 hour.
+**Estimate:** 1 hour. **Actual:** ~30 min coding + tests + docs.
 
 ---
 
@@ -485,7 +493,7 @@ Toggle `- [ ]` → `- [x]` as items ship, and add a short **Status** line under 
 - [x] **A7** — Fix `expand_node` for `depth != 1` (PR #27 on `fix/expand-node-depth`; depth-2 now returns intermediate nodes via `nodes(path)`)
 - [x] **A8** — Make the per-user rate limit actually fire (PR #29 on `fix/per-user-rate-limit`; resolves user via `session_manager.get_user_id` so the cookie can't drift from the manager)
 - [x] **A9** — Add `LICENSE`, `CHANGELOG.md`, `backend/.env.example` (PR #30 on `chore/license-changelog-env`; Apache-2.0 LICENSE + matching NOTICE, Keep-a-Changelog-style CHANGELOG seeded with 0.1.0, full env example covering every `Settings` key + `ADMIN_PASSWORD` with required-in-prod markers; verified that `cp backend/.env.example backend/.env` boots cleanly. Caught a doc/code drift along the way: pydantic-settings parses `List[str]` as JSON, so `CORS_ORIGINS` must be a JSON array even though `docs/CONFIGURATION.md` shows the comma form — recorded as follow-up)
-- [ ] **A10** — Surface JSON parameter parse errors instead of silently dropping them
+- [x] **A10** — Surface JSON parameter parse errors instead of silently dropping them (PR #31 on `fix/query-params-error-surface`; `getQueryParams` now returns `{ ok, value } | { ok, error }`, the editor renders an inline `role="alert"` caption + red border under the params textarea, disables Execute with a tooltip, blocks Shift+Enter, and shows a red dot on the `Parameters` toggle when the panel is collapsed; 12 unit tests added)
 - [~] **A11** — Add additive double-click expand (with reversible "isolate" mode)
   - [x] Phase 1 — additive double-click via shared `mergeGraphElements` (PR #23, commits `461b202`, `dc11d06` on `main`)
   - [ ] Phase 2 — camera focus animation on newly-added neighbourhood
