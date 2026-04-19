@@ -24,6 +24,114 @@ function pickParamsToggleAriaLabel(showParams: boolean, paramsInvalid: boolean):
   return 'Show parameters'
 }
 
+interface ExecuteOrCancelButtonProps {
+  loading: boolean
+  paramsInvalid: boolean
+  executeAriaLabel: string
+  onExecute: () => void
+  onCancel?: () => void
+  onCollapse: () => void
+}
+
+/**
+ * Renders either the Cancel button (while a query is running and a cancel
+ * callback is wired) or the Execute button. Extracted to keep the parent's
+ * cognitive complexity under Sonar's budget (rule typescript:S3776).
+ */
+function ExecuteOrCancelButton({
+  loading,
+  paramsInvalid,
+  executeAriaLabel,
+  onExecute,
+  onCancel,
+  onCollapse,
+}: ExecuteOrCancelButtonProps) {
+  if (loading && onCancel) {
+    return (
+      <button
+        type="button"
+        onClick={onCancel}
+        className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white text-sm font-medium transition-colors"
+        aria-label="Cancel running query"
+      >
+        Cancel
+      </button>
+    )
+  }
+
+  const disabled = loading || paramsInvalid
+  const title = paramsInvalid
+    ? 'Fix the invalid JSON in Parameters to enable Execute'
+    : undefined
+  const text = loading ? 'Executing...' : 'Execute'
+
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        onExecute()
+        onCollapse()
+      }}
+      disabled={disabled}
+      title={title}
+      className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium transition-colors"
+      aria-label={executeAriaLabel}
+      aria-busy={loading}
+      aria-disabled={disabled}
+    >
+      <span aria-hidden="true">▶</span>
+      {text}
+    </button>
+  )
+}
+
+interface ParametersToggleButtonProps {
+  showParams: boolean
+  paramsInvalid: boolean
+  ariaLabel: string
+  title: string | undefined
+  onToggle: () => void
+}
+
+/**
+ * Renders the "Parameters {`{ }`|▼}" toggle plus its invalid-state dot.
+ * Extracted alongside ExecuteOrCancelButton to split the parent JSX's
+ * conditional density below Sonar's cognitive-complexity threshold.
+ */
+function ParametersToggleButton({
+  showParams,
+  paramsInvalid,
+  ariaLabel,
+  title,
+  onToggle,
+}: ParametersToggleButtonProps) {
+  const colorClasses = showParams
+    ? 'bg-zinc-600 text-zinc-100'
+    : 'bg-zinc-700 hover:bg-zinc-600 text-zinc-400'
+  const indicator = showParams ? '▼' : '{ }'
+  const showInvalidDot = paramsInvalid && !showParams
+
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      className={`relative inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${colorClasses}`}
+      aria-label={ariaLabel}
+      aria-pressed={showParams}
+      title={title}
+    >
+      Parameters {indicator}
+      {showInvalidDot && (
+        <span
+          aria-hidden="true"
+          data-testid="params-invalid-dot"
+          className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-red-500 ring-2 ring-zinc-800"
+        />
+      )}
+    </button>
+  )
+}
+
 export default function QueryEditor({
   value,
   onChange,
@@ -117,14 +225,23 @@ export default function QueryEditor({
       ? 'Parameters JSON is invalid \u2014 click to view error'
       : undefined
 
+  const shellClasses = expanded
+    ? 'bg-zinc-950 border-y border-zinc-800 overflow-hidden shadow-xl border border-zinc-700 ring-2 ring-blue-500/50'
+    : 'bg-zinc-950 border-y border-zinc-800 overflow-hidden'
+  const headerRowClasses = expanded
+    ? 'flex items-center gap-2 px-4 py-2 border-b border-zinc-700'
+    : 'flex items-center gap-2 px-4 h-full'
+  const textareaClasses = expanded
+    ? 'flex-1 min-w-0 bg-transparent text-zinc-100 placeholder-zinc-500 font-mono text-sm resize-none focus:outline-none py-1'
+    : 'flex-1 min-w-0 bg-transparent text-zinc-100 placeholder-zinc-500 font-mono text-sm resize-none focus:outline-none py-0'
+  const paramsTextareaClasses = paramsInvalid
+    ? 'w-full px-3 py-2 bg-zinc-900 border rounded text-zinc-100 font-mono text-xs resize-none focus:outline-none focus:ring-2 border-red-500 focus:ring-red-500'
+    : 'w-full px-3 py-2 bg-zinc-900 border rounded text-zinc-100 font-mono text-xs resize-none focus:outline-none focus:ring-2 border-zinc-600 focus:ring-blue-500'
+
   return (
     <div ref={containerRef} className="relative w-full">
-      <div
-        className={`bg-zinc-950 border-y border-zinc-800 overflow-hidden ${
-          expanded ? 'shadow-xl border border-zinc-700 ring-2 ring-blue-500/50' : ''
-        }`}
-      >
-        <div className={`flex items-center gap-2 px-4 ${expanded ? 'py-2 border-b border-zinc-700' : 'h-full'}`}>
+      <div className={shellClasses}>
+        <div className={headerRowClasses}>
           <span className="text-zinc-500" aria-hidden="true">⌕</span>
           <label htmlFor="cypher-query" className="sr-only">Cypher query</label>
           <textarea
@@ -136,9 +253,7 @@ export default function QueryEditor({
             placeholder="Enter Cypher Query... (Shift+Enter to run)"
             aria-label="Cypher query editor"
             rows={expanded ? 6 : 1}
-            className={`flex-1 min-w-0 bg-transparent text-zinc-100 placeholder-zinc-500 font-mono text-sm resize-none focus:outline-none ${
-              expanded ? 'py-1' : 'py-0'
-            }`}
+            className={textareaClasses}
           />
         </div>
 
@@ -158,11 +273,7 @@ export default function QueryEditor({
                   aria-invalid={paramsInvalid}
                   aria-describedby={paramsInvalid ? 'query-params-error' : undefined}
                   rows={3}
-                  className={`w-full px-3 py-2 bg-zinc-900 border rounded text-zinc-100 font-mono text-xs resize-none focus:outline-none focus:ring-2 ${
-                    paramsInvalid
-                      ? 'border-red-500 focus:ring-red-500'
-                      : 'border-zinc-600 focus:ring-blue-500'
-                  }`}
+                  className={paramsTextareaClasses}
                 />
                 {paramsInvalid && (
                   <p
@@ -177,33 +288,14 @@ export default function QueryEditor({
             )}
 
             <div className="flex items-center gap-2 px-3 py-2 border-t border-zinc-700 bg-zinc-800/80">
-              {loading && onCancel ? (
-                <button
-                  type="button"
-                  onClick={onCancel}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white text-sm font-medium transition-colors"
-                  aria-label="Cancel running query"
-                >
-                  Cancel
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => {
-                    onExecute()
-                    setExpanded(false)
-                  }}
-                  disabled={loading || paramsInvalid}
-                  title={paramsInvalid ? 'Fix the invalid JSON in Parameters to enable Execute' : undefined}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium transition-colors"
-                  aria-label={executeAriaLabel}
-                  aria-busy={loading}
-                  aria-disabled={loading || paramsInvalid}
-                >
-                  <span aria-hidden="true">▶</span>
-                  {loading ? 'Executing...' : 'Execute'}
-                </button>
-              )}
+              <ExecuteOrCancelButton
+                loading={loading}
+                paramsInvalid={paramsInvalid}
+                executeAriaLabel={executeAriaLabel}
+                onExecute={onExecute}
+                onCancel={onCancel}
+                onCollapse={() => setExpanded(false)}
+              />
               <button
                 type="button"
                 onClick={() => onChange('')}
@@ -213,27 +305,13 @@ export default function QueryEditor({
               >
                 Clear
               </button>
-              <button
-                type="button"
-                onClick={() => setShowParams(!showParams)}
-                className={`relative inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  showParams
-                    ? 'bg-zinc-600 text-zinc-100'
-                    : 'bg-zinc-700 hover:bg-zinc-600 text-zinc-400'
-                }`}
-                aria-label={paramsToggleAriaLabel}
-                aria-pressed={showParams}
+              <ParametersToggleButton
+                showParams={showParams}
+                paramsInvalid={paramsInvalid}
+                ariaLabel={paramsToggleAriaLabel}
                 title={paramsToggleTitle}
-              >
-                Parameters {showParams ? '▼' : '{ }'}
-                {paramsInvalid && !showParams && (
-                  <span
-                    aria-hidden="true"
-                    data-testid="params-invalid-dot"
-                    className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-red-500 ring-2 ring-zinc-800"
-                  />
-                )}
-              </button>
+                onToggle={() => setShowParams(!showParams)}
+              />
             </div>
           </>
         )}

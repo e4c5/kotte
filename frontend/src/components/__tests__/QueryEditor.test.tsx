@@ -54,38 +54,18 @@ describe('getQueryParams', () => {
   // Backend contract is `params: Optional[Dict[str, Any]]` (Pydantic),
   // so the top-level value MUST be a JSON object. Anything else parses
   // fine on the client but 422s at the API; surface the failure here.
-  it('returns ok=false for a JSON array (top-level non-object)', () => {
-    const result = getQueryParams('[]')
-    expect(result.ok).toBe(false)
-    if (!result.ok) expect(result.error).toBe('Parameters must be a JSON object')
-  })
-
-  it('returns ok=false for a populated JSON array', () => {
-    const result = getQueryParams('[1,2,3]')
-    expect(result.ok).toBe(false)
-    if (!result.ok) expect(result.error).toBe('Parameters must be a JSON object')
-  })
-
-  it('returns ok=false for the JSON literal null', () => {
-    const result = getQueryParams('null')
-    expect(result.ok).toBe(false)
-    if (!result.ok) expect(result.error).toBe('Parameters must be a JSON object')
-  })
-
-  it('returns ok=false for a bare number', () => {
-    const result = getQueryParams('42')
-    expect(result.ok).toBe(false)
-    if (!result.ok) expect(result.error).toBe('Parameters must be a JSON object')
-  })
-
-  it('returns ok=false for a JSON string literal', () => {
-    const result = getQueryParams('"hello"')
-    expect(result.ok).toBe(false)
-    if (!result.ok) expect(result.error).toBe('Parameters must be a JSON object')
-  })
-
-  it('returns ok=false for the JSON literal true', () => {
-    const result = getQueryParams('true')
+  // Kept as a table so new shape-reject cases can be added with one line
+  // (also dodges Sonar's duplication detector, which flagged ~30 lines of
+  // near-identical `it` blocks here as a single-file duplicated block).
+  it.each([
+    { label: 'an empty JSON array', input: '[]' },
+    { label: 'a populated JSON array', input: '[1,2,3]' },
+    { label: 'the JSON literal null', input: 'null' },
+    { label: 'a bare number', input: '42' },
+    { label: 'a JSON string literal', input: '"hello"' },
+    { label: 'the JSON literal true', input: 'true' },
+  ])('returns ok=false with the shape-error message for $label', ({ input }) => {
+    const result = getQueryParams(input)
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.error).toBe('Parameters must be a JSON object')
   })
