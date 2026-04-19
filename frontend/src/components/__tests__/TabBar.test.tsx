@@ -124,7 +124,7 @@ describe('TabBar', () => {
     expect(onTabPin).not.toHaveBeenCalled()
   })
 
-  it('renders the pin button when only onTabUnpin is supplied (e.g. pinned-only views)', () => {
+  it('renders the pin button when only onTabUnpin is supplied and the tab is pinned', () => {
     const tabs = [makeTab({ id: '1', name: 'Pinned', pinned: true })]
     render(
       <TabBar
@@ -136,6 +136,34 @@ describe('TabBar', () => {
       />
     )
     expect(screen.getByRole('button', { name: 'Unpin tab: Pinned' })).toBeInTheDocument()
+  })
+
+  it('hides the pin button on unpinned tabs when only onTabUnpin is supplied', () => {
+    const tabs = [makeTab({ id: '1', name: 'Unpinned', pinned: false })]
+    render(
+      <TabBar
+        {...defaultProps}
+        tabs={tabs}
+        activeTabId="1"
+        onTabPin={undefined}
+        onTabUnpin={vi.fn()}
+      />
+    )
+    expect(screen.queryByRole('button', { name: /Pin tab: / })).not.toBeInTheDocument()
+  })
+
+  it('hides the pin button on pinned tabs when only onTabPin is supplied', () => {
+    const tabs = [makeTab({ id: '1', name: 'Pinned', pinned: true })]
+    render(
+      <TabBar
+        {...defaultProps}
+        tabs={tabs}
+        activeTabId="1"
+        onTabPin={vi.fn()}
+        onTabUnpin={undefined}
+      />
+    )
+    expect(screen.queryByRole('button', { name: /Unpin tab: / })).not.toBeInTheDocument()
   })
 
   it('shows loading indicator when tab is loading', () => {

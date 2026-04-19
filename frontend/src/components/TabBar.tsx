@@ -80,7 +80,7 @@ export default function TabBar({
           )}
           <span className="flex-1 truncate">{tab.name}</span>
           <div className="flex items-center gap-0.5 shrink-0">
-            {(onTabPin || onTabUnpin) && (
+            {(tab.pinned ? onTabUnpin : onTabPin) && (
               <button
                 type="button"
                 onClick={(e) => {
