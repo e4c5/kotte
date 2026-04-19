@@ -147,29 +147,32 @@ Cheap, high-value fixes that close the gap between _what's wired_ and _what user
 
 ---
 
-### A7. Fix `expand_node` for `depth != 1`
+### A7. Fix `expand_node` for `depth != 1` ✅ shipped
 
-**Why:** `RETURN DISTINCT n, m, rel` references `n` which is dropped by `WITH DISTINCT path, m` → AGE will throw `variable n not defined`.
+**Status:** Merged to `main` via PR #27 on 2026-04-18 (see commit on `fix/expand-node-depth`). Re-reading the on-disk Cypher revealed the original review wording was slightly off: the live query was already `RETURN DISTINCT m, rel` (no scope error), but the real depth-bug it was masking was that **intermediate nodes were silently dropped** for `depth > 1` — a depth-2 expansion returned the endpoint plus both relationships, but never the middle hop, so the frontend rendered floating edges with no node at one end.
 
-**Files & changes:**
+**What shipped (`backend/app/api/v1/graph.py:330–352`):**
 
-- `backend/app/api/v1/graph.py:339-346`: change the Cypher to
+```cypher
+MATCH path = (n)-[*1..{depth}]-(m)
+WHERE id(n) = $node_id
+WITH n, path
+LIMIT $limit
+UNWIND nodes(path) as pn
+UNWIND relationships(path) as rel
+RETURN DISTINCT n, pn, rel
+```
 
-  ```cypher
-  MATCH path = (n)-[*1..{depth}]-(m)
-  WHERE id(n) = $node_id
-  WITH n, path, m
-  LIMIT $limit
-  UNWIND relationships(path) AS rel
-  RETURN DISTINCT n, m, rel
-  ```
+Notes:
 
-  Note: `WITH n, path, m` (drop the `DISTINCT` here — distinctness is enforced by the final `RETURN DISTINCT` on rels; doing it before `UNWIND` defeats the purpose anyway).
-- `backend/tests/test_graph.py` (or new): add a test `test_expand_node_depth_two` against the mock client that asserts the Cypher passed to `execute_cypher` contains `WITH n, path, m` and parameter `depth=2` is honored.
+- `nodes(path)` (not just `m`) restores intermediate hops; the existing Python parser (`api/v1/graph.py:362-389`) already dedupes nodes by id and edges by id, so the per-path Cartesian explosion is bounded and harmless.
+- `LIMIT` is applied to whole paths *before* `UNWIND`, so dense neighbourhoods can't blow up the response. With `limit=100` and `depth=2`, the worst case is ~600 rows over the wire; in practice far fewer after path overlap.
+- `n` is now also returned so the response is self-describing — the frontend doesn't have to assume the source node is "obviously" the one the user clicked.
+- The redundant `DISTINCT path` from the old version is gone; paths in a `MATCH` are already unique tuples.
 
-**Acceptance:** `POST /api/v1/graphs/{name}/nodes/{id}/expand` with `depth=2` returns 200 on a real AGE DB; test passes.
+**Tests (`backend/tests/integration/test_graph.py:257–319`):** new `test_expand_node_depth_two_returns_intermediate_nodes` simulates a 2-hop AGE response with three nodes (clicked, intermediate, endpoint) and two relationships, and asserts (a) all three nodes come back deduped, (b) both edges come back, and (c) the Cypher actually sent to `execute_cypher` contains `[*1..2]`, `nodes(path)`, `relationships(path)`, and `WITH n, path`, with `params={node_id: 1, limit: 100}`.
 
-**Estimate:** 1 hour (mostly the test).
+Full backend suite: 228 passed, 8 skipped, 2 unrelated `test_query_stream` failures that pre-date this branch and are tracked separately.
 
 ---
 
@@ -472,7 +475,7 @@ Toggle `- [ ]` → `- [x]` as items ship, and add a short **Status** line under 
 - [ ] **A4** — Remove the debug marker (or gate it on env)
 - [ ] **A5** — Enforce viz limits in WorkspacePage before rendering
 - [ ] **A6** — Unify the label color palette
-- [ ] **A7** — Fix `expand_node` for `depth != 1`
+- [x] **A7** — Fix `expand_node` for `depth != 1` (PR #27 on `fix/expand-node-depth`; depth-2 now returns intermediate nodes via `nodes(path)`)
 - [ ] **A8** — Make the per-user rate limit actually fire
 - [ ] **A9** — Add `LICENSE`, `CHANGELOG.md`, `backend/.env.example`
 - [ ] **A10** — Surface JSON parameter parse errors instead of silently dropping them

@@ -327,22 +327,28 @@ async def expand_node_neighborhood(
                 status_code=422,
             )
 
-        # Build Cypher query for neighborhood expansion
-        # MATCH path = (n)-[*1..depth]-(m) WHERE id(n) = $node_id
-        # Return all nodes and edges in the path
+        # Build Cypher query for neighborhood expansion.
+        #
+        # We need every node and every relationship along each path so that
+        # depth > 1 expansions don't drop intermediate hops. Using two UNWIND
+        # clauses produces (path_node, rel) pairs per path; the Python layer
+        # below dedupes by id, so the multiplication is bounded and harmless.
+        #
+        # `LIMIT` is applied to whole paths *before* UNWIND so very dense
+        # neighbourhoods can't blow up the result set.
         depth = request.depth
         limit = request.limit
-        
-        # Use variable-length path matching
-        # Note: AGE uses id() function to get node ID
-        # We'll return the path and extract nodes/edges from it
+
+        # depth is validated by Pydantic (1..5); inline it in the variable-length
+        # pattern because AGE doesn't support parameter binding inside `[*..]`.
         cypher_query = f"""
             MATCH path = (n)-[*1..{depth}]-(m)
             WHERE id(n) = $node_id
-            WITH DISTINCT path, m
+            WITH n, path
             LIMIT $limit
+            UNWIND nodes(path) as pn
             UNWIND relationships(path) as rel
-            RETURN DISTINCT m, rel
+            RETURN DISTINCT n, pn, rel
         """
         
         # Execute via execute_cypher (literal SQL) to avoid cypher() overload issues

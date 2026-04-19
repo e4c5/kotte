@@ -255,6 +255,68 @@ class TestNeighborhoodExpansion:
         assert response.status_code == 422
 
     @pytest.mark.asyncio
+    async def test_expand_node_depth_two_returns_intermediate_nodes(
+        self, connected_client: httpx.AsyncClient
+    ):
+        """Depth=2 expansion must surface intermediate nodes and use nodes(path)."""
+        mock_db = connected_client._mock_db
+        mock_db.execute_scalar = AsyncMock(return_value=1)  # Graph exists
+
+        # Simulate AGE returning one row per (path_node, relationship) pair for
+        # a single 2-hop path: (n=1)-[r1]-(m1=2)-[r2]-(m=3)
+        n_node = {"id": 1, "type": "node", "label": "Person", "properties": {"name": "Alice"}}
+        m1_node = {"id": 2, "type": "node", "label": "Person", "properties": {"name": "Bob"}}
+        m_node = {"id": 3, "type": "node", "label": "Person", "properties": {"name": "Carol"}}
+        r1 = {
+            "id": 10, "type": "edge", "label": "KNOWS",
+            "start_id": 1, "end_id": 2, "properties": {},
+        }
+        r2 = {
+            "id": 11, "type": "edge", "label": "KNOWS",
+            "start_id": 2, "end_id": 3, "properties": {},
+        }
+        mock_rows = [
+            {"n": n_node, "pn": n_node, "rel": r1},
+            {"n": n_node, "pn": n_node, "rel": r2},
+            {"n": n_node, "pn": m1_node, "rel": r1},
+            {"n": n_node, "pn": m1_node, "rel": r2},
+            {"n": n_node, "pn": m_node, "rel": r1},
+            {"n": n_node, "pn": m_node, "rel": r2},
+        ]
+        mock_db.execute_cypher = AsyncMock(return_value=mock_rows)
+
+        response = await connected_client.post(
+            "/api/v1/graphs/test_graph/nodes/1/expand",
+            json={"depth": 2, "limit": 100},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+
+        # All three nodes (clicked, intermediate, endpoint) must be present,
+        # deduped by id.
+        node_ids = sorted(int(n["id"]) for n in data["nodes"])
+        assert node_ids == [1, 2, 3], f"expected intermediates, got {node_ids}"
+        assert data["node_count"] == 3
+
+        edge_ids = sorted(int(e["id"]) for e in data["edges"])
+        assert edge_ids == [10, 11]
+        assert data["edge_count"] == 2
+
+        # And confirm the production query actually expands paths the right way.
+        call_args = mock_db.execute_cypher.call_args
+        cypher_sent = call_args.args[1] if len(call_args.args) > 1 else call_args.kwargs["query"]
+        params_sent = call_args.kwargs.get("params") or (
+            call_args.args[2] if len(call_args.args) > 2 else {}
+        )
+        assert "[*1..2]" in cypher_sent, "depth must be inlined into the variable-length pattern"
+        assert "nodes(path)" in cypher_sent, "must surface intermediate nodes via nodes(path)"
+        assert "relationships(path)" in cypher_sent
+        assert "WITH n, path" in cypher_sent, "n must stay in scope for the final RETURN"
+        assert params_sent.get("node_id") == 1
+        assert params_sent.get("limit") == 100
+
+    @pytest.mark.asyncio
     async def test_expand_node_default_params(self, connected_client: httpx.AsyncClient):
         """Test expanding node with default parameters."""
         mock_db = connected_client._mock_db

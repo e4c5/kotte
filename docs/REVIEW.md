@@ -75,7 +75,7 @@ Per-session pools amplify this: every connect builds an `AsyncConnectionPool` wi
 
 - `cypher_return_columns` infers RETURN arity by tokenizing user input. When it can't parse (unbalanced brackets, weird subqueries), it falls back to a single `result` column. AGE will **error** if real RETURN arity ≠ AS clause arity. The unit tests document the fallback but it's a real footgun.
 - `agtype.py` is **JSON + regex normalization**, not a real agtype parser. It does heuristic key-quoting and `;`→`,` rewrites (`services/agtype.py:48-77`). Anything exotic — temporal types, geometry, certain numeric edge cases — is not first-class.
-- `expand_node` for `depth != 1` returns a `RETURN DISTINCT n, m, rel` where `n` is no longer in scope after `WITH DISTINCT path, m` — that path is **likely broken at runtime** (`api/v1/graph.py:339-346`).
+- ~~`expand_node` for `depth != 1` returns a `RETURN DISTINCT n, m, rel` where `n` is no longer in scope after `WITH DISTINCT path, m` — that path is **likely broken at runtime** (`api/v1/graph.py:339-346`).~~ **Resolved (ROADMAP A7, PR #27).** A re-read of the on-disk code showed the live query was `RETURN DISTINCT m, rel` (no scope error) — but it had a worse, quieter bug: depth-2 paths returned the endpoint and both relationships but **dropped the intermediate hop**, so the canvas drew floating edges. Fixed by switching to `WITH n, path`, then `UNWIND nodes(path)` + `UNWIND relationships(path)`, and `RETURN DISTINCT n, pn, rel`. Regression test in `backend/tests/integration/test_graph.py::test_expand_node_depth_two_returns_intermediate_nodes`.
 - **Safe mode** is a regex over the uppercased query (`api/v1/query.py:124-136`) — comments and string literals containing `CREATE` will trip it; conversely, a clever cyrillic mix won't. It is not a parser-based read-only mode.
 - The docs imply `cancel` is universal, but `query_stream.py` doesn't show the same registration with `query_tracker`, so streaming queries may not be cancellable.
 
@@ -129,7 +129,7 @@ Cheap, high-value fixes that close the gap between _what's wired_ and _what user
 4. **Remove the debug marker** from `GraphView` and replace with a dev-only toggle.
 5. **Enforce `maxNodesForGraph` / `maxEdgesForGraph` in `WorkspacePage`** before passing data into `GraphView`; fall back to `TableView` with a banner.
 6. **Unify color palette** — make `nodeColors` and `graphStyles` share one source of truth so sidebar pills match graph circles.
-7. **Fix `expand_node` for `depth != 1`** (`api/v1/graph.py:339`) — keep `n` in scope.
+7. **Fix `expand_node` for `depth != 1`** (`api/v1/graph.py:339`) — done in ROADMAP A7 (PR #27): the real bug was missing intermediate nodes, not the originally-flagged scope error; switched to `nodes(path)` so depth-2 expansions are no longer truncated.
 8. **Fix per-user rate limit** — store `user_id` in the signed cookie session at login, or read from `session_manager` instead of `request.scope["session"]`.
 9. **Add `LICENSE`, `CHANGELOG.md`, `backend/.env.example`** at repo root.
 10. **Add additive double-click expand** (G11) — wire the double-click handler to the existing `mergeGraphElements` primitive (✅ shipped via PR #23 to `main`); animate camera focus on the newly-added neighbourhood (ROADMAP A11 Phase 2); add an explicit reversible "show only this & neighbourhood" context-menu action with a one-step undo (ROADMAP A11 Phase 3).
