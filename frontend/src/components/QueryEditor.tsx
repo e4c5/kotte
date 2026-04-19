@@ -45,7 +45,7 @@ function ExecuteOrCancelButton({
   onExecute,
   onCancel,
   onCollapse,
-}: ExecuteOrCancelButtonProps) {
+}: Readonly<ExecuteOrCancelButtonProps>) {
   if (loading && onCancel) {
     return (
       <button
@@ -104,7 +104,7 @@ function ParametersToggleButton({
   ariaLabel,
   title,
   onToggle,
-}: ParametersToggleButtonProps) {
+}: Readonly<ParametersToggleButtonProps>) {
   const colorClasses = showParams
     ? 'bg-zinc-600 text-zinc-100'
     : 'bg-zinc-700 hover:bg-zinc-600 text-zinc-400'
