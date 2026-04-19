@@ -170,7 +170,7 @@ export default function QueryEditor({
                     role="alert"
                     className="mt-1 text-xs text-red-400 font-mono"
                   >
-                    Invalid JSON: {paramsErrorMessage}
+                    {paramsErrorMessage}
                   </p>
                 )}
               </div>
@@ -254,17 +254,27 @@ export type QueryParamsResult =
  *   - render an inline error caption under the textarea,
  *   - and refuse to fire onExecute via Shift+Enter when params are unparseable.
  *
- * Per ROADMAP A10 we deliberately do _not_ add new shape validation here:
- * if `JSON.parse` succeeds, the value is returned as-is. The historical
- * "swallow the error and silently send {}" behaviour is gone.
+ * We deliberately do _not_ deep-validate the shape of individual parameter
+ * values, but we DO enforce that the top-level value is a plain JSON object
+ * (`{...}`), because the backend contract is `params: Optional[Dict[str, Any]]`
+ * (see `backend/app/models/query.py`). Without this guard, syntactically valid
+ * but non-object JSON like `[]`, `null`, `42`, or `"text"` would parse cleanly
+ * here, enable Execute, and then 422 at the API instead of failing fast in the
+ * editor. The historical "swallow the error and silently send {}" behaviour is
+ * gone.
  */
 export function getQueryParams(paramsString: string): QueryParamsResult {
+  let parsed: unknown
   try {
-    return { ok: true, value: JSON.parse(paramsString) }
+    parsed = JSON.parse(paramsString)
   } catch (err) {
-    return {
-      ok: false,
-      error: err instanceof Error ? err.message : 'Invalid JSON',
-    }
+    const detail = err instanceof Error ? err.message : 'unable to parse'
+    return { ok: false, error: `Invalid JSON: ${detail}` }
   }
+
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return { ok: false, error: 'Parameters must be a JSON object' }
+  }
+
+  return { ok: true, value: parsed as Record<string, unknown> }
 }

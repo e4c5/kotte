@@ -14,13 +14,21 @@ describe('getQueryParams', () => {
     expect(result).toEqual({ ok: true, value: { name: 'Alice', age: 42 } })
   })
 
+  it('returns ok=true and preserves nested arrays/objects as values', () => {
+    const result = getQueryParams('{"ids":[1,2,3],"meta":{"k":"v"}}')
+    expect(result).toEqual({
+      ok: true,
+      value: { ids: [1, 2, 3], meta: { k: 'v' } },
+    })
+  })
+
   it('returns ok=false with a SyntaxError-style message for malformed JSON', () => {
     const result = getQueryParams('{bad')
     expect(result.ok).toBe(false)
     if (!result.ok) {
-      // Don't pin to the exact engine message, but it should be non-empty
-      // and should not be the empty-string fallback.
-      expect(result.error).toMatch(/./)
+      // Always prefixed with the user-facing "Invalid JSON: " marker so the
+      // editor can render the message verbatim in the inline alert caption.
+      expect(result.error).toMatch(/^Invalid JSON: /)
     }
   })
 
@@ -41,6 +49,45 @@ describe('getQueryParams', () => {
     const result = getQueryParams('not json at all')
     expect(result).not.toEqual({ ok: true, value: {} })
     expect(result.ok).toBe(false)
+  })
+
+  // Backend contract is `params: Optional[Dict[str, Any]]` (Pydantic),
+  // so the top-level value MUST be a JSON object. Anything else parses
+  // fine on the client but 422s at the API; surface the failure here.
+  it('returns ok=false for a JSON array (top-level non-object)', () => {
+    const result = getQueryParams('[]')
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toBe('Parameters must be a JSON object')
+  })
+
+  it('returns ok=false for a populated JSON array', () => {
+    const result = getQueryParams('[1,2,3]')
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toBe('Parameters must be a JSON object')
+  })
+
+  it('returns ok=false for the JSON literal null', () => {
+    const result = getQueryParams('null')
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toBe('Parameters must be a JSON object')
+  })
+
+  it('returns ok=false for a bare number', () => {
+    const result = getQueryParams('42')
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toBe('Parameters must be a JSON object')
+  })
+
+  it('returns ok=false for a JSON string literal', () => {
+    const result = getQueryParams('"hello"')
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toBe('Parameters must be a JSON object')
+  })
+
+  it('returns ok=false for the JSON literal true', () => {
+    const result = getQueryParams('true')
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toBe('Parameters must be a JSON object')
   })
 })
 
@@ -93,6 +140,27 @@ describe('QueryEditor — params validity wiring', () => {
       'title',
       'Fix the invalid JSON in Parameters to enable Execute'
     )
+  })
+
+  it('disables Execute and surfaces a shape-error caption when params is a JSON array (not an object)', async () => {
+    renderEditor('[]')
+    const user = await focusAndExpand()
+
+    // Execute reflects the same "invalid" state as a syntax error.
+    const execute = screen.getByRole('button', {
+      name: 'Execute query (disabled: parameters JSON is invalid)',
+    })
+    expect(execute).toBeDisabled()
+    expect(execute).toHaveAttribute('aria-disabled', 'true')
+
+    // Open the params panel and confirm the shape-specific message
+    // (no "Invalid JSON: " prefix; this case parses fine, the shape is wrong).
+    const toggle = screen.getByRole('button', { name: 'Show parameters (parameters JSON is invalid)' })
+    await user.click(toggle)
+
+    const caption = screen.getByRole('alert')
+    expect(caption).toBeInTheDocument()
+    expect(caption.textContent).toBe('Parameters must be a JSON object')
   })
 
   it('renders the inline red error caption only when the params panel is open', async () => {
