@@ -66,12 +66,17 @@ backend/app/
 │   ├── csv_importer.py  # CSV import endpoints (mounted via import_router.py)
 │   └── health.py        # Health check endpoints
 ├── core/                # Core functionality
-│   ├── auth.py          # Session authentication
-│   ├── config.py        # Configuration management
-│   ├── database/        # Modular DB: pool connection, Cypher executor, query manager
-│   ├── errors.py        # Error handling and definitions
-│   ├── middleware.py    # CORS, rate limiting, request ID
-│   └── security.py      # Security utilities (CSRF, encryption)
+│   ├── auth.py                  # SessionManager, login/logout, CSRF token mint
+│   ├── config.py                # Pydantic-Settings configuration
+│   ├── connection_storage.py    # Encrypted-JSON saved-connection store
+│   ├── credentials.py           # AES-256-GCM CredentialEncryption
+│   ├── database/                # Modular DB: pool, Cypher executor, query manager
+│   ├── deps.py                  # FastAPI dependency injectors
+│   ├── errors.py                # APIException + error classification
+│   ├── logging.py               # Structured JSON logging + request_id
+│   ├── metrics.py               # Prometheus counters / histograms
+│   ├── middleware.py            # Security headers, CSRF, rate limit
+│   └── validation.py            # validate_graph_name / validate_label_name
 ├── models/              # Pydantic models
 │   ├── session.py       # Session request/response models
 │   ├── graph.py         # Graph data models
@@ -79,8 +84,7 @@ backend/app/
 │   └── errors.py        # Error response models
 ├── services/            # Business logic
 │   ├── agtype.py        # Apache AGE type parsing
-│   ├── metadata.py      # Graph metadata discovery
-│   └── connection_storage.py  # Encrypted credential storage
+│   └── metadata.py      # Graph metadata discovery
 └── main.py              # Application entry point
 ```
 
