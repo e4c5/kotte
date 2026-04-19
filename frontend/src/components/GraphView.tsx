@@ -37,6 +37,7 @@ interface GraphViewProps {
   height?: number
   pathHighlights?: PathHighlights
   onNodeClick?: (node: GraphNode) => void
+  onNodeDoubleClick?: (node: GraphNode) => void
   onNodeRightClick?: (node: GraphNode, event: MouseEvent) => void
   onEdgeClick?: (edge: GraphEdge) => void
   onExportReady?: (exportFn: () => Promise<void>) => void
@@ -49,6 +50,7 @@ export default function GraphView({
   height = 600,
   pathHighlights,
   onNodeClick,
+  onNodeDoubleClick,
   onNodeRightClick,
   onEdgeClick,
   onExportReady,
@@ -64,6 +66,7 @@ export default function GraphView({
   const userZoomedRef = useRef(false)
   const applyingAutoTransformRef = useRef(false)
   const onNodeClickRef = useRef<typeof onNodeClick>(onNodeClick)
+  const onNodeDoubleClickRef = useRef<typeof onNodeDoubleClick>(onNodeDoubleClick)
   const onNodeRightClickRef = useRef<typeof onNodeRightClick>(onNodeRightClick)
   const onEdgeClickRef = useRef<typeof onEdgeClick>(onEdgeClick)
   const [debugFitScale, setDebugFitScale] = useState<number | null>(null)
@@ -109,9 +112,10 @@ export default function GraphView({
 
   useEffect(() => {
     onNodeClickRef.current = onNodeClick
+    onNodeDoubleClickRef.current = onNodeDoubleClick
     onNodeRightClickRef.current = onNodeRightClick
     onEdgeClickRef.current = onEdgeClick
-  }, [onNodeClick, onNodeRightClick, onEdgeClick])
+  }, [onNodeClick, onNodeDoubleClick, onNodeRightClick, onEdgeClick])
 
   const filteredEdges = useMemo(() => {
     let filtered = edges.filter((edge) => {
@@ -267,6 +271,13 @@ export default function GraphView({
         }
       }))
       .on('click', (event, d) => { event.stopPropagation(); onNodeClickRef.current?.(d) })
+      .on('dblclick', (event, d) => {
+        // Stop propagation so d3-zoom's default dblclick-to-zoom does not fire
+        // when the user double-clicks a node to expand it.
+        event.preventDefault()
+        event.stopPropagation()
+        onNodeDoubleClickRef.current?.(d)
+      })
       .on('contextmenu', (event, d) => { event.preventDefault(); onNodeRightClickRef.current?.(d, event) })
       .on('keydown', (event: KeyboardEvent, d: GraphNode) => {
         if (event.key === 'Enter' || event.key === ' ') {
