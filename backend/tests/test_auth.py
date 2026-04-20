@@ -2,7 +2,6 @@
 
 import pytest
 import httpx
-from unittest.mock import patch, MagicMock
 
 from app.core.auth import session_manager
 from app.services.user import user_service

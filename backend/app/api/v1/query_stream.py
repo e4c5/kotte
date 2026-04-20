@@ -5,7 +5,7 @@ import logging
 import uuid
 from typing import Annotated, AsyncGenerator, Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 
 from app.core.deps import get_session, get_db_connection

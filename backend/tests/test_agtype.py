@@ -1,6 +1,5 @@
 """Tests for AgType parser."""
 
-import pytest
 from app.services.agtype import AgTypeParser
 
 

@@ -1,0 +1,88 @@
+# ROADMAP B1 — Backend CI
+#
+# Two jobs run on every push to main and every PR that touches the backend:
+#   - lint  : ruff (clean today; black + mypy are deferred — see the
+#             deferred-items note below)
+#   - unit  : pytest excluding integration + performance markers (no DB needed)
+#
+# Deliberately deferred to follow-up tickets (tracked in docs/ROADMAP.md under
+# B1.1–B1.3) so this workflow stays green from day one rather than gating on
+# pre-existing debt:
+#   * black --check    — 67 files would reformat (B1.1)
+#   * mypy app         — coverage TBD on Python 3.11 (B1.2)
+#   * integration job  — needs the apache/age service container (B1.3)
+
+name: Backend CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend-ci.yml'
+  pull_request:
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend-ci.yml'
+
+# Cancel superseded runs on the same ref to save CI minutes.
+concurrency:
+  group: backend-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: backend
+
+jobs:
+  lint:
+    name: Lint (ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: backend/requirements-dev.txt
+
+      - name: Install lint tools
+        run: pip install -r requirements-dev.txt
+
+      - name: ruff check
+        run: ruff check .
+
+      # Deferred B1.1 (docs/ROADMAP.md): re-enable once the 67 files are reformatted.
+      # - name: black --check
+      #   run: black --check .
+
+      # Deferred B1.2 (docs/ROADMAP.md): re-enable after the 3.11 mypy coverage is triaged.
+      # - name: mypy
+      #   run: mypy app
+
+  unit:
+    name: Unit tests (no DB)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: backend/requirements-dev.txt
+
+      - name: Install backend
+        run: pip install -r requirements-dev.txt
+
+      # `--no-cov` keeps CI fast; coverage stays available locally via
+      # `make test-backend`. The integration + performance markers are
+      # excluded — they need either real Postgres + AGE or are perf benches.
+      - name: pytest (unit only)
+        run: pytest -m "not integration and not performance" --no-cov
+
+  # Deferred B1.3 (docs/ROADMAP.md): integration job using `apache/age:PG16_latest`
+  # as a service container with `USE_REAL_TEST_DB=true`. Held back because the
+  # existing integration suite still has mock-vs-real branching that needs
+  # auditing before we point CI at a real DB.

@@ -4,7 +4,6 @@ import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request, status
-from starlette.responses import JSONResponse
 
 from app.core.auth import get_session, session_manager
 from app.core.database import DatabaseConnection
@@ -60,8 +59,8 @@ async def connect(
             retryable=True,
         ) from e
 
-    # Get user from authenticated session (required before connection)
-    user_id = session.get("user_id")
+    # Read the persisted session id; the authenticated `session` dependency has
+    # already verified the request belongs to a logged-in user.
     session_id = http_request.session.get("session_id")
 
     # Update session with connection config and store DB connection

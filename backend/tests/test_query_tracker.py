@@ -1,7 +1,6 @@
 """Tests for query tracker service."""
 
 import pytest
-import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
 from app.services.query_tracker import QueryTracker

@@ -4,8 +4,6 @@ import pytest
 from fastapi.testclient import TestClient
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from app.core.auth import session_manager
-from app.core.database import DatabaseConnection
 
 
 class TestConnect:

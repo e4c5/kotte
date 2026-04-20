@@ -1,6 +1,5 @@
 """Prometheus metrics collection for observability."""
 
-import time
 import threading
 from typing import Optional
 

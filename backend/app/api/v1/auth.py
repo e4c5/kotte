@@ -118,7 +118,6 @@ async def get_current_user(
 ) -> UserInfo:
     """Get current authenticated user information."""
     user_id = session.get("user_id")
-    username = session.get("connection_config", {}).get("username", "unknown")
 
     user = user_service.get_user(user_id)
     if not user:

@@ -12,6 +12,40 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ## [Unreleased]
 
 ### Added
+- **GitHub Actions CI for backend and frontend (ROADMAP B1+B2)** —
+  two new workflows guard the test and lint surface on every push to
+  `main` and every PR.
+  - `.github/workflows/backend-ci.yml` runs `ruff check .` and
+    `pytest -m "not integration and not performance" --no-cov` (234
+    tests) on Python 3.11 with pip cache. Black, mypy, and the
+    integration job are deliberately deferred to follow-up tickets
+    (B1.1/B1.2/B1.3) so the workflow is green from day one rather than
+    gating on pre-existing debt — see roadmap notes for scope.
+  - `.github/workflows/frontend-ci.yml` runs four parallel jobs on
+    Node 20 with npm cache: `eslint` (strict, `--max-warnings 0`),
+    `tsc --noEmit`, `vitest run` (119 tests), `vite build`.
+  - Both workflows scope by path (`backend/**` / `frontend/**` plus the
+    workflow file itself) and use `concurrency.cancel-in-progress` so
+    superseded runs don't burn CI minutes.
+  - Pre-existing test/lint debt cleared as part of the same PR so CI
+    starts green: 38 ruff autofixes + 3 manual dead-variable deletions
+    in `app/api/v1/auth.py`, `app/api/v1/session.py`,
+    `app/core/validation.py`; 4 frontend tsc errors (`GraphView.tsx`
+    `string|null` widening on `getEdgeStyle`/`getEdgeCaption`,
+    `ResultTab.test.tsx` GraphNode literal completeness,
+    `GraphView.test.tsx` unused `name`, `api.test.ts`
+    `global` → `globalThis`); 3 eslint errors + 3 warnings via inline
+    `// eslint-disable-next-line` directives with one-line
+    justifications (each `any` site, two intentional mount-only
+    effects, the `getQueryParams` co-location). Added
+    `argsIgnorePattern: '^_'` and `varsIgnorePattern: '^_'` to the
+    eslint config so `_`-prefixed unused args are accepted.
+  - Restored the inner `from app.main import create_app` re-import in
+    `backend/tests/integration/conftest.py` that ruff had removed; that
+    re-import is intentional after the `sys.modules` eviction so the
+    fixture picks up the test env vars instead of the stale top-level
+    binding (which silently bypassed the CSRF/rate-limit overrides and
+    failed 39 integration tests).
 - **Functional Settings entry point + theme switching (ROADMAP A1)** —
   the `WorkspacePage` header now renders a gear button next to `Disconnect`
   (`aria-label="Open settings"`) so users have a discoverable way into
