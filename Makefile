@@ -1,4 +1,5 @@
-.PHONY: help install-backend install-frontend dev-backend dev-frontend test-backend test-frontend lint-backend lint-frontend \
+.PHONY: help install-backend install-frontend install-hooks dev-backend dev-frontend test-backend test-frontend lint-backend lint-frontend \
+	format-backend precommit-run \
 	compose-up-dev compose-up-prod compose-down-dev compose-down-prod compose-logs-dev compose-logs-prod compose-build-prod
 
 help:
@@ -11,6 +12,11 @@ help:
 	@echo "  test-frontend       - Run frontend tests once (vitest run, with timeout)"
 	@echo "  lint-backend        - Lint backend code"
 	@echo "  lint-frontend       - Lint frontend code"
+	@echo "  format-backend      - Run black across backend/app + tests"
+	@echo ""
+	@echo "Pre-commit (ROADMAP B8):"
+	@echo "  install-hooks       - Install the local git pre-commit hook"
+	@echo "  precommit-run       - Run every hook against every tracked file"
 	@echo ""
 	@echo "Docker Compose:"
 	@echo "  compose-up-dev      - Start the dev stack (source mounts, --reload, vite HMR)"
@@ -26,6 +32,17 @@ install-backend:
 
 install-frontend:
 	cd frontend && npm install
+
+# Assumes backend/venv exists (via `install-backend`); pre-commit is in
+# requirements-dev.txt so no extra install step is needed.
+install-hooks:
+	cd backend && . venv/bin/activate && cd .. && pre-commit install
+
+precommit-run:
+	cd backend && . venv/bin/activate && cd .. && pre-commit run --all-files
+
+format-backend:
+	cd backend && . venv/bin/activate && black app tests
 
 dev-backend:
 	cd backend && . venv/bin/activate && uvicorn app.main:app --reload --port 8000
@@ -83,4 +100,3 @@ compose-logs-prod:
 compose-build-prod:
 	@test -f deployment/.env.prod || { echo "deployment/.env.prod not found — copy deployment/.env.prod.example to deployment/.env.prod and fill in real values"; exit 1; }
 	$(COMPOSE_PROD) build
-

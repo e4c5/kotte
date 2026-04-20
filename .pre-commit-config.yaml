@@ -1,0 +1,78 @@
+# ROADMAP B8 — pre-commit hooks
+#
+# Local ratchet: mirrors the CI lint gates so formatting / lint regressions
+# are caught at `git commit` time instead of two minutes later in GitHub
+# Actions. Install with `make install-hooks` (which wraps
+# `pre-commit install`).
+#
+# Hook selection philosophy:
+#   * Fast hooks run on pre-commit (black, ruff, hygiene).
+#   * Whole-project / slow hooks (tsc, pytest, eslint on full tree) stay in
+#     CI — pre-commit should feel instant or people uninstall it.
+#   * Frontend eslint runs on staged .ts/.tsx only via a local hook so we
+#     don't maintain a second copy of the plugin ecosystem in a mirror.
+
+# We don't pin `default_language_version.python` — black's formatting output
+# depends on its own version + `[tool.black] target-version` in
+# `backend/pyproject.toml`, not on the Python interpreter running it. Pinning
+# here just locks contributors out when their distro ships 3.10 / 3.12 /
+# 3.13. CI still enforces the canonical result on 3.11 via `backend-ci.yml`.
+
+repos:
+  # ---------------------------------------------------------------------
+  # Generic hygiene — cheap file-level checks that catch common mistakes.
+  # ---------------------------------------------------------------------
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: '\.md$'  # markdown uses trailing whitespace for hard breaks
+      - id: end-of-file-fixer
+      - id: check-yaml
+        args: [--allow-multiple-documents]
+      - id: check-json
+        # `tsconfig*.json` is JSONC (permits // comments + trailing commas).
+        # Python's stdlib json can't parse it; tsc + vite are the real
+        # consumers so strict validation here is redundant.
+        exclude: ^frontend/tsconfig.*\.json$
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=500]
+      - id: mixed-line-ending
+        args: [--fix=lf]
+
+  # ---------------------------------------------------------------------
+  # Python — black + ruff. Scoped to backend/ via the `files` regex so
+  # random Python snippets in docs/ or scripts/ don't trip the hook.
+  # ---------------------------------------------------------------------
+  - repo: https://github.com/psf/black-pre-commit-mirror
+    rev: 26.3.1
+    hooks:
+      - id: black
+        files: ^backend/(app|tests|scripts)/
+        args: [--config, backend/pyproject.toml]
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.11
+    hooks:
+      - id: ruff
+        files: ^backend/(app|tests|scripts)/
+        args: [--config, backend/pyproject.toml, --fix]
+
+  # ---------------------------------------------------------------------
+  # Frontend — local hook so we reuse the frontend's already-installed
+  # ESLint + plugin set rather than a pinned mirror. pre-commit passes
+  # staged paths relative to the repo root (e.g. `frontend/src/App.tsx`);
+  # we strip the `frontend/` prefix before cd-ing in so eslint resolves
+  # `.eslintrc.cjs` + `node_modules/` correctly.
+  # ---------------------------------------------------------------------
+  - repo: local
+    hooks:
+      - id: frontend-eslint
+        name: frontend eslint (on staged ts/tsx)
+        entry: bash -c 'files=(); for f in "$@"; do files+=("${f#frontend/}"); done; cd frontend && npx eslint --max-warnings 0 "${files[@]}"' --
+        language: system
+        files: ^frontend/.*\.(ts|tsx)$
+        exclude: ^frontend/(node_modules|dist|coverage|playwright-report|test-results)/
+        require_serial: true

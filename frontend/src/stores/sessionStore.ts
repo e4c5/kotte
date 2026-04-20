@@ -61,4 +61,3 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
   clearError: () => set({ error: null }),
 }))
-

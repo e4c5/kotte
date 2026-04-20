@@ -41,12 +41,12 @@ describe('GraphControls', () => {
 
   it('switches tabs', () => {
     render(<GraphControls {...defaultProps} />)
-    
+
     // Switch to filter tab
     const filterBtn = screen.getByRole('button', { name: /^filter$/i })
     fireEvent.click(filterBtn)
     expect(screen.getByText('Node Labels')).toBeInTheDocument()
-    
+
     // Switch to style tab
     const styleBtn = screen.getByRole('button', { name: /^style$/i })
     fireEvent.click(styleBtn)

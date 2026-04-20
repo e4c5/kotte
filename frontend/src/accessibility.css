@@ -28,11 +28,11 @@ select:focus-visible,
   * {
     border-color: currentColor !important;
   }
-  
+
   button {
     border-width: 2px !important;
   }
-  
+
   /* Ensure minimum contrast ratios */
   .text-muted,
   [style*="color: #666"],
@@ -119,5 +119,3 @@ a {
   right: 0;
   bottom: 0;
 }
-
-

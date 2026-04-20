@@ -121,5 +121,3 @@ To use a real PostgreSQL database for integration tests:
 ```bash
 pytest tests/integration/ -m integration -v
 ```
-
-

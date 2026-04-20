@@ -6,9 +6,8 @@
 #   - unit  : pytest excluding integration + performance markers (no DB needed)
 #
 # Deliberately deferred to follow-up tickets (tracked in docs/ROADMAP.md under
-# B1.1–B1.3) so this workflow stays green from day one rather than gating on
+# B1.2–B1.3) so this workflow stays green from day one rather than gating on
 # pre-existing debt:
-#   * black --check    — 67 files would reformat (B1.1)
 #   * mypy app         — coverage TBD on Python 3.11 (B1.2)
 #   * integration job  — needs the apache/age service container (B1.3)
 
@@ -53,9 +52,8 @@ jobs:
       - name: ruff check
         run: ruff check .
 
-      # Deferred B1.1 (docs/ROADMAP.md): re-enable once the 67 files are reformatted.
-      # - name: black --check
-      #   run: black --check .
+      - name: black --check
+        run: black --check .
 
       # Deferred B1.2 (docs/ROADMAP.md): re-enable after the 3.11 mypy coverage is triaged.
       # - name: mypy

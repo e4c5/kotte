@@ -40,21 +40,21 @@ interface QueryState {
   // Tabs
   tabs: QueryTab[]
   activeTabId: string | null
-  
+
   // Current query (for backward compatibility and new tab creation)
   query: string
   params: string
   currentGraph: string | null
-  
+
   // History
   history: string[]
   historyIndex: number
-  
+
   // Actions
   setQuery: (query: string) => void
   setParams: (params: string) => void
   setCurrentGraph: (graph: string) => void
-  
+
   // Tab management
   createTab: (name?: string) => string
   closeTab: (tabId: string) => void
@@ -62,7 +62,7 @@ interface QueryState {
   updateTab: (tabId: string, updates: Partial<QueryTab>) => void
   pinTab: (tabId: string) => void
   unpinTab: (tabId: string) => void
-  
+
   // Query execution (per tab)
   executeQuery: (
     tabId: string,
@@ -72,11 +72,11 @@ interface QueryState {
     forVisualization?: boolean
   ) => Promise<void>
   cancelQuery: (tabId: string) => Promise<void>
-  
+
   // History
   addToHistory: (query: string) => void
   clearError: (tabId: string) => void
-  
+
   // Graph operations
   mergeGraphElements: (
     tabId: string,
@@ -98,7 +98,7 @@ interface QueryState {
    * No-op if no snapshot exists.
    */
   restoreGraphElements: (tabId: string) => void
-  
+
   // Legacy support (for components that haven't been updated)
   result: QueryExecuteResponse | null
   loading: boolean
@@ -120,7 +120,7 @@ export const useQueryStore = create<QueryState>()(
         if (!activeTabId) return null
         return tabs.find(t => t.id === activeTabId) || null
       }
-      
+
       return {
         tabs: [],
         activeTabId: null,
@@ -141,7 +141,7 @@ export const useQueryStore = create<QueryState>()(
           }
           set({ query })
         },
-        
+
         setParams: (params: string) => {
           const activeTab = getActiveTab()
           if (activeTab) {
@@ -149,7 +149,7 @@ export const useQueryStore = create<QueryState>()(
           }
           set({ params })
         },
-        
+
         setCurrentGraph: (graph: string) => {
           const activeTab = getActiveTab()
           if (activeTab) {
@@ -163,7 +163,7 @@ export const useQueryStore = create<QueryState>()(
           const tabId = `tab-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`
           const tabNumber = tabs.length + 1
           const tabName = name || generateTabName(tabNumber)
-          
+
           const newTab: QueryTab = {
             id: tabId,
             name: tabName,
@@ -179,19 +179,19 @@ export const useQueryStore = create<QueryState>()(
             createdAt: Date.now(),
             lastActivity: Date.now(),
           }
-          
+
           set({
             tabs: [...tabs, newTab],
             activeTabId: tabId,
           })
-          
+
           return tabId
         },
 
         closeTab: (tabId: string) => {
           const { tabs, activeTabId } = get()
           const newTabs = tabs.filter(t => t.id !== tabId)
-          
+
           // If closing active tab, switch to another
           let newActiveId = activeTabId
           if (activeTabId === tabId) {
@@ -205,7 +205,7 @@ export const useQueryStore = create<QueryState>()(
               newActiveId = null
             }
           }
-          
+
           set({
             tabs: newTabs,
             activeTabId: newActiveId,
@@ -234,12 +234,12 @@ export const useQueryStore = create<QueryState>()(
 
         updateTab: (tabId: string, updates: Partial<QueryTab>) => {
           const { tabs, activeTabId } = get()
-          const newTabs = tabs.map(t => 
+          const newTabs = tabs.map(t =>
             t.id === tabId ? { ...t, ...updates } : t
           )
-          
+
           set({ tabs: newTabs })
-          
+
           // Update legacy state if this is the active tab
           if (activeTabId === tabId) {
             const updatedTab = newTabs.find(t => t.id === tabId)
@@ -264,7 +264,7 @@ export const useQueryStore = create<QueryState>()(
         unpinTab: (tabId: string) => {
           get().updateTab(tabId, { pinned: false })
         },
-        
+
         executeQuery: async (
           tabId: string,
           graph: string,
@@ -273,7 +273,7 @@ export const useQueryStore = create<QueryState>()(
           forVisualization: boolean = false
         ) => {
           get().updateTab(tabId, { loading: true, error: null, requestId: null, graph })
-          
+
           try {
             const request: QueryExecuteRequest = {
               graph,
@@ -282,7 +282,7 @@ export const useQueryStore = create<QueryState>()(
               for_visualization: forVisualization,
             }
             const result = await queryAPI.execute(request)
-            
+
             // A wholesale result replacement invalidates any in-flight isolate
             // snapshot — `previousGraphElements` references nodes/edges from
             // the *previous* result version, so leaving it set would make the
@@ -299,7 +299,7 @@ export const useQueryStore = create<QueryState>()(
               params: JSON.stringify(params || {}),
               lastActivity: Date.now(),
             })
-            
+
             get().addToHistory(query)
           } catch (error) {
             const message = error instanceof Error ? error.message : 'Query execution failed'
@@ -311,13 +311,13 @@ export const useQueryStore = create<QueryState>()(
             throw error
           }
         },
-        
+
         cancelQuery: async (tabId: string) => {
           const tab = get().tabs.find(t => t.id === tabId)
           if (!tab || !tab.requestId) {
             return
           }
-          
+
           try {
             await queryAPI.cancel(tab.requestId)
             get().updateTab(tabId, { loading: false, requestId: null })
@@ -326,25 +326,25 @@ export const useQueryStore = create<QueryState>()(
             get().updateTab(tabId, { loading: false, requestId: null })
           }
         },
-        
+
         addToHistory: (query: string) => {
           const { history } = get()
           const newHistory = [query, ...history.filter((q) => q !== query)].slice(0, 50)
           set({ history: newHistory })
         },
-        
+
         clearError: (tabId: string) => {
           get().updateTab(tabId, { error: null })
         },
-        
+
         updateResult: (tabId: string, updater) => {
           const tab = get().tabs.find(t => t.id === tabId)
           if (!tab) return
-          
+
           const updated = updater(tab.result)
           get().updateTab(tabId, { result: updated })
         },
-        
+
         mergeGraphElements: (tabId: string, newNodes, newEdges) => {
           const tab = get().tabs.find(t => t.id === tabId)
           if (!tab?.result?.graph_elements) {

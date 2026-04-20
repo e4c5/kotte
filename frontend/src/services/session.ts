@@ -50,4 +50,3 @@ export const sessionAPI = {
     return response.data
   },
 }
-

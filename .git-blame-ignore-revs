@@ -1,0 +1,15 @@
+# Revisions to skip when running `git blame`.
+#
+# Configure once per clone:
+#     git config blame.ignoreRevsFile .git-blame-ignore-revs
+#
+# GitHub's web UI picks this up automatically when it lives at the repo
+# root, so "Blame" on github.com already skips these commits.
+#
+# Only add commits that are genuinely mechanical: automated formatting
+# passes, import sorters, mass-rename tools. Never add commits that
+# changed behaviour or intent.
+
+# ROADMAP B1.1 (PR #40) — one-time `black app tests` reformat, 67 files,
+# net -49 lines, zero behavioural changes.
+ff5b26a4649a1da4403708e3790bce2224da4c58

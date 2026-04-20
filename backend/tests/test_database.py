@@ -70,7 +70,7 @@ class TestCypherReturnColumns:
         """Handles multiline RETURN clauses."""
         cypher = """
         MATCH (a)-[r]->(b)
-        RETURN 
+        RETURN
             a.name AS source,
             type(r) AS rel,
             b.name AS target

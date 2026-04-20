@@ -124,13 +124,13 @@ describe('request', () => {
 
     // Verify fetch calls
     expect(mockFetch).toHaveBeenCalledTimes(3)
-    
+
     // First call used stale token
     expect(mockFetch.mock.calls[0][1]?.headers).toMatchObject({ 'X-CSRF-Token': 'stale-token' })
-    
+
     // Second call was for the new token
     expect(mockFetch.mock.calls[1][0]).toContain('/auth/csrf-token')
-    
+
     // Third call used fresh token
     expect(mockFetch.mock.calls[2][1]?.headers).toMatchObject({ 'X-CSRF-Token': 'new-token' })
   })
