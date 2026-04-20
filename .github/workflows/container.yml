@@ -1,0 +1,171 @@
+# ROADMAP B3 — container image build, scan, and publish (Docker Hub)
+#
+# Two triggers:
+#   1. Tag pushes matching v* (e.g. v0.1.0, v1.2.3-rc.1) — build, Trivy-
+#      scan, and push both images to Docker Hub. This is the release path.
+#   2. Pull requests that touch the Dockerfiles / this workflow — build
+#      and Trivy-scan but DO NOT push. This is the "did you break the
+#      image?" gate that saves us from discovering a broken Dockerfile
+#      after cutting a release.
+#   3. workflow_dispatch — on-demand push with an explicit tag, handy for
+#      backfills or hotfixes that don't warrant a full release tag.
+#
+# The Trivy step fails the build on any HIGH or CRITICAL CVE with a known
+# fix. `ignore-unfixed: true` keeps us from blocking on CVEs that have no
+# vendor fix yet (nothing you can do about those short of a base-image
+# swap, which belongs in a separate PR).
+#
+# Required repository secrets:
+#   - DOCKERHUB_USERNAME   (Docker Hub login)
+#   - DOCKERHUB_TOKEN      (Docker Hub access token, write scope)
+#
+# Optional repository variable:
+#   - DOCKERHUB_NAMESPACE  (override the publish namespace; defaults to
+#                          DOCKERHUB_USERNAME. Useful when publishing
+#                          under an org rather than a personal account.)
+
+name: Container images
+
+on:
+  push:
+    tags:
+      - 'v*'
+  pull_request:
+    paths:
+      - 'deployment/backend.Dockerfile'
+      - 'deployment/frontend.Dockerfile.prod'
+      - 'deployment/nginx.conf'
+      - '.github/workflows/container.yml'
+      # Source changes that would affect the produced image also flow
+      # through here so PRs catch Dockerfile-vs-source drift (e.g. a new
+      # runtime dep added to requirements.txt that the Dockerfile misses).
+      - 'backend/requirements.txt'
+      - 'frontend/package-lock.json'
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Tag to push to Docker Hub (e.g. v1.2.3 or latest)"
+        required: true
+        default: "latest"
+      push_latest:
+        description: "Also push the 'latest' tag?"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+
+concurrency:
+  group: container-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-scan:
+    name: ${{ matrix.image }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: backend
+            dockerfile: deployment/backend.Dockerfile
+          - image: frontend
+            dockerfile: deployment/frontend.Dockerfile.prod
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      # Resolve the publish namespace: explicit DOCKERHUB_NAMESPACE variable
+      # wins, otherwise fall back to the login username. On push / dispatch
+      # we fail fast when neither is configured so the mistake surfaces
+      # before the build burns CI minutes. On PRs (including fork PRs that
+      # can't see org secrets by design) we fall back to a local-only `ci`
+      # namespace so the build + Trivy scan path still runs — the tag is
+      # never pushed anywhere in that case, so the placeholder is fine.
+      - name: Resolve Docker Hub repository
+        id: repo
+        env:
+          DOCKERHUB_NAMESPACE: ${{ vars.DOCKERHUB_NAMESPACE }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          IMAGE: ${{ matrix.image }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [ -n "${DOCKERHUB_NAMESPACE}" ]; then
+            namespace="${DOCKERHUB_NAMESPACE}"
+          elif [ -n "${DOCKERHUB_USERNAME}" ]; then
+            namespace="${DOCKERHUB_USERNAME}"
+          elif [ "${EVENT_NAME}" = "pull_request" ]; then
+            namespace="ci"
+          else
+            echo "Set DOCKERHUB_NAMESPACE (variable) or DOCKERHUB_USERNAME (secret) to specify the Docker Hub namespace." >&2
+            exit 1
+          fi
+          echo "name=${namespace}/kotte-${IMAGE}" >> "$GITHUB_OUTPUT"
+
+      # buildx gives us the GHA cache backend and SBOM/provenance knobs.
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+      # docker/metadata-action gives us a canonical set of tags + labels
+      # from the ref. On a v* tag we get both the {{version}} and
+      # {{major}}.{{minor}} flavors; on PRs we get pr-<N>; on default
+      # branch runs we get `latest`; workflow_dispatch gets its literal
+      # input tag (and optionally `latest` if the user asks).
+      - name: Compute image tags
+        id: meta
+        uses: docker/metadata-action@902fa8ec7d6ecbf8d84d538b9b233a880e428804 # v5.7.0
+        with:
+          images: ${{ steps.repo.outputs.name }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha
+            type=ref,event=pr
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=${{ github.event.inputs.image_tag }},enable=${{ github.event_name == 'workflow_dispatch' }}
+            type=raw,value=latest,enable=${{ github.event.inputs.push_latest == 'true' }}
+
+      # Only log in when we're going to push. On PRs we just build into
+      # the local daemon; login would fail against forks anyway because
+      # Docker Hub secrets aren't exposed to fork PRs.
+      - name: Log in to Docker Hub
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # Build. On PRs we load into the local daemon so the Trivy step
+      # below can scan it. On tag pushes and dispatch we push to Docker
+      # Hub instead of loading (push + load are mutually exclusive for
+      # buildx).
+      - name: Build image
+        id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          push: ${{ github.event_name != 'pull_request' }}
+          load: ${{ github.event_name == 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,scope=${{ matrix.image }},mode=max
+
+      # Trivy: fail on HIGH / CRITICAL CVEs with known fixes. We scan
+      # the first tag (they all point at the same sha256) and treat any
+      # match as blocking. `ignore-unfixed` keeps the gate useful even
+      # when upstream distros lag on CVE patches.
+      - name: Trivy scan (HIGH, CRITICAL)
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0
+        with:
+          image-ref: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+          ignore-unfixed: true
+          vuln-type: os,library
+          timeout: 10m

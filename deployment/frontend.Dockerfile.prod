@@ -1,0 +1,52 @@
+# ROADMAP B5 — Multi-stage frontend image (production)
+#
+# The existing `frontend.Dockerfile` is kept for dev compose (`npm run dev`
+# on port 5173 with HMR). This prod variant does a static build in stage 1
+# and hands the `dist/` tree to nginx in stage 2. The runtime image is
+# built on `nginx:alpine` (~25 MB) rather than the 1 GB+ node image.
+#
+# Why a separate Dockerfile instead of a build-arg toggle on the existing
+# one? Because the prod and dev paths share essentially no layers below
+# the first COPY and `nginx:alpine` vs. `node:20-alpine` means different
+# base images entirely. Split files keep each one honest and let the dev
+# one stay minimal.
+
+# ---- Stage 1: build the SPA ----
+# Pin on `node:20-alpine` (Node 20 LTS) to match the version the frontend
+# CI workflow (frontend-ci.yml) runs against.
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+# Install deps first so the cache layer survives source-only edits.
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+
+# Source + build. `npm run build` runs `tsc && vite build` and writes to
+# /app/dist per vite's default.
+COPY frontend/ ./
+RUN npm run build
+
+# ---- Stage 2: serve static assets ----
+FROM nginx:alpine AS runtime
+
+# Drop the default server block so ours isn't shadowed / double-listened.
+RUN rm /etc/nginx/conf.d/default.conf
+
+# Custom nginx config: SPA fallback (any unknown path → index.html), gzip
+# for text/js/css/json, aggressive caching for hashed asset names, no
+# caching for index.html so deploys propagate instantly.
+COPY deployment/nginx.conf /etc/nginx/conf.d/kotte.conf
+
+# Ship just the static tree from the builder; discard node_modules, the
+# TS sources, etc.
+COPY --from=builder /app/dist /usr/share/nginx/html
+
+EXPOSE 80
+
+# nginx:alpine's default entrypoint already daemonises correctly; no
+# CMD override needed. Wrap the healthcheck in wget (pre-installed on
+# alpine, unlike curl) to avoid pulling an extra package.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+    CMD wget --quiet --spider --tries=1 http://localhost/ \
+        || exit 1
