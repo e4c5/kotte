@@ -12,6 +12,82 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ## [Unreleased]
 
 ### Added
+- **Alembic migration chain (ROADMAP B7)** — Kotte now ships a
+  versioned migration story for the target Apache AGE database,
+  wrapped in operator-friendly `make` targets and documented end-to-
+  end at `docs/MIGRATIONS.md`. Deliberate scope split: static schema
+  changes live in alembic; dynamic label-index creation stays in
+  `scripts/migrate_add_indices.py` (reachable now as `make
+  reindex-labels`) because the catalog it walks is runtime state that
+  a static migration can't capture.
+  - `backend/alembic/` (new) is scaffolded around a rewritten `env.py`
+    that resolves the target connection URL from the **same `DB_HOST`
+    / `DB_PORT` / `DB_NAME` / `DB_USER` / `DB_PASSWORD` env vars the
+    reindex script already uses**, with a fallback chain that lets
+    operators override via `alembic -x url=…` or
+    `ALEMBIC_SQLALCHEMY_URL`. Passwords are URL-encoded so special
+    characters don't break the DSN. Driver prefix is
+    `postgresql+psycopg://…` to match the rest of the backend's
+    psycopg3 stack; SQLAlchemy is used only as alembic's engine façade
+    and is pulled in via `requirements-dev.txt` (not
+    `requirements.txt`) to keep the runtime image lean.
+    `target_metadata = None` — the app has no ORM, every migration is
+    hand-written raw SQL via `op.execute(...)`, and `--autogenerate`
+    would produce nothing useful.
+  - `alembic.ini` trimmed to the essentials with an explicit comment
+    that the `sqlalchemy.url = driver://user:pass@localhost/dbname`
+    line is a sentinel — `env.py` detects it and falls through to the
+    env-var chain.
+  - **Migration `2c3c565210b1` — enable age extension.** Single
+    statement: `CREATE EXTENSION IF NOT EXISTS age`. No-op on
+    databases where AGE is already installed. Downgrade is
+    intentionally a no-op (dropping AGE cascades over every graph —
+    data loss that should never happen via routine downgrade).
+  - **Migration `78c03fa27fda` — create kotte users stub.** Creates
+    `kotte_users(id BIGSERIAL PK, username CITEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL
+    DEFAULT now(), last_login_at TIMESTAMPTZ NULL)` plus the `citext`
+    extension it depends on. The app doesn't read from this table
+    yet — it's forward-plumbing for Milestone D's multi-user work so
+    the auth-wiring PR isn't simultaneously landing a migration + new
+    code + a rollout story. Table names carry the `kotte_` prefix
+    because target databases often share a Postgres instance with
+    unrelated apps that have their own `users` table; we never want
+    to touch it. Downgrade drops the table cleanly.
+  - `Makefile` grows six migration targets — `migrate-up`,
+    `migrate-down`, `migrate-current`, `migrate-history`,
+    `migrate-new MSG="…"`, and `reindex-labels`. `migrate-new` refuses
+    to run without an explicit `MSG=` so a nameless `_.py` file can't
+    land by accident. Help output gains a new "Migrations" section.
+  - `backend/scripts/migrate_add_indices.py` docstring rewritten to
+    position the script as complementary to alembic, with a table
+    (`make migrate-up` vs `make reindex-labels`) explaining when to
+    reach for which tool. Script behaviour is unchanged.
+  - `docs/MIGRATIONS.md` (new) is the operator guide: mental model
+    (Kotte doesn't own a database), URL resolution, both migrations
+    explained, "how to add a new migration" ground rules (raw SQL
+    only, `IF NOT EXISTS` always), offline SQL review flow
+    (`alembic upgrade head --sql > pending.sql` for DBA review), and
+    known limitations.
+  - **No runtime hook**, deliberately — documented as a known
+    limitation. Kotte connects to _many_ databases (one per user
+    login), so a startup hook would have to know which one to
+    migrate; production AGE roles often lack `CREATE EXTENSION`
+    privilege; and decoupling deploy from schema change makes
+    rollbacks easier. A `RUN_MIGRATIONS=true` hook against a specific
+    `KOTTE_MIGRATION_DB_URL` remains easy to add later if a
+    single-DB deployment wants it.
+  - `requirements-dev.txt` + the `dev` extra in `backend/pyproject.
+    toml` gain `alembic>=1.13.0` + `sqlalchemy>=2.0.0`.
+  - Validated end-to-end against a fresh `apache/age:latest`
+    container on port 5433: full `upgrade head` applies clean, `age
+    1.7.0` + `citext 1.8` registered, `kotte_users` schema matches
+    exactly (verified via `\d+ kotte_users`), `alembic_version` at
+    `78c03fa27fda`. `downgrade -1` drops the table and rewinds
+    correctly. Re-upgrade + second re-upgrade both idempotent. Offline
+    `upgrade head --sql` produces a reviewable transaction block.
+
+### Added
 - **Black formatting pass + pre-commit hooks (ROADMAP B1.1 + B8)** — two
   paired improvements that close a Milestone B sub-ticket each and wire
   the local commit-time ratchet that prevents the lint debt from
