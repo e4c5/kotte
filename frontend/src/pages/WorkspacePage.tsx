@@ -322,23 +322,23 @@ export default function WorkspacePage() {
 
   if (!status || !status.connected) {
     return (
-      <div className="h-screen bg-zinc-950 flex items-center justify-center text-zinc-400">
+      <div className="h-screen flex items-center justify-center bg-white text-zinc-600 dark:bg-zinc-950 dark:text-zinc-400">
         Loading...
       </div>
     )
   }
 
   return (
-    <div className="relative h-screen w-full bg-zinc-950 text-zinc-100 overflow-hidden">
+    <div className="relative h-screen w-full overflow-hidden bg-white text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
       {/* Header: slim, fixed — offset left by sidebar width so it does not sit under the sidebar */}
       <header
-        className={`fixed top-0 right-0 h-12 flex items-center justify-between px-4 bg-zinc-900/95 border-b border-zinc-800 z-10 shrink-0 transition-[left] duration-300 ${
+        className={`fixed top-0 right-0 h-12 flex items-center justify-between px-4 bg-white/95 border-b border-zinc-200 dark:bg-zinc-900/95 dark:border-zinc-800 z-10 shrink-0 transition-[left] duration-300 ${
           sidebarCollapsed ? 'left-12' : 'left-64'
         }`}
       >
         <div className="flex items-center gap-4 min-w-0">
-          <span className="font-semibold text-zinc-100 shrink-0">Kotte</span>
-          <span className="text-zinc-500 text-sm truncate">
+          <span className="font-semibold shrink-0 text-zinc-900 dark:text-zinc-100">Kotte</span>
+          <span className="text-sm truncate text-zinc-500 dark:text-zinc-500">
             {status.database} @ {status.host}:{status.port}
           </span>
           {tabs.length > 0 && (
@@ -353,14 +353,41 @@ export default function WorkspacePage() {
             />
           )}
         </div>
-        <button
-          type="button"
-          onClick={handleDisconnect}
-          className="shrink-0 px-3 py-1.5 text-sm rounded-lg border border-zinc-600 text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 transition-colors"
-          aria-label="Disconnect from database"
-        >
-          Disconnect
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          {/* ROADMAP A1: discoverable settings entry. Previously the modal could
+              only be opened from a buried banner inside the viz limit warning. */}
+          <button
+            type="button"
+            onClick={() => setShowSettings(true)}
+            className="p-1.5 rounded-lg border border-zinc-300 text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-zinc-100 transition-colors"
+            aria-label="Open settings"
+            title="Settings"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            onClick={handleDisconnect}
+            className="px-3 py-1.5 text-sm rounded-lg border border-zinc-300 text-zinc-700 hover:bg-zinc-100 hover:text-zinc-900 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-zinc-100 transition-colors"
+            aria-label="Disconnect from database"
+          >
+            Disconnect
+          </button>
+        </div>
       </header>
 
       {/* Main content: query editor + results, offset by header and sidebar */}
@@ -372,7 +399,7 @@ export default function WorkspacePage() {
       >
         <div className="flex h-full flex-col">
           {/* Query bar */}
-          <div className="shrink-0 px-3 py-2 bg-zinc-950 border-b border-zinc-800">
+          <div className="shrink-0 px-3 py-2 bg-white border-b border-zinc-200 dark:bg-zinc-950 dark:border-zinc-800">
             <QueryEditor
               value={query}
               onChange={setQuery}

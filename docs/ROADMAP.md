@@ -23,7 +23,7 @@ Tickets within a milestone are independently mergeable unless marked _depends on
 
 Cheap, high-value fixes that close the gap between _what's wired_ and _what users see_. **Total: ~2 dev-days for one engineer.**
 
-### A1. Wire the Settings modal (gear button + theme)
+### A1. Wire the Settings modal (gear button + theme) — ✅ shipped (PR #36 on `feat/a1-settings-modal-and-theme`)
 
 **Why:** `SettingsModal` exists and is importable but is never rendered open. `theme`, `defaultViewMode`, `queryHistoryLimit`, `autoExecuteQuery`, viz limits, table page size, default layout, and export format depend on it being reachable.
 
@@ -36,6 +36,8 @@ Cheap, high-value fixes that close the gap between _what's wired_ and _what user
 - `frontend/tailwind.config.js`: enable `darkMode: 'class'` (currently implicit) and switch the workspace shell to `dark:bg-zinc-950 bg-white` style classes. Add a small `useTheme()` hook in `frontend/src/utils/` that toggles `document.documentElement.classList`.
 
 **Acceptance:** Clicking gear opens `SettingsModal`. Toggling theme to `light` recolors the workspace background and text without reload.
+
+**Status (PR #36):** Gear button rendered next to Disconnect with `aria-label="Open settings"`. New `useTheme()` hook (`frontend/src/utils/useTheme.ts`) toggles a `dark` class on `document.documentElement` based on `settingsStore.theme`, subscribes to `prefers-color-scheme` while in `auto` mode, and cleans up on unmount; mounted at the App root so all routes pick up the preference. Tailwind v4 doesn't use a `tailwind.config.js` (this project uses `@tailwindcss/vite` with zero-config), so the class-based override moved into `frontend/src/index.css` via `@custom-variant dark (&:where(.dark, .dark *));`. Repainted shell-level surfaces (`WorkspacePage` outer/header/query bar, `Layout` non-workspace shell, `App` LoadingFallback) with `dark:` pairs so theme changes apply without reload. 11 new unit tests (`useTheme.test.ts` + `SettingsModal.test.tsx`); full suite 119/119. **Scope cut:** leaf components (`TableView`, `QueryEditor`, `GraphView` canvas, `GraphControls` panels, `ConnectionPage`, `LoginPage`, `SettingsModal`'s own inline-styled inputs) keep their existing dark palette; full light-mode repaint is left as follow-up because it's a per-component design exercise rather than a refactor.
 
 **Estimate:** half a day.
 
@@ -450,7 +452,7 @@ Only if you intend Kotte to be deployed beyond a single analyst. **Total: ~4–6
 
 ## Suggested execution order
 
-> **Status note (2026-04-19):** the week-numbered plan below was the original sequencing proposal. Actual progress is tracked in the **[Progress checklist](#progress-checklist)** below — that's the authoritative source for what's done. As of this writing, week 1 has shipped A2/A3/A4/A6/A7 + all three phases of A11 (still pending from week 1: A1); week 2 has shipped A5/A8/A9/A10 (B1/B2 not yet started). The "Path 1" decision (finish the rest of Milestone A, then start Milestone B) is being executed against this checklist rather than against the week numbers; smaller related tickets are now bundled into one PR (A3+A5 shipped together as the "graph-canvas safety" pair; A11.2+A11.3 shipped together as the "double-click follow-through" pair).
+> **Status note (2026-04-19):** the week-numbered plan below was the original sequencing proposal. Actual progress is tracked in the **[Progress checklist](#progress-checklist)** below — that's the authoritative source for what's done. As of this writing, **all of Milestone A is shipped** (A1–A11 inclusive); week 2 has shipped A5/A8/A9/A10 (B1/B2 not yet started). The "Path 1" decision (finish the rest of Milestone A, then start Milestone B) is executed; the next active work item is B1/B2 (CI for tests/lint). Smaller related tickets are bundled into one PR (A3+A5 shipped together as the "graph-canvas safety" pair; A11.2+A11.3 shipped together as the "double-click follow-through" pair).
 
 1. **Week 1**: A1, A2, A3, A4, A6, A7, A11 phases 2–3 (UI quick wins + the AGE bug + finishing the additive double-click work). A11 phase 1 already shipped.
 2. **Week 2**: A5, A8, A9, A10 + start B1/B2 (CI for tests/lint).
@@ -468,7 +470,7 @@ Toggle `- [ ]` → `- [x]` as items ship, and add a short **Status** line under 
 
 ### Milestone A — Stop the bleeding
 
-- [ ] **A1** — Wire the Settings modal (gear button + theme)
+- [x] **A1** — Wire the Settings modal (gear button + theme) (PR #36 on `feat/a1-settings-modal-and-theme`; gear button next to Disconnect, `useTheme()` hook toggles `.dark` on documentElement based on persisted theme + subscribes to `prefers-color-scheme` for `auto`, Tailwind v4 dark variant rebound via `@custom-variant` in `index.css`, shell surfaces (WorkspacePage outer/header/query bar, Layout, App LoadingFallback) repainted with `dark:` pairs; 11 new unit tests; deeper component repaint deferred to follow-up)
 - [x] **A2** — Fix tab pin/unpin (PR #26 on `fix/tab-pin-unpin`; `onTabUnpin` wired through, pin button conditionally rendered as `tab.pinned ? onTabUnpin : onTabPin` so a parent supplying only one direction no longer renders a no-op button)
 - [x] **A3** — Add Pin / Hide actions in NodeContextMenu (PR on `feat/a3-a5-pin-hide-and-viz-limits`; bundled with A5. `NodeContextMenu` props extended with `onPin?` / `onHide?` plus `isPinned` / `isHidden`; menu now renders Expand → Pin/Unpin → Hide/Show → Delete with state-aware labels and `aria-pressed`; pinned nodes get a distinct amber stroke (`#f59e0b`, width 3) on the canvas; `ResultTab` reads pin/hide state from `useGraphStore`. 8 unit tests added.)
 - [x] **A4** — Remove the debug marker (or gate it on env) (PR #25 on `fix/graphview-debug-marker`; gated on `import.meta.env.DEV` with Vite ambient types added in `frontend/src/vite-env.d.ts`)
