@@ -72,17 +72,21 @@ export default function WorkspacePage() {
     setSelectedEdge,
     selectedNode,
     selectedEdge,
-    layout,
     setLayout,
     setCameraFocusAnchorIds,
   } = useGraphStore()
 
+  // Mount-only initializer: ensure exactly one tab exists and one is active.
+  // Wiring tabs/activeTabId/createTab/setActiveTab as deps would re-run this on
+  // every tab change and is unnecessary — the body is idempotent against the
+  // initial mount only.
   useEffect(() => {
     if (tabs.length === 0) {
       createTab('Query 1')
     } else if (!activeTabId) {
       setActiveTab(tabs[0].id)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Apply default layout only when the user changes it in Settings, not when they change the dropdown

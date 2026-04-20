@@ -342,6 +342,12 @@ export type QueryParamsResult =
  * editor. The historical "swallow the error and silently send {}" behaviour is
  * gone.
  */
+// Co-located with the editor on purpose — the parser is consumed by both the
+// editor and `WorkspacePage.handleExecute`, and the discriminated-union shape
+// (`{ ok: true; value } | { ok: false; error }`) is what wires the inline
+// alert. Splitting it into a sibling module would mean three new files for one
+// 8-line function.
+// eslint-disable-next-line react-refresh/only-export-components
 export function getQueryParams(paramsString: string): QueryParamsResult {
   let parsed: unknown
   try {

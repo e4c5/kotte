@@ -62,7 +62,10 @@ function makeTab(overrides: Partial<QueryTab> = {}): QueryTab {
       rows: [],
       row_count: 0,
       request_id: 'req1',
-      graph_elements: { nodes: [{ id: '1', label: 'X' }], edges: [] },
+      graph_elements: {
+        nodes: [{ id: '1', label: 'X', properties: {}, type: 'vertex' }],
+        edges: [],
+      },
     } as QueryTab['result'],
     loading: false,
     error: null,

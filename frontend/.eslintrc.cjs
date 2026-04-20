@@ -14,6 +14,14 @@ module.exports = {
       'warn',
       { allowConstantExport: true },
     ],
+    // Allow `_`-prefixed parameters as the standard "intentionally unused"
+    // marker. Matches the rest of the codebase (e.g. `_tabId`, `_exportFn` on
+    // no-op handler stubs) and the convention enforced by Prettier/many Node
+    // style guides.
+    '@typescript-eslint/no-unused-vars': [
+      'error',
+      { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
+    ],
   },
 }
 

@@ -27,7 +27,7 @@ describe('APIErrorException', () => {
 })
 
 describe('ensureCsrfToken', () => {
-  const originalSessionStorage = global.sessionStorage
+  const originalSessionStorage = globalThis.sessionStorage
 
   beforeEach(() => {
     vi.stubGlobal('fetch', vi.fn())

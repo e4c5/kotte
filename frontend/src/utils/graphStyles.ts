@@ -56,8 +56,11 @@ export const getNodeStyle = (node: GraphNode, nodeStyles: Record<string, LabelSt
 export const getEdgeStyle = (
   edge: GraphEdge,
   edgeStyles: Record<string, LabelStyle>,
+  // d3.ScaleLinear / d3.ScaleLogarithmic union; specifying it precisely would
+  // pull every consumer into the d3 generic vortex for negligible benefit.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   edgeWidthScale: any,
-  edgeWidthProperty?: string
+  edgeWidthProperty?: string | null
 ): LabelStyle => {
   const baseStyle = edgeStyles[edge.label] || {
     color: '#999',
@@ -148,8 +151,10 @@ export const getNodeCaption = (
 export const getEdgeCaption = (
   edge: GraphEdge,
   edgeStyles: Record<string, LabelStyle>,
+  // See note on getEdgeStyle above re: the d3 scale type.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   edgeWidthScale: any,
-  edgeWidthProperty?: string
+  edgeWidthProperty?: string | null
 ): string => {
   const style = getEdgeStyle(edge, edgeStyles, edgeWidthScale, edgeWidthProperty)
   if (style.showLabel === false) return ''

@@ -290,6 +290,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
               </label>
               <select
                 value={defaultLayout}
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any -- defaultLayout's union literal type doesn't widen from a string select value; replace with a typed parser in a follow-up.
                 onChange={(e) => setDefaultLayout(e.target.value as any)}
                 style={{
                   width: '100%',

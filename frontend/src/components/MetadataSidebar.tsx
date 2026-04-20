@@ -26,6 +26,9 @@ export default function MetadataSidebar({
 
   useEffect(() => {
     loadGraphs()
+    // Mount-only fetch — `loadGraphs` is a stable closure; re-running on every
+    // change would re-issue the request unnecessarily.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {

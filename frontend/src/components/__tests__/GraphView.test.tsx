@@ -6,6 +6,10 @@ vi.mock('d3', async (importOriginal) => {
   const actual = await importOriginal<typeof import('d3')>()
   
   const createMockSelection = () => {
+    // d3 simulation/selection mocks are deliberately untyped: we mock a
+    // dozen-method fluent API that's tedious to mirror in TypeScript and
+    // brittle to maintain when d3's types shift.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const simulation: any = {
       alpha: vi.fn(),
       alphaDecay: vi.fn(),
@@ -30,7 +34,8 @@ vi.mock('d3', async (importOriginal) => {
     simulation.alpha.mockReturnThis()
     simulation.alphaDecay.mockReturnThis()
     simulation.velocityDecay.mockReturnThis()
-    simulation.force.mockImplementation((name: string, arg?: any) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    simulation.force.mockImplementation((_name: string, arg?: any) => {
       if (arg === undefined) return forceObj
       return simulation
     })
@@ -41,6 +46,7 @@ vi.mock('d3', async (importOriginal) => {
     simulation.restart.mockReturnThis()
     simulation.nodes.mockReturnThis()
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const selection: any = {
       selectAll: vi.fn(),
       remove: vi.fn(),

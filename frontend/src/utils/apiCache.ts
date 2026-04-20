@@ -9,6 +9,10 @@ interface CacheEntry<T> {
 }
 
 class ApiCache {
+  // Heterogeneous values keyed by string — the per-call generic on `get<T>` /
+  // `set<T>` carries the actual type back to callers; widening the map's value
+  // type to `unknown` here would force a cast at every call site.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private readonly cache: Map<string, CacheEntry<any>> = new Map()
 
   get<T>(key: string): T | null {

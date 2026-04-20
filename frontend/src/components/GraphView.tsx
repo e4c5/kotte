@@ -354,6 +354,11 @@ export default function GraphView({
       simulation.nodes([]);
       if (hasEdges) {
         const linkForce = simulation.force('link');
+        // d3-force's typed return for `force('link')` is the union of every
+        // registered force; narrowing requires a runtime guard plus a generic
+        // we'd have to re-derive — `as any` here is the standard pattern in
+        // the d3-force community for this exact teardown.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         if (linkForce && 'links' in linkForce) (linkForce as any).links([]);
       }
       // Remove all elements and event listeners
