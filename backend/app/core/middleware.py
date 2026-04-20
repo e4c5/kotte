@@ -52,9 +52,10 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         else:
             # Development: allow Swagger UI / ReDoc assets from common CDNs when docs are enabled
             script_policy = (
-                "'self' 'unsafe-inline' 'unsafe-eval' " "https://cdn.jsdelivr.net https://unpkg.com"
+                "'self' 'unsafe-inline' 'unsafe-eval' "
+                + "https://cdn.jsdelivr.net https://unpkg.com"
             )
-            style_policy = "'self' 'unsafe-inline' " "https://cdn.jsdelivr.net https://unpkg.com"
+            style_policy = "'self' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com"
 
         csp = (
             f"default-src 'self'; "

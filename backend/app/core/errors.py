@@ -276,7 +276,7 @@ async def error_handler(request: Request, exc: APIException) -> JSONResponse:
     )
 
 
-async def generic_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+def generic_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     """Handle unexpected exceptions."""
     logger.exception("Unhandled exception", exc_info=exc)
     message = "An internal error occurred"
