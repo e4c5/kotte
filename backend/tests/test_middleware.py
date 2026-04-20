@@ -9,7 +9,11 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from app.core.errors import APIException, ErrorCode
-from app.core.middleware import RequestIDMiddleware, RateLimitMiddleware
+from app.core.middleware import (
+    MetricsMiddleware,
+    RateLimitMiddleware,
+    RequestIDMiddleware,
+)
 
 
 class TestRequestIDMiddleware:
@@ -245,3 +249,166 @@ class TestRateLimitPerUser:
         for _ in range(5):
             resp = await per_user_dispatch(_make_request(session=None))
             assert resp.status_code == 200
+
+
+class TestMetricsMiddleware:
+    """Regression coverage for ``MetricsMiddleware.dispatch``.
+
+    The middleware must record a Prometheus sample for every request that
+    flows through it, including the error paths. The critical regression
+    guarded here is cancellation: ``asyncio.CancelledError`` inherits from
+    ``BaseException``, not ``Exception``, so a previous ``except Exception``
+    branch skipped setting ``status_code`` and the ``finally`` clause then
+    blew up with ``UnboundLocalError``, masking the cancellation.
+    """
+
+    @pytest_asyncio.fixture
+    async def record_calls(self, monkeypatch):
+        """Capture every ``metrics.record_http_request`` call on the
+        same module reference the middleware uses.
+
+        We patch on ``app.core.middleware.metrics`` rather than
+        ``app.core.metrics.metrics`` so the stub is visible to
+        ``MetricsMiddleware.dispatch`` regardless of how the test
+        conftest has or hasn't reimported ``app.core.metrics``.
+        """
+        from app.core import middleware as mw_module
+
+        calls: list[tuple[str, str, int, float]] = []
+
+        def fake_record(method, endpoint, status_code, duration):
+            calls.append((method, endpoint, status_code, duration))
+
+        monkeypatch.setattr(mw_module.metrics, "record_http_request", fake_record)
+        return calls
+
+    @pytest_asyncio.fixture
+    async def metrics_dispatch(self):
+        """Return ``call(call_next, path="/x")`` which drives
+        ``MetricsMiddleware.dispatch`` directly with a stub ASGI app.
+
+        Driving ``dispatch`` directly (instead of through ``httpx``) keeps
+        the test honest about which exception type propagates out of the
+        middleware. Going through ``BaseHTTPMiddleware``'s ASGI wrapper
+        can swallow/convert ``CancelledError`` via the outer anyio task
+        group, which is exactly the plumbing we're not trying to test
+        here -- we're testing that ``dispatch`` itself doesn't raise
+        ``UnboundLocalError`` on the cancellation path.
+        """
+
+        async def noop_app(scope, receive, send):
+            """Placeholder ASGI app; tests drive ``dispatch`` directly."""
+
+        middleware = MetricsMiddleware(noop_app)
+
+        async def call(call_next, path: str = "/x"):
+            request = _make_request_path(path)
+            return await middleware.dispatch(request, call_next)
+
+        return call
+
+    @pytest.mark.asyncio
+    async def test_happy_path_records_response_status(
+        self, metrics_dispatch, record_calls
+    ):
+        async def call_next(_request):
+            await asyncio.sleep(0)
+            return JSONResponse({"ok": True}, status_code=201)
+
+        response = await metrics_dispatch(call_next, path="/x")
+
+        assert response.status_code == 201
+        assert len(record_calls) == 1
+        method, endpoint, status_code, duration = record_calls[0]
+        assert method == "GET"
+        assert endpoint == "/x"
+        assert status_code == 201
+        assert duration >= 0.0
+
+    @pytest.mark.asyncio
+    async def test_exception_path_records_500_and_reraises(
+        self, metrics_dispatch, record_calls
+    ):
+        """``Exception`` subclass from ``call_next`` must propagate, and
+        we must still record a 500 sample in ``finally``.
+        """
+
+        async def call_next(_request):
+            await asyncio.sleep(0)
+            raise RuntimeError("boom")
+
+        with pytest.raises(RuntimeError, match="boom"):
+            await metrics_dispatch(call_next, path="/x")
+
+        assert len(record_calls) == 1
+        _method, _endpoint, status_code, _duration = record_calls[0]
+        assert status_code == 500
+
+    @pytest.mark.asyncio
+    async def test_cancelled_error_propagates_without_unbound_local(
+        self, metrics_dispatch, record_calls
+    ):
+        """Regression: ``asyncio.CancelledError`` (a ``BaseException``) must
+        propagate out cleanly and the ``finally`` block must still record a
+        500 sample. Before the fix this path raised ``UnboundLocalError``
+        because ``status_code`` was never assigned.
+        """
+
+        async def call_next(_request):
+            await asyncio.sleep(0)
+            raise asyncio.CancelledError()
+
+        with pytest.raises(asyncio.CancelledError):
+            await metrics_dispatch(call_next, path="/x")
+
+        assert len(record_calls) == 1
+        _method, _endpoint, status_code, _duration = record_calls[0]
+        assert status_code == 500
+
+    @pytest.mark.asyncio
+    async def test_metrics_endpoint_is_short_circuited(
+        self, metrics_dispatch, record_calls
+    ):
+        """Both ``/metrics`` and ``/api/v1/metrics`` must bypass the
+        metrics bookkeeping -- scraping the metrics endpoint itself must
+        not record a sample (otherwise a Prometheus scrape would perturb
+        its own counters).
+        """
+        hits = 0
+
+        async def call_next(_request):
+            nonlocal hits
+            hits += 1
+            await asyncio.sleep(0)
+            return JSONResponse({"ok": True})
+
+        await metrics_dispatch(call_next, path="/metrics")
+        await metrics_dispatch(call_next, path="/api/v1/metrics")
+
+        assert hits == 2
+        assert record_calls == []
+
+
+def _make_request_path(path: str) -> Request:
+    """Build a minimal ``Request`` whose path matches ``path``.
+
+    Separate from ``_make_request`` above because the rate-limit tests
+    care about ``session`` / ``client`` fields, while the metrics tests
+    only care about ``path``.
+    """
+    scope: dict = {
+        "type": "http",
+        "asgi": {"version": "3.0"},
+        "http_version": "1.1",
+        "method": "GET",
+        "scheme": "http",
+        "path": path,
+        "raw_path": path.encode(),
+        "query_string": b"",
+        "root_path": "",
+        "headers": [],
+        "client": ("127.0.0.1", 12345),
+        "server": ("testserver", 80),
+        "state": {},
+    }
+    return Request(scope)

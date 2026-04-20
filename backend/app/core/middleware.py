@@ -100,13 +100,16 @@ class MetricsMiddleware(BaseHTTPMiddleware):
         # Normalize endpoint path (remove IDs, etc.)
         endpoint = self._normalize_endpoint(request.url.path)
 
+        # Pre-initialise so the ``finally`` block is safe even if ``call_next``
+        # raises a ``BaseException`` subclass (e.g. ``asyncio.CancelledError``
+        # from client disconnects / shutdown), which would otherwise leave
+        # ``status_code`` unbound and mask the original exception with an
+        # ``UnboundLocalError`` when the metric is recorded.
+        status_code = 500
+
         try:
             response = await call_next(request)
             status_code = response.status_code
-        except Exception:
-            status_code = 500
-            # Re-raise to let error handler deal with it
-            raise
         finally:
             duration = time.time() - start_time
             metrics.record_http_request(method, endpoint, status_code, duration)
