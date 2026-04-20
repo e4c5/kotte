@@ -12,7 +12,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ## [Unreleased]
 
 ### Added
-- **Container images + GHCR publish pipeline (ROADMAP B3+B4+B5)** —
+- **Container images + Docker Hub publish pipeline (ROADMAP B3+B4+B5)** —
   production-oriented multi-stage Dockerfiles for both services and a
   GitHub Actions workflow that builds, scans, and publishes them.
   - `deployment/backend.Dockerfile` rewritten as two stages. Stage 1
@@ -48,19 +48,30 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
     `X-Frame-Options: DENY`, `Referrer-Policy:
     strict-origin-when-cross-origin`).
   - `.github/workflows/container.yml` (new) drives the image pipeline
-    for both services in a matrix. Triggers: tag pushes matching `v*`
-    (build + Trivy scan + push to GHCR) and PRs that touch the
-    Dockerfiles / nginx config / workflow / `requirements.txt` /
+    for both services in a matrix, publishing to **Docker Hub** as
+    `<namespace>/kotte-backend` and `<namespace>/kotte-frontend` (matches
+    the Docker Hub conventions used by the rest of the author's
+    projects — e.g. `viper` — for consistent pull paths across the
+    portfolio). Triggers: tag pushes matching `v*` (build + Trivy scan
+    + push), `workflow_dispatch` with explicit `image_tag` + optional
+    `push_latest` inputs for on-demand backfills, and PRs that touch
+    the Dockerfiles / nginx config / workflow / `requirements.txt` /
     `package-lock.json` (build + Trivy scan, no push, so Dockerfile
     regressions are caught before release). Uses buildx with
     GHA-backed layer cache (`cache-from: type=gha, scope=<image>`,
-    `mode=max`), tags via `docker/metadata-action` (semver + latest
-    on default branch), and Trivy 0.28 with `severity: HIGH,CRITICAL`,
-    `exit-code: 1`, `ignore-unfixed: true`. `concurrency.cancel-in-
-    progress` enabled. `permissions: {contents: read, packages:
-    write}` scoped for GHCR login; login step itself is gated on
-    `startsWith(github.ref, 'refs/tags/')` so fork PRs don't fail on
-    auth.
+    `mode=max`), tags via `docker/metadata-action` (semver
+    major.minor.patch + major.minor + short sha + latest on default
+    branch + raw `image_tag`/`latest` on dispatch), and Trivy v0.28.0
+    with `severity: HIGH,CRITICAL`, `exit-code: 1`,
+    `ignore-unfixed: true`. `concurrency.cancel-in-progress` enabled.
+    All third-party actions pinned to commit SHAs (checkout 4.2.2,
+    setup-buildx 3.12.0, login 3.7.0, metadata 5.7.0, build-push
+    6.19.2, trivy-action 0.28.0) for supply-chain hygiene; Docker Hub
+    login gated on `github.event_name != 'pull_request'` so fork PRs
+    don't try to auth with secrets they can't see. Required secrets:
+    `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`. Optional variable
+    `DOCKERHUB_NAMESPACE` overrides the publish namespace (defaults to
+    `DOCKERHUB_USERNAME`) for org accounts.
 - **GitHub Actions CI for backend and frontend (ROADMAP B1+B2)** —
   two new workflows guard the test and lint surface on every push to
   `main` and every PR.
