@@ -35,6 +35,9 @@ env/
 .env
 .env.local
 .env.*.local
+.env.prod
+deployment/.env
+deployment/.env.prod
 
 # Testing
 .pytest_cache/

@@ -1,4 +1,5 @@
-.PHONY: help install-backend install-frontend dev-backend dev-frontend test-backend test-frontend lint-backend lint-frontend
+.PHONY: help install-backend install-frontend dev-backend dev-frontend test-backend test-frontend lint-backend lint-frontend \
+	compose-up-dev compose-up-prod compose-down-dev compose-down-prod compose-logs-dev compose-logs-prod compose-build-prod
 
 help:
 	@echo "Available targets:"
@@ -10,6 +11,15 @@ help:
 	@echo "  test-frontend       - Run frontend tests once (vitest run, with timeout)"
 	@echo "  lint-backend        - Lint backend code"
 	@echo "  lint-frontend       - Lint frontend code"
+	@echo ""
+	@echo "Docker Compose:"
+	@echo "  compose-up-dev      - Start the dev stack (source mounts, --reload, vite HMR)"
+	@echo "  compose-down-dev    - Stop the dev stack"
+	@echo "  compose-logs-dev    - Tail logs from the dev stack"
+	@echo "  compose-up-prod     - Start the prod stack (nginx frontend, hardened, env_file)"
+	@echo "  compose-down-prod   - Stop the prod stack"
+	@echo "  compose-logs-prod   - Tail logs from the prod stack"
+	@echo "  compose-build-prod  - Rebuild prod images without starting"
 
 install-backend:
 	cd backend && python3 -m venv venv && . venv/bin/activate && pip install -r requirements-dev.txt
@@ -37,4 +47,40 @@ lint-backend:
 
 lint-frontend:
 	cd frontend && npm run lint
+
+# ---------------------------------------------------------------------------
+# Docker Compose targets (ROADMAP B6)
+#
+# Dev uses docker-compose.dev.yml (source mounts, uvicorn --reload, vite
+# HMR). Prod uses docker-compose.prod.yml + deployment/.env.prod (nginx
+# frontend, resource limits, secrets from the env_file). The two stacks
+# share named volumes (`age-data`, `backend-data`) so switching between
+# them preserves AGE data and saved credentials.
+# ---------------------------------------------------------------------------
+
+COMPOSE_DEV  := docker compose -f deployment/docker-compose.dev.yml
+COMPOSE_PROD := docker compose -f deployment/docker-compose.prod.yml --env-file deployment/.env.prod
+
+compose-up-dev:
+	$(COMPOSE_DEV) up -d
+
+compose-down-dev:
+	$(COMPOSE_DEV) down
+
+compose-logs-dev:
+	$(COMPOSE_DEV) logs -f
+
+compose-up-prod:
+	@test -f deployment/.env.prod || { echo "deployment/.env.prod not found — copy deployment/.env.prod.example to deployment/.env.prod and fill in real values"; exit 1; }
+	$(COMPOSE_PROD) up -d
+
+compose-down-prod:
+	$(COMPOSE_PROD) down
+
+compose-logs-prod:
+	$(COMPOSE_PROD) logs -f
+
+compose-build-prod:
+	@test -f deployment/.env.prod || { echo "deployment/.env.prod not found — copy deployment/.env.prod.example to deployment/.env.prod and fill in real values"; exit 1; }
+	$(COMPOSE_PROD) build
 
