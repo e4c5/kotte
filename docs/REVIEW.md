@@ -57,9 +57,7 @@ No Cypher highlighting, no autocomplete from discovered labels/properties, no er
 
 ### G6. Production deployment story is the biggest "advanced product / unprofessional ops" gap
 
-- `deployment/frontend.Dockerfile` runs `npm run dev` (Vite dev server) (`frontend.Dockerfile:23-24`).
-- `deployment/docker-compose.yml` sets `ENVIRONMENT: development` for the backend (line 37).
-- No multi-stage builds.
+- ~~`deployment/frontend.Dockerfile` runs `npm run dev` (Vite dev server)~~ / ~~`deployment/docker-compose.yml` sets `ENVIRONMENT: development` for the backend~~ / ~~No multi-stage builds~~ — resolved in ROADMAP B4+B5+B6: `deployment/backend.Dockerfile` is now a hardened multi-stage build (PR #38); `deployment/frontend.Dockerfile.prod` builds the vite SPA and serves it via nginx with SPA fallback + gzip + cache headers + per-location security headers (PR #38); and `deployment/docker-compose.yml` has been split (PR #39) into `docker-compose.dev.yml` (source mounts, `uvicorn --reload`, vite HMR, `ENVIRONMENT=development`) and `docker-compose.prod.yml` (prod Dockerfiles, `ENVIRONMENT=production`, `restart: unless-stopped`, per-service `mem_limit`/`cpus`, read-only nginx with tmpfs, secrets via `env_file`).
 - `docs/KUBERNETES_DEPLOYMENT.md` is a **plan**, not artifacts. No `deployment/k8s/`, no Helm chart.
 - No migrations system. `init-db.sql` only runs `CREATE EXTENSION age`. The "indices migration" is a one-shot Python script.
 - ~~No `LICENSE`, no `CHANGELOG`, no `backend/.env.example` (referenced by QUICKSTART)~~ — resolved in ROADMAP A9 (PR #30): Apache-2.0 `LICENSE` + `NOTICE`, Keep-a-Changelog `CHANGELOG.md` seeded with 0.1.0, and `backend/.env.example` enumerating every `Settings` key + `ADMIN_PASSWORD`. No `pre-commit` config yet (Milestone B).

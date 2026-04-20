@@ -33,12 +33,15 @@ Kotte connects to PostgreSQL with the Apache AGE extension and turns your graph 
 ## Quick Start
 
 ```bash
-cd deployment && docker compose up -d
+make compose-up-dev
 ```
 
 Open http://localhost:5173 and connect with host `age`, database `postgres`, user `postgres`, password `postgres`.
 
-Or run manually: [docs/QUICKSTART.md](docs/QUICKSTART.md)
+For production deploys there's a separate hardened compose file — see
+[deployment/README.md](deployment/README.md#quick-start--production).
+
+Or run manually without Docker: [docs/QUICKSTART.md](docs/QUICKSTART.md).
 
 ## How It Works
 

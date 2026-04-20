@@ -67,14 +67,23 @@ For a **sample graph with nodes and edges** that work with Graph View, run [docs
 
 ## Docker Compose (Simplest)
 
-Run everything—Apache AGE, backend, and frontend—with one command:
+Run everything—Apache AGE, backend, and frontend—with one command. There
+are two flavours:
 
 ```bash
-cd deployment
-docker compose up -d
+# Development (source mounts + hot reload)
+make compose-up-dev
+
+# Production (nginx-served SPA, hardened, secrets from .env.prod)
+# First time only: cp deployment/.env.prod.example deployment/.env.prod
+make compose-up-prod
 ```
 
-Open http://localhost:5173 and connect with host `age`, database `postgres`, user `postgres`, password `postgres`. See [deployment/README.md](../deployment/README.md) for details.
+The dev stack opens at http://localhost:5173, connect with host `age`,
+database `postgres`, user `postgres`, password `postgres`. The prod stack
+opens at http://localhost:80 and pulls credentials from
+`deployment/.env.prod`. See
+[deployment/README.md](../deployment/README.md) for the full breakdown.
 
 ## Using Makefile
 
