@@ -1,11 +1,13 @@
 # ROADMAP B1 — Backend CI
 #
 # Two jobs run on every push to main and every PR that touches the backend:
-#   - lint  : ruff (clean today; black + mypy are deferred — see TODOs below)
+#   - lint  : ruff (clean today; black + mypy are deferred — see the
+#             deferred-items note below)
 #   - unit  : pytest excluding integration + performance markers (no DB needed)
 #
-# Deliberately deferred to follow-up tickets so this workflow stays green from
-# day one rather than gating on pre-existing debt:
+# Deliberately deferred to follow-up tickets (tracked in docs/ROADMAP.md under
+# B1.1–B1.3) so this workflow stays green from day one rather than gating on
+# pre-existing debt:
 #   * black --check    — 67 files would reformat (B1.1)
 #   * mypy app         — coverage TBD on Python 3.11 (B1.2)
 #   * integration job  — needs the apache/age service container (B1.3)
@@ -51,11 +53,11 @@ jobs:
       - name: ruff check
         run: ruff check .
 
-      # TODO(B1.1): re-enable once the 67 files are reformatted.
+      # Deferred B1.1 (docs/ROADMAP.md): re-enable once the 67 files are reformatted.
       # - name: black --check
       #   run: black --check .
 
-      # TODO(B1.2): re-enable after the 3.11 mypy coverage is triaged.
+      # Deferred B1.2 (docs/ROADMAP.md): re-enable after the 3.11 mypy coverage is triaged.
       # - name: mypy
       #   run: mypy app
 
@@ -80,7 +82,7 @@ jobs:
       - name: pytest (unit only)
         run: pytest -m "not integration and not performance" --no-cov
 
-  # TODO(B1.3): integration job using `apache/age:PG16_latest` as a service
-  # container with `USE_REAL_TEST_DB=true`. Held back because the existing
-  # integration suite still has mock-vs-real branching that needs auditing
-  # before we point CI at a real DB.
+  # Deferred B1.3 (docs/ROADMAP.md): integration job using `apache/age:PG16_latest`
+  # as a service container with `USE_REAL_TEST_DB=true`. Held back because the
+  # existing integration suite still has mock-vs-real branching that needs
+  # auditing before we point CI at a real DB.
