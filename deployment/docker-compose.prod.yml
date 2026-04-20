@@ -1,0 +1,112 @@
+# Kotte — production compose (ROADMAP B6)
+#
+# Deployment target. What this does differently from the dev compose:
+#   * Uses `frontend.Dockerfile.prod` → nginx:alpine serving the built
+#     SPA on port 80 (not the vite dev server on 5173).
+#   * No source bind-mounts — only data volumes. The image is authoritative.
+#   * `ENVIRONMENT=production` so backend logging goes to structured JSON
+#     and CORS / security middleware apply their production branches.
+#   * `restart: unless-stopped` on every service so a crash (OOM, DB
+#     restart, container-runtime hiccup) self-heals without a page.
+#   * Per-service `mem_limit` + `cpus` so one runaway service can't starve
+#     the host. Backend gets the lion's share because Python + psycopg is
+#     the heavyweight; nginx runs lean and gets the leanest budget.
+#   * `read_only: true` for the nginx container paired with tmpfs for its
+#     writable paths (`/var/cache/nginx`, `/var/run`, `/tmp`). Backend stays
+#     writable because psycopg may write tempfiles for large queries.
+#   * Age is not exposed on the host — only the backend (on the docker
+#     network) needs it. Lowers the attack surface.
+#   * Secrets come from `.env.prod` via `env_file`. See `.env.prod.example`
+#     in this folder for the required keys. The file is git-ignored.
+#
+# Browser-side note: the shipped nginx image serves static assets only —
+# it does NOT reverse-proxy `/api/*` to the backend. For a real deployment
+# you either (a) put a reverse proxy in front that routes `/api/*` to
+# `backend:8000`, or (b) rebuild the frontend with `VITE_API_BASE_URL`
+# pointed at your backend origin and configure `CORS_ORIGINS` accordingly.
+# Adding an in-image reverse proxy is tracked as a future enhancement.
+#
+# Run: `docker compose -f deployment/docker-compose.prod.yml --env-file
+# deployment/.env.prod up -d` (or `make compose-up-prod`).
+
+services:
+  age:
+    image: apache/age:latest
+    container_name: kotte-age-prod
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: postgres
+    volumes:
+      - age-data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/01-init-age.sql:ro
+    # NOT exposed to the host. Backend reaches age over the compose network
+    # on `age:5432`. To inspect from the host, `docker exec -it kotte-age-
+    # prod psql -U postgres` is the intended path.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    mem_limit: 1g
+    cpus: 1.5
+
+  backend:
+    build:
+      context: ..
+      dockerfile: deployment/backend.Dockerfile
+    container_name: kotte-backend-prod
+    restart: unless-stopped
+    env_file:
+      - .env.prod
+    environment:
+      # Overrides / compose-specific knobs. Anything in `.env.prod` wins over
+      # defaults in the image but is overridden by values set here — so the
+      # docker-network routing (`DB_HOST=age`) and the in-container data
+      # path stay deterministic regardless of what the operator drops in
+      # `.env.prod`.
+      DB_HOST: age
+      DB_PORT: 5432
+      DB_NAME: postgres
+      DB_USER: postgres
+      ENVIRONMENT: production
+      CREDENTIAL_STORAGE_PATH: /app/data/connections.json
+    ports:
+      - "8000:8000"
+    volumes:
+      - backend-data:/app/data
+    depends_on:
+      age:
+        condition: service_healthy
+    mem_limit: 512m
+    cpus: 1.0
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: deployment/frontend.Dockerfile.prod
+    container_name: kotte-frontend-prod
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    # nginx writes to these paths at runtime (pid file, caches, temp bodies).
+    # Keeping the rest of the filesystem read-only means an RCE in nginx
+    # can't rewrite the shipped SPA bundle. The tmpfs mounts default to
+    # mode=1777 (world-writable sticky) which nginx's worker uid (101 in
+    # nginx:alpine) can write to. uid/gid options on tmpfs are Docker-only
+    # and break podman compatibility, so we rely on the default perms.
+    read_only: true
+    tmpfs:
+      - /var/cache/nginx
+      - /var/run
+      - /tmp
+    depends_on:
+      backend:
+        condition: service_started
+    mem_limit: 64m
+    cpus: 0.5
+
+volumes:
+  age-data:
+  backend-data:

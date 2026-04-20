@@ -12,6 +12,65 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ## [Unreleased]
 
 ### Added
+- **Docker Compose split into dev / prod (ROADMAP B6)** — `deployment/
+  docker-compose.yml` removed and replaced by two explicit files so the
+  inner-loop and deployment stacks diverge cleanly.
+  - `deployment/docker-compose.dev.yml` (new) preserves the previous
+    default behaviour but adds live-reload plumbing: `../backend/app` is
+    bind-mounted onto `/app/app` (and only there — `/app/site-packages`
+    and `/app/data` stay untouched so deps and the credential store
+    aren't clobbered), the backend `command:` is overridden to
+    `uvicorn ... --reload --reload-dir /app/app`, and the frontend uses
+    the anonymous-volume trick (`../frontend:/app:rw` +
+    `/app/node_modules`) so vite HMR picks up host edits without the
+    host's platform-mismatched node_modules shadowing the image's.
+    `ENVIRONMENT=development`, `SESSION_SECRET_KEY` defaults to a
+    dev-only value, AGE stays exposed on `localhost:5432` for `psql`/
+    dbeaver attachment.
+  - `deployment/docker-compose.prod.yml` (new) uses `backend.Dockerfile`
+    + `frontend.Dockerfile.prod`, `ENVIRONMENT=production`, pulls
+    secrets from `deployment/.env.prod` via `env_file`, and adds
+    production hardening: `restart: unless-stopped` on every service;
+    per-service `mem_limit` + `cpus` (age 1 GB / 1.5 CPU, backend 512
+    MB / 1.0 CPU, frontend 64 MB / 0.5 CPU); `read_only: true` on the
+    nginx container with tmpfs mounts for `/var/cache/nginx`,
+    `/var/run`, `/tmp` so an RCE can't rewrite the shipped SPA
+    bundle; no source mounts; AGE not exposed on the host (only the
+    backend reaches it over the compose network). Deliberately omits
+    the Docker-only `tmpfs:…:uid=101,gid=101` form for podman
+    compatibility — default mode=1777 on the tmpfs is sufficient for
+    nginx's worker uid.
+  - `deployment/.env.prod.example` (new) documents the four required
+    keys (`POSTGRES_PASSWORD`, `DB_PASSWORD`, `SESSION_SECRET_KEY`,
+    `CORS_ORIGINS`) plus recommended and optional tuning. The live
+    `.env.prod` is git-ignored (new rule in `.gitignore`). Points at
+    `backend/.env.example` as the exhaustive key reference.
+  - `Makefile` grows six compose targets: `compose-up-dev`,
+    `compose-down-dev`, `compose-logs-dev`, `compose-up-prod`,
+    `compose-down-prod`, `compose-logs-prod`, plus
+    `compose-build-prod`. The prod targets refuse to run without
+    `deployment/.env.prod` present.
+  - `deployment/README.md` rewritten to document both quick-start
+    paths, the command equivalents with and without make, and the
+    known limitation that the shipped nginx serves static assets only
+    (no `/api/*` reverse proxy) — production deploys need either an
+    external reverse proxy or a `VITE_API_BASE_URL` rebuild.
+  - Top-level `README.md` and `docs/QUICKSTART.md` updated to point at
+    the new `make compose-up-dev` / `make compose-up-prod` flow.
+    `docs/REVIEW.md` G6 bullet and `docs/KUBERNETES_DEPLOYMENT.md`
+    header reconciled: the "dev-grade docker-compose.yml / no
+    multi-stage builds / `npm run dev` frontend" line item from the
+    G6 audit is now fully resolved by B4+B5+B6.
+  - Validated locally: both compose files pass `docker-compose
+    config`; prod frontend container starts cleanly with
+    `--read-only` + the three tmpfs mounts, serves `/` and SPA
+    fallback correctly, nginx workers spawn without permission
+    errors; dev backend bind-mount verified to leave
+    `/app/site-packages` intact (`import fastapi` works, `app.main`
+    imports 30 routes); `watchfiles` is bundled in the image so
+    `uvicorn --reload` uses native inotify rather than polling.
+
+### Added
 - **Container images + Docker Hub publish pipeline (ROADMAP B3+B4+B5)** —
   production-oriented multi-stage Dockerfiles for both services and a
   GitHub Actions workflow that builds, scans, and publishes them.
