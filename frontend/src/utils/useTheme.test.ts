@@ -51,13 +51,13 @@ describe('useTheme', () => {
   })
 
   afterEach(() => {
-    if (originalMatchMedia) {
-      Object.defineProperty(globalThis.window, 'matchMedia', {
-        configurable: true,
-        writable: true,
-        value: originalMatchMedia,
-      })
-    }
+    // Always restore — in default jsdom `globalThis.window.matchMedia` is
+    // `undefined`, and a conditional restore would leak the mock to later tests.
+    Object.defineProperty(globalThis.window, 'matchMedia', {
+      configurable: true,
+      writable: true,
+      value: originalMatchMedia,
+    })
     document.documentElement.classList.remove('dark')
     useSettingsStore.setState({ theme: 'light' })
   })
@@ -158,13 +158,12 @@ describe('isDarkMode', () => {
   })
 
   afterEach(() => {
-    if (originalMatchMedia) {
-      Object.defineProperty(globalThis.window, 'matchMedia', {
-        configurable: true,
-        writable: true,
-        value: originalMatchMedia,
-      })
-    }
+    // Always restore — see note in the `useTheme` afterEach above.
+    Object.defineProperty(globalThis.window, 'matchMedia', {
+      configurable: true,
+      writable: true,
+      value: originalMatchMedia,
+    })
   })
 
   it('returns true for explicit dark', () => {

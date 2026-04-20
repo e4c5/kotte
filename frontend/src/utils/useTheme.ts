@@ -13,10 +13,18 @@
  *   - 'auto'  → mirror `prefers-color-scheme: dark` and react to changes
  */
 
-import { useEffect } from 'react'
+import { useEffect, useLayoutEffect } from 'react'
 import { useSettingsStore, type Theme } from '../stores/settingsStore'
 
 const DARK_CLASS = 'dark'
+
+// Apply the theme class synchronously after DOM mutations but *before* the
+// browser paints, so users with a persisted dark/auto theme never see a
+// light-themed flash on initial load. Falls back to `useEffect` in non-DOM
+// environments (SSR, tests without jsdom) to avoid React's
+// "useLayoutEffect does nothing on the server" warning.
+const useIsomorphicLayoutEffect =
+  typeof globalThis.window !== 'undefined' ? useLayoutEffect : useEffect
 
 function applyDarkClass(isDark: boolean): void {
   if (typeof document === 'undefined') return
@@ -45,7 +53,7 @@ export function isDarkMode(theme: Theme): boolean {
 export function useTheme(): void {
   const theme = useSettingsStore((state) => state.theme)
 
-  useEffect(() => {
+  useIsomorphicLayoutEffect(() => {
     applyDarkClass(isDarkMode(theme))
 
     if (theme !== 'auto') {
