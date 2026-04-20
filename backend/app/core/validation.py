@@ -1,7 +1,6 @@
 """Input validation utilities."""
 
 import re
-from typing import Optional
 
 from app.core.errors import APIException, ErrorCode, ErrorCategory
 from fastapi import status
@@ -167,7 +166,8 @@ def validate_variable_length_traversal(
     pattern = re.compile(r"\[\s*\*\s*(?:(\d+)?\s*\.\.\s*(\d+)?)?\s*\]")
     for match in pattern.finditer(cypher_query):
         token = match.group(0)
-        lower_bound = match.group(1)
+        # group(1) is the lower bound, currently unused — the lower bound is
+        # bounded implicitly by the upper bound and the engine's own minimum.
         upper_bound = match.group(2)
         has_range = ".." in token
 

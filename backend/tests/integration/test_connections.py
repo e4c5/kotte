@@ -2,7 +2,6 @@
 
 import pytest
 import httpx
-from unittest.mock import AsyncMock, MagicMock, patch
 
 
 class TestSavedConnections:

@@ -3,12 +3,11 @@
 import os
 import pytest
 import pytest_asyncio
-from typing import Generator, AsyncGenerator
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 from fastapi.testclient import TestClient
-from app.main import create_app
+
 from app.core.auth import session_manager
 from app.services.user import user_service
 
@@ -28,7 +27,6 @@ def test_app(monkeypatch):
     monkeypatch.setenv("ENVIRONMENT", "test")
     
     # Force reload of config and main modules to pick up new settings
-    import importlib
     import sys
     
     # Remove from cache if present
@@ -37,7 +35,11 @@ def test_app(monkeypatch):
         if module_name in sys.modules:
             del sys.modules[module_name]
     
-    # Now import and create app
+    # Import inside the fixture (after the sys.modules eviction above) so the
+    # local `create_app` binding references the freshly-loaded module with the
+    # test env vars applied. Hoisting this to the module level would freeze it
+    # against the import-time settings and silently bypass the CSRF/rate-limit
+    # overrides set via monkeypatch.
     from app.main import create_app
     app = create_app()
     # Starlette/AnyIO can deadlock in ASGITransport with stacked BaseHTTPMiddleware.

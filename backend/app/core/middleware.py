@@ -1,7 +1,6 @@
 """Request middleware."""
 
 import logging
-import secrets
 import time
 import uuid
 from collections import defaultdict
@@ -104,7 +103,7 @@ class MetricsMiddleware(BaseHTTPMiddleware):
         try:
             response = await call_next(request)
             status_code = response.status_code
-        except Exception as e:
+        except Exception:
             status_code = 500
             # Re-raise to let error handler deal with it
             raise

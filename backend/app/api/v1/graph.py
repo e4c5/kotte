@@ -7,11 +7,10 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends
 
-from app.core.auth import get_session
 from app.core.database import DatabaseConnection
 from app.core.deps import get_db_connection
 from app.core.errors import APIException, ErrorCode, ErrorCategory, translate_db_error
-from app.core.validation import validate_graph_name, validate_label_name, escape_identifier
+from app.core.validation import validate_graph_name, validate_label_name
 from app.models.graph import (
     GraphInfo,
     GraphMetadata,
@@ -22,8 +21,6 @@ from app.models.graph import (
     MetaGraphEdge,
     NodeExpandRequest,
     NodeExpandResponse,
-    NodeDeleteRequest,
-    NodeDeleteResponse,
     ShortestPathRequest,
     ShortestPathResponse,
 )

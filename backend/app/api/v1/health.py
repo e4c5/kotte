@@ -8,8 +8,6 @@ from fastapi import APIRouter, Depends, Response
 from pydantic import BaseModel
 
 from app.core.auth import get_session
-from app.core.database import DatabaseConnection
-from app.core.errors import APIException, ErrorCode, ErrorCategory
 from app.core.metrics import metrics
 
 logger = logging.getLogger(__name__)

@@ -9,7 +9,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from app.core.errors import APIException, ErrorCode
-from app.core.middleware import RequestIDMiddleware, CSRFMiddleware, RateLimitMiddleware
+from app.core.middleware import RequestIDMiddleware, RateLimitMiddleware
 
 
 class TestRequestIDMiddleware:
