@@ -8,6 +8,13 @@ export interface NodeContextMenuProps {
   onDelete?: (nodeId: string) => void
   onPin?: (nodeId: string) => void
   onHide?: (nodeId: string) => void
+  /**
+   * ROADMAP A11 phase 3 — wires the explicit "show only this node and its
+   * neighbourhood" gesture. The action is destructive on the canvas but
+   * reversible via the breadcrumb that ResultTab renders while the snapshot
+   * is held.
+   */
+  onIsolateNeighborhood?: (nodeId: string) => void
   isPinned?: boolean
   isHidden?: boolean
   onClose: () => void
@@ -21,6 +28,7 @@ export default function NodeContextMenu({
   onDelete,
   onPin,
   onHide,
+  onIsolateNeighborhood,
   isPinned = false,
   isHidden = false,
   onClose,
@@ -68,6 +76,11 @@ export default function NodeContextMenu({
 
   const handleHide = () => {
     onHide?.(nodeId)
+    onClose()
+  }
+
+  const handleIsolate = () => {
+    onIsolateNeighborhood?.(nodeId)
     onClose()
   }
 
@@ -219,6 +232,38 @@ export default function NodeContextMenu({
           {hideLabel}
         </button>
       )}
+      {onIsolateNeighborhood && (
+        <button
+          onClick={handleIsolate}
+          role="menuitem"
+          aria-label={`Show only node ${nodeId} and its neighbourhood`}
+          style={{
+            width: '100%',
+            padding: '8px 16px',
+            textAlign: 'left',
+            border: 'none',
+            backgroundColor: 'transparent',
+            cursor: 'pointer',
+            fontSize: '14px',
+            borderTop: (onExpand || onPin || onHide) ? '1px solid #eee' : 'none',
+            outline: 'none',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.backgroundColor = '#f0f0f0'
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.backgroundColor = 'transparent'
+          }}
+          onFocus={(e) => {
+            e.currentTarget.style.backgroundColor = '#f0f0f0'
+          }}
+          onBlur={(e) => {
+            e.currentTarget.style.backgroundColor = 'transparent'
+          }}
+        >
+          Show only this & its neighbourhood
+        </button>
+      )}
       {onDelete && (
         <button
           onClick={handleDelete}
@@ -233,7 +278,7 @@ export default function NodeContextMenu({
             cursor: 'pointer',
             fontSize: '14px',
             color: '#dc3545',
-            borderTop: (onExpand || onPin || onHide) ? '1px solid #eee' : 'none',
+            borderTop: (onExpand || onPin || onHide || onIsolateNeighborhood) ? '1px solid #eee' : 'none',
             outline: 'none',
           }}
           onMouseEnter={(e) => {

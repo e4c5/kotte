@@ -80,6 +80,8 @@ export default function GraphView({
     selectedNode,
     pinnedNodes,
     hiddenNodes,
+    cameraFocusAnchorIds,
+    clearCameraFocusAnchorIds,
   } = useGraphStore()
 
   // Apply filters
@@ -349,6 +351,94 @@ export default function GraphView({
       svg.selectAll('*').remove();
     }
   }, [filteredNodes, filteredEdges, pathNodeIds, pathEdgeIds, width, height, layout, nodeStyles, edgeStyles, selectedNode, pinnedNodes, edgeWidthScale, edgeWidthMapping.property])
+
+  // ROADMAP A11 phase 2 — camera focus on newly-added neighbourhood. Runs
+  // *after* the main mount effect (which always re-fits the whole canvas
+  // when the data changes), and overrides that fit by zooming into just
+  // the anchor union {clicked node ∪ added neighbours}. We defer one frame
+  // so the simulation has had a chance to seed positions for the new
+  // nodes — without it the bounds would be zero-area and the zoom would
+  // explode to scaleExtent's upper bound.
+  useEffect(() => {
+    if (cameraFocusAnchorIds.length === 0) return
+    const sim = simulationRef.current
+    const svg = svgSelectionRef.current
+    const zoom = zoomBehaviorRef.current
+    if (!sim || !svg || !zoom) return
+
+    const anchorSet = new Set(cameraFocusAnchorIds)
+    let pinTimer: ReturnType<typeof setTimeout> | null = null
+    const raf = requestAnimationFrame(() => {
+      const allNodes = sim.nodes()
+      const anchors = allNodes.filter((n) => anchorSet.has(n.id))
+      if (anchors.length === 0) {
+        clearCameraFocusAnchorIds()
+        return
+      }
+
+      const xs = anchors.map((n) => n.x ?? 0)
+      const ys = anchors.map((n) => n.y ?? 0)
+      const minX = Math.min(...xs)
+      const maxX = Math.max(...xs)
+      const minY = Math.min(...ys)
+      const maxY = Math.max(...ys)
+      // Single-anchor / tightly-clustered anchors collapse to a zero-area
+      // bounding box. Floor the content size at 200px so the zoom lands at
+      // a usable detail level (rather than scaleExtent's max of 20).
+      const contentW = Math.max(maxX - minX, 200)
+      const contentH = Math.max(maxY - minY, 200)
+      const margin = 60
+      const fitScale = 0.92 * Math.min(
+        (resolvedSize.width - 2 * margin) / contentW,
+        (resolvedSize.height - 2 * margin) / contentH,
+      )
+      const scale = Math.max(0.3, Math.min(2.0, fitScale))
+      const cx = (minX + maxX) / 2
+      const cy = (minY + maxY) / 2
+      const transform = d3.zoomIdentity
+        .translate(resolvedSize.width / 2 - scale * cx, resolvedSize.height / 2 - scale * cy)
+        .scale(scale)
+
+      applyingAutoTransformRef.current = true
+      // Mark as "user zoom" so the next simulation tick / re-fit doesn't
+      // immediately reset us back to the whole-canvas bounds.
+      userZoomedRef.current = true
+      svg
+        .transition()
+        .duration(400)
+        .on('end', () => {
+          applyingAutoTransformRef.current = false
+          clearCameraFocusAnchorIds()
+        })
+        .call(zoom.transform, transform)
+
+      // Briefly pin the clicked node (the first anchor) so the force layout
+      // settles around the focus rather than drifting it back to the centre.
+      const clicked = anchors[0]
+      if (clicked && layout === 'force') {
+        clicked.fx = clicked.x ?? 0
+        clicked.fy = clicked.y ?? 0
+        sim.alphaTarget(0.1).restart()
+        pinTimer = setTimeout(() => {
+          // Honour an explicit pin from `pinnedNodes` — don't release a node
+          // the user has separately decided should stay put.
+          if (!pinnedNodes.has(clicked.id)) {
+            clicked.fx = null
+            clicked.fy = null
+          }
+          sim.alphaTarget(0)
+        }, 2000)
+      }
+    })
+
+    return () => {
+      cancelAnimationFrame(raf)
+      if (pinTimer) clearTimeout(pinTimer)
+    }
+    // `filteredNodes` is in deps so the effect re-runs after the main mount
+    // effect has rebuilt the simulation with the new data — without it the
+    // first focus after an expand reads stale positions.
+  }, [cameraFocusAnchorIds, filteredNodes, layout, resolvedSize.width, resolvedSize.height, pinnedNodes, clearCameraFocusAnchorIds])
 
   const zoomBy = (factor: number) => {
     const svg = svgSelectionRef.current, zoom = zoomBehaviorRef.current

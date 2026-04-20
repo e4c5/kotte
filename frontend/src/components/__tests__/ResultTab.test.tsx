@@ -197,3 +197,97 @@ describe('ResultTab — viz limit enforcement (ROADMAP A5)', () => {
     expect(screen.getByRole('button', { name: /switch to graph view/i })).not.toBeDisabled()
   })
 })
+
+describe('ResultTab — isolate breadcrumb (ROADMAP A11.3)', () => {
+  it('renders no breadcrumb when previousGraphElements is unset', () => {
+    render(
+      <ResultTab
+        tab={makeTab()}
+        tablePageSize={50}
+        onOpenSettings={vi.fn()}
+        onViewModeChange={vi.fn()}
+        onNodeExpand={vi.fn()}
+        onNodeDelete={vi.fn()}
+        onRestoreFullResult={vi.fn()}
+        onExportReady={vi.fn()}
+      />,
+    )
+    expect(screen.queryByTestId('isolate-breadcrumb')).toBeNull()
+  })
+
+  it('renders the back-to-full-result breadcrumb when the tab holds a snapshot', () => {
+    const tab = makeTab({
+      // Any non-null snapshot is enough to flip the breadcrumb on; ResultTab
+      // only checks truthiness of `tab.previousGraphElements`.
+      previousGraphElements: {
+        nodes: [{ id: 'a', label: 'X', properties: {}, type: 'node' }],
+        edges: [],
+      },
+    })
+    render(
+      <ResultTab
+        tab={tab}
+        tablePageSize={50}
+        onOpenSettings={vi.fn()}
+        onViewModeChange={vi.fn()}
+        onNodeExpand={vi.fn()}
+        onNodeDelete={vi.fn()}
+        onRestoreFullResult={vi.fn()}
+        onExportReady={vi.fn()}
+      />,
+    )
+    const crumb = screen.getByTestId('isolate-breadcrumb')
+    expect(crumb).toBeInTheDocument()
+    expect(crumb.textContent).toMatch(/Back to full result/)
+  })
+
+  it('clicking the breadcrumb invokes onRestoreFullResult', async () => {
+    const onRestoreFullResult = vi.fn()
+    const tab = makeTab({
+      previousGraphElements: {
+        nodes: [{ id: 'a', label: 'X', properties: {}, type: 'node' }],
+        edges: [],
+      },
+    })
+    render(
+      <ResultTab
+        tab={tab}
+        tablePageSize={50}
+        onOpenSettings={vi.fn()}
+        onViewModeChange={vi.fn()}
+        onNodeExpand={vi.fn()}
+        onNodeDelete={vi.fn()}
+        onRestoreFullResult={onRestoreFullResult}
+        onExportReady={vi.fn()}
+      />,
+    )
+    await userEvent.click(
+      screen.getByRole('button', { name: /back to full result/i }),
+    )
+    expect(onRestoreFullResult).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not render the breadcrumb when onRestoreFullResult is not provided, even if a snapshot exists', () => {
+    // Defensive: ResultTab guards rendering on both the snapshot AND the
+    // handler, so omitting the handler hides the affordance entirely
+    // (no dead button).
+    const tab = makeTab({
+      previousGraphElements: {
+        nodes: [{ id: 'a', label: 'X', properties: {}, type: 'node' }],
+        edges: [],
+      },
+    })
+    render(
+      <ResultTab
+        tab={tab}
+        tablePageSize={50}
+        onOpenSettings={vi.fn()}
+        onViewModeChange={vi.fn()}
+        onNodeExpand={vi.fn()}
+        onNodeDelete={vi.fn()}
+        onExportReady={vi.fn()}
+      />,
+    )
+    expect(screen.queryByTestId('isolate-breadcrumb')).toBeNull()
+  })
+})

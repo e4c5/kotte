@@ -22,6 +22,18 @@ export interface QueryTab {
   pinned: boolean
   createdAt: number
   lastActivity: number
+  /**
+   * Snapshot of `result.graph_elements` taken when the user invokes
+   * `isolateNeighborhood` (ROADMAP A11 phase 3). Non-null while the canvas
+   * is showing the isolated subgraph; cleared by `restoreGraphElements`,
+   * which copies the snapshot back onto `result.graph_elements`.
+   *
+   * Stored as plain JSON-shaped data (not a typed alias of
+   * `QueryExecuteResponse['graph_elements']`) because zustand's `persist`
+   * middleware drops `result` on rehydrate; keeping the snapshot loosely
+   * typed avoids dragging the heavy result type onto every persisted tab.
+   */
+  previousGraphElements?: NonNullable<QueryExecuteResponse['graph_elements']> | null
 }
 
 interface QueryState {
@@ -72,6 +84,20 @@ interface QueryState {
     edges: GraphEdge[]
   ) => { addedNodeIds: string[]; addedEdgeIds: string[] }
   updateResult: (tabId: string, updater: (result: QueryExecuteResponse | null) => QueryExecuteResponse | null) => void
+  /**
+   * ROADMAP A11 phase 3 — explicit reversible "isolate" mode. Snapshots
+   * the current `tab.result.graph_elements` into `previousGraphElements`,
+   * then rewrites the canvas to show only `nodeId` and its incident edges
+   * (and the endpoints of those edges) from the **current** canvas. No API
+   * call — this is a deterministic client-side filter so it can't fail or
+   * surprise the user with new data.
+   */
+  isolateNeighborhood: (tabId: string, nodeId: string) => void
+  /**
+   * Restores the snapshot taken by `isolateNeighborhood` and clears it.
+   * No-op if no snapshot exists.
+   */
+  restoreGraphElements: (tabId: string) => void
   
   // Legacy support (for components that haven't been updated)
   result: QueryExecuteResponse | null
@@ -351,7 +377,81 @@ export const useQueryStore = create<QueryState>()(
 
           return { addedNodeIds: merged.added.nodeIds, addedEdgeIds: merged.added.edgeIds }
         },
-        
+
+        isolateNeighborhood: (tabId: string, nodeId: string) => {
+          const tab = get().tabs.find((t) => t.id === tabId)
+          if (!tab?.result?.graph_elements) return
+
+          const ge = tab.result.graph_elements
+          const nodes = (ge.nodes ?? []) as GraphNode[]
+          const edges = (ge.edges ?? []) as GraphEdge[]
+
+          // Only filter once — re-isolating without restoring first would
+          // overwrite the snapshot with the already-narrowed canvas, making
+          // restore a no-op. Bail out (the breadcrumb is the user's path back).
+          if (tab.previousGraphElements) return
+
+          // The clicked node + every node directly connected to it on the
+          // current canvas. Edges are filtered to those whose endpoints are
+          // both in the kept set; this lets the existing `GraphView`
+          // simulation render the subgraph without further changes.
+          const incidentEdges = edges.filter((e) => {
+            const s = typeof e.source === 'string' ? e.source : e.source.id
+            const t = typeof e.target === 'string' ? e.target : e.target.id
+            return s === nodeId || t === nodeId
+          })
+          const keepNodeIds = new Set<string>([nodeId])
+          for (const e of incidentEdges) {
+            const s = typeof e.source === 'string' ? e.source : e.source.id
+            const t = typeof e.target === 'string' ? e.target : e.target.id
+            keepNodeIds.add(s)
+            keepNodeIds.add(t)
+          }
+          const keptNodes = nodes.filter((n) => keepNodeIds.has(n.id))
+
+          // If the clicked node has no edges on the current canvas we still
+          // isolate (the user gets just that node back). They can step out
+          // via the breadcrumb.
+          get().updateTab(tabId, {
+            previousGraphElements: ge as NonNullable<QueryExecuteResponse['graph_elements']>,
+          })
+          get().updateResult(tabId, (currentResult) => {
+            if (!currentResult) return null
+            return {
+              ...currentResult,
+              graph_elements: {
+                ...currentResult.graph_elements,
+                nodes: keptNodes,
+                edges: incidentEdges,
+              } as QueryExecuteResponse['graph_elements'],
+              stats: {
+                ...currentResult.stats,
+                nodes_extracted: keptNodes.length,
+                edges_extracted: incidentEdges.length,
+              },
+            }
+          })
+        },
+
+        restoreGraphElements: (tabId: string) => {
+          const tab = get().tabs.find((t) => t.id === tabId)
+          if (!tab?.previousGraphElements) return
+          const snapshot = tab.previousGraphElements
+          get().updateResult(tabId, (currentResult) => {
+            if (!currentResult) return null
+            return {
+              ...currentResult,
+              graph_elements: snapshot,
+              stats: {
+                ...currentResult.stats,
+                nodes_extracted: snapshot.nodes?.length ?? 0,
+                edges_extracted: snapshot.edges?.length ?? 0,
+              },
+            }
+          })
+          get().updateTab(tabId, { previousGraphElements: null })
+        },
+
         // Legacy support
         clearResult: () => {
           const activeTab = getActiveTab()
@@ -371,6 +471,10 @@ export const useQueryStore = create<QueryState>()(
           loading: false,
           error: null,
           requestId: null,
+          // `previousGraphElements` is a snapshot of `result` (which we're
+          // dropping above) so it must drop with it — otherwise restoring an
+          // isolate would resurrect a snapshot whose live counterpart is gone.
+          previousGraphElements: null,
         })),
         activeTabId: state.activeTabId,
       }),

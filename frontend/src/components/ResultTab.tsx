@@ -23,6 +23,14 @@ interface ResultTabProps {
   onNodeSelect?: (node: GraphNode) => void
   onNodeDoubleClick?: (node: GraphNode) => void
   onEdgeSelect?: (edge: GraphEdge) => void
+  /**
+   * ROADMAP A11 phase 3 — invoked from the node context menu to switch the
+   * canvas to the local-neighbourhood view. ResultTab forwards the click
+   * through; the actual snapshotting + rewriting lives in `queryStore`.
+   */
+  onNodeIsolate?: (nodeId: string) => void
+  /** Companion to `onNodeIsolate` — restores the snapshot. */
+  onRestoreFullResult?: () => void
   onExportReady: (exportFn: () => Promise<void>) => void
 }
 
@@ -37,6 +45,8 @@ export default function ResultTab({
   onNodeSelect,
   onNodeDoubleClick,
   onEdgeSelect,
+  onNodeIsolate,
+  onRestoreFullResult,
   onExportReady,
 }: ResultTabProps) {
   const [showControls, setShowControls] = useState(false)
@@ -160,9 +170,15 @@ export default function ResultTab({
     toggleHideNode(nodeId)
   }
 
+  const handleNodeIsolate = (nodeId: string) => {
+    onNodeIsolate?.(nodeId)
+  }
+
   const handleNodeContextMenu = (node: GraphNode, event: MouseEvent) => {
     setContextMenu({ nodeId: node.id, x: event.clientX, y: event.clientY })
   }
+
+  const isIsolated = !!tab.previousGraphElements
 
   const handleExportReady = (exportFn: () => Promise<void>) => {
     setExportGraph(() => exportFn)
@@ -258,6 +274,25 @@ export default function ResultTab({
         )}
       </div>
 
+      {isIsolated && onRestoreFullResult && (
+        <div
+          data-testid="isolate-breadcrumb"
+          className="shrink-0 px-3 py-1.5 bg-zinc-800/90 border-b border-zinc-700 text-zinc-300 text-sm flex items-center gap-2"
+        >
+          <button
+            type="button"
+            onClick={onRestoreFullResult}
+            className="px-2 py-1 rounded border border-zinc-600 hover:bg-zinc-700 text-xs font-medium text-zinc-100"
+            aria-label="Back to full result"
+          >
+            ← Back to full result
+          </button>
+          <span className="text-zinc-500 text-xs">
+            Showing only the selected node and its neighbourhood.
+          </span>
+        </div>
+      )}
+
       {vizUnavailableReason && (
         <output
           data-testid="viz-unavailable-banner"
@@ -308,6 +343,9 @@ export default function ResultTab({
                   onDelete={handleNodeDelete}
                   onPin={handleNodePin}
                   onHide={handleNodeHide}
+                  onIsolateNeighborhood={
+                    onNodeIsolate && !isIsolated ? handleNodeIsolate : undefined
+                  }
                   isPinned={pinnedNodes.has(contextMenu.nodeId)}
                   isHidden={hiddenNodes.has(contextMenu.nodeId)}
                   onClose={closeContextMenu}

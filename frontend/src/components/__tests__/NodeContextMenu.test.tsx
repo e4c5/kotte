@@ -83,13 +83,14 @@ describe('NodeContextMenu — Pin/Hide actions (ROADMAP A3)', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
-  it('renders Expand, Pin, Hide, Delete in that order when all handlers are wired', () => {
+  it('renders Expand, Pin, Hide, Isolate, Delete in that order when all handlers are wired', () => {
     render(
       <NodeContextMenu
         {...baseProps}
         onExpand={vi.fn()}
         onPin={vi.fn()}
         onHide={vi.fn()}
+        onIsolateNeighborhood={vi.fn()}
         onDelete={vi.fn()}
       />,
     )
@@ -105,7 +106,55 @@ describe('NodeContextMenu — Pin/Hide actions (ROADMAP A3)', () => {
       'Expand Neighborhood',
       'Pin Node',
       'Hide Node',
+      'Show only this & its neighbourhood',
       'Delete Node',
     ])
+  })
+})
+
+describe('NodeContextMenu — Isolate neighbourhood (ROADMAP A11.3)', () => {
+  const baseProps = {
+    x: 100,
+    y: 100,
+    nodeId: 'node-7',
+    onClose: vi.fn(),
+  }
+
+  it('renders the Show only this & its neighbourhood entry when onIsolateNeighborhood is provided', () => {
+    render(
+      <NodeContextMenu {...baseProps} onIsolateNeighborhood={vi.fn()} />,
+    )
+    const btn = screen.getByRole('menuitem', {
+      name: /Show only node node-7 and its neighbourhood/i,
+    })
+    expect(btn).toBeInTheDocument()
+    expect(btn.textContent).toBe('Show only this & its neighbourhood')
+  })
+
+  it('omits the Isolate entry when no handler is provided', () => {
+    render(<NodeContextMenu {...baseProps} onExpand={vi.fn()} />)
+    expect(
+      screen.queryByRole('menuitem', { name: /Show only node/i }),
+    ).toBeNull()
+  })
+
+  it('invokes onIsolateNeighborhood with the nodeId and closes the menu', async () => {
+    const onIsolateNeighborhood = vi.fn()
+    const onClose = vi.fn()
+    render(
+      <NodeContextMenu
+        {...baseProps}
+        onClose={onClose}
+        onIsolateNeighborhood={onIsolateNeighborhood}
+      />,
+    )
+    await userEvent.click(
+      screen.getByRole('menuitem', {
+        name: /Show only node node-7 and its neighbourhood/i,
+      }),
+    )
+    expect(onIsolateNeighborhood).toHaveBeenCalledTimes(1)
+    expect(onIsolateNeighborhood).toHaveBeenCalledWith('node-7')
+    expect(onClose).toHaveBeenCalledTimes(1)
   })
 })
