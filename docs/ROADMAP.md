@@ -297,16 +297,30 @@ The work splits cleanly into three PRs, sized to ship and merge independently.
 
 Bigger but well-scoped. Listed as headline tickets here; expand into A-style detail when starting. **Total: ~2 weeks for one engineer.**
 
-### B1. GitHub Actions: `backend-ci.yml`
+### B1. GitHub Actions: `backend-ci.yml` — ✅ partial (PR #37 on `feat/b1-b2-ci-tests-and-lint`, bundled with B2)
 
 - Jobs: `lint` (ruff + black + mypy), `unit` (pytest, no DB), `integration` (pytest with `services: postgres-age` container, `USE_REAL_TEST_DB=true`).
 - Use `apache/age:PG16_latest` as service.
 - Cache `~/.cache/pip` and `backend/venv`.
 
-### B2. GitHub Actions: `frontend-ci.yml`
+**Status (PR #37):** `lint` (ruff only) and `unit` jobs shipped. Path-filtered to `backend/**`, Python 3.11 with pip cache, concurrency-cancellation enabled. Pre-existing ruff debt fully cleared so the gate is green from day one (38 autofixes + 3 dead-variable deletions in `app/api/v1/auth.py`, `app/api/v1/session.py`, `app/core/validation.py`). 234/234 unit tests run on every push/PR. Three sub-tickets carved out for follow-up so this PR didn't balloon:
+
+- **B1.1** — enable `black --check` in the lint job. 67 files would reformat today; the formatting pass is mechanical but a 67-file diff in the same PR as the workflow files would have made review impossible. Plan: one PR that runs `black .` across the whole tree and uncomments the `# - name: black --check` step in `backend-ci.yml`.
+- **B1.2** — enable `mypy app` in the lint job. The local venv is on Python 3.10 so mypy bails on PEP-604 syntax in `app/core/metrics.py:93` before reaching real coverage; need to do the triage on a 3.11 venv first to size the fix work.
+- **B1.3** — wire the integration job with `apache/age:PG16_latest` as a service container and `USE_REAL_TEST_DB=true`. Held back because the existing integration suite still has mock-vs-real branching (see `backend/tests/integration/conftest.py::connected_client`) that needs auditing before we point CI at a real DB — otherwise we'd run the mocked path and gain no coverage from the service container.
+
+### B2. GitHub Actions: `frontend-ci.yml` — ✅ shipped (PR #37, bundled with B1)
 
 - `lint` (eslint), `typecheck` (`tsc --noEmit`), `test` (`vitest run`), `build` (`vite build`).
 - Cache `~/.npm` keyed by `package-lock.json`.
+
+**Status (PR #37):** all four jobs shipped, path-filtered to `frontend/**`, Node 20 with npm cache, concurrency-cancellation enabled. Pre-existing tsc + eslint debt cleared so the gate is green from day one:
+
+- 4 tsc errors fixed: `GraphView.tsx` widened `getEdgeStyle`/`getEdgeCaption` `edgeWidthProperty` to `string | null | undefined` to accept `edgeWidthMapping.property`; `ResultTab.test.tsx` GraphNode literal completed with `properties` + `type`; `GraphView.test.tsx` unused `name` → `_name`; `api.test.ts` `global.sessionStorage` → `globalThis.sessionStorage`.
+- 3 eslint errors + 3 warnings handled via inline `// eslint-disable-next-line` directives with one-line justifications: 7 pre-existing `@typescript-eslint/no-explicit-any` sites (`apiCache.ts` cache map, `graphStyles.ts` d3 scale type ×2, `SettingsModal.tsx` select cast, `GraphView.tsx` d3-force teardown, `GraphView.test.tsx` simulation/selection mocks ×3); 2 intentional mount-only `useEffect`s (`WorkspacePage.tsx`, `MetadataSidebar.tsx`); 1 `react-refresh/only-export-components` co-location (`getQueryParams` in `QueryEditor.tsx`).
+- Added `argsIgnorePattern: '^_'` + `varsIgnorePattern: '^_'` to `.eslintrc.cjs` so `_`-prefixed unused args are accepted as the convention.
+
+The `--max-warnings 0` ratchet stays in place; the `no-explicit-any` rule stays at `error` severity. Each disable-next-line carries a comment explaining why, so reviewers can audit the ratchet's edges.
 
 ### B3. GitHub Actions: `container.yml`
 
@@ -452,7 +466,7 @@ Only if you intend Kotte to be deployed beyond a single analyst. **Total: ~4–6
 
 ## Suggested execution order
 
-> **Status note (2026-04-19):** the week-numbered plan below was the original sequencing proposal. Actual progress is tracked in the **[Progress checklist](#progress-checklist)** below — that's the authoritative source for what's done. As of this writing, **all of Milestone A is shipped** (A1–A11 inclusive); week 2 has shipped A5/A8/A9/A10 (B1/B2 not yet started). The "Path 1" decision (finish the rest of Milestone A, then start Milestone B) is executed; the next active work item is B1/B2 (CI for tests/lint). Smaller related tickets are bundled into one PR (A3+A5 shipped together as the "graph-canvas safety" pair; A11.2+A11.3 shipped together as the "double-click follow-through" pair).
+> **Status note (2026-04-19):** the week-numbered plan below was the original sequencing proposal. Actual progress is tracked in the **[Progress checklist](#progress-checklist)** below — that's the authoritative source for what's done. As of this writing, **all of Milestone A is shipped** (A1–A11 inclusive) and **Milestone B's CI band (B1+B2) is in PR #37**; B1 is partial — the lint/unit jobs are wired but `black --check` (B1.1), `mypy app` (B1.2), and the AGE-backed integration job (B1.3) are deferred to follow-up tickets so the day-one CI gate stays green rather than gating on pre-existing debt. Next active work after PR #37 lands: B3–B6 (containers + compose split) or B7 (Alembic migrations), depending on which deliverable users hit first. Smaller related tickets are bundled into one PR (A3+A5 shipped together as the "graph-canvas safety" pair; A11.2+A11.3 as the "double-click follow-through" pair; B1+B2 as the "CI for tests and lint" pair).
 
 1. **Week 1**: A1, A2, A3, A4, A6, A7, A11 phases 2–3 (UI quick wins + the AGE bug + finishing the additive double-click work). A11 phase 1 already shipped.
 2. **Week 2**: A5, A8, A9, A10 + start B1/B2 (CI for tests/lint).
@@ -487,8 +501,11 @@ Toggle `- [ ]` → `- [x]` as items ship, and add a short **Status** line under 
 
 ### Milestone B — CI and production deployment are real
 
-- [ ] **B1** — GitHub Actions: `backend-ci.yml`
-- [ ] **B2** — GitHub Actions: `frontend-ci.yml`
+- [~] **B1** — GitHub Actions: `backend-ci.yml` (PR #37 on `feat/b1-b2-ci-tests-and-lint`, bundled with B2; lint=ruff and unit jobs shipped, sub-tickets B1.1/B1.2/B1.3 below)
+  - [ ] **B1.1** — enable `black --check .` in the lint job (deferred: 67 files would reformat; do the formatting pass + step uncomment in one PR)
+  - [ ] **B1.2** — enable `mypy app` in the lint job (deferred: needs Python 3.11 venv triage; local 3.10 hides real coverage behind a PEP-604 syntax error in `app/core/metrics.py:93`)
+  - [ ] **B1.3** — wire the integration job with `apache/age:PG16_latest` service container + `USE_REAL_TEST_DB=true` (deferred: `tests/integration/conftest.py::connected_client` still has mock-vs-real branching that needs auditing first, otherwise the service container would be ignored)
+- [x] **B2** — GitHub Actions: `frontend-ci.yml` (PR #37, bundled with B1; eslint/typecheck/vitest/vite-build all wired, pre-existing tsc + eslint debt cleared so the gate is green on day one)
 - [ ] **B3** — GitHub Actions: `container.yml`
 - [ ] **B4** — Multi-stage backend image
 - [ ] **B5** — Multi-stage frontend image (production)

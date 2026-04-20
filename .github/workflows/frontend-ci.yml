@@ -1,0 +1,106 @@
+# ROADMAP B2 — Frontend CI
+#
+# Four jobs run on every push to main and every PR that touches the frontend:
+#   - lint       : eslint (strict; --max-warnings 0)
+#   - typecheck  : tsc --noEmit
+#   - test       : vitest run
+#   - build      : vite production build (also re-runs tsc as the gate)
+#
+# Each job re-installs deps but shares the npm cache. We could fold typecheck
+# into build (build does `tsc && vite build`) but keeping them separate makes
+# CI failure attribution one-glance and lets test+build run in parallel after
+# typecheck succeeds.
+
+name: Frontend CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/frontend-ci.yml'
+  pull_request:
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/frontend-ci.yml'
+
+concurrency:
+  group: frontend-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: frontend
+
+jobs:
+  lint:
+    name: Lint (eslint)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: eslint
+        run: npm run lint
+
+  typecheck:
+    name: Typecheck (tsc)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: tsc --noEmit
+        run: npx tsc --noEmit
+
+  test:
+    name: Unit tests (vitest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: vitest
+        run: npm run test:run
+
+  build:
+    name: Production build (vite)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: vite build
+        run: npm run build
