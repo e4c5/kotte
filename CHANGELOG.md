@@ -12,6 +12,79 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ## [Unreleased]
 
 ### Added
+- **Black formatting pass + pre-commit hooks (ROADMAP B1.1 + B8)** — two
+  paired improvements that close a Milestone B sub-ticket each and wire
+  the local commit-time ratchet that prevents the lint debt from
+  re-accumulating.
+  - **B1.1 — backend black reformat.** `black app tests` applied across
+    the backend tree using the existing `[tool.black]` config
+    (line-length 100, target-version py311 in
+    `backend/pyproject.toml`). 67 files reformatted, 8 left unchanged,
+    net −49 lines — purely mechanical, zero behavioural deltas. The
+    `black --check .` step in `.github/workflows/backend-ci.yml` is now
+    uncommented and runs alongside `ruff check .` on every push/PR.
+    Deferral comment in the workflow header trimmed from B1.1–B1.3 to
+    B1.2–B1.3 to reflect the new state. The reformat commit is
+    deliberately isolated (`style(backend): apply black ...`) so `git
+    blame --ignore-revs` can suppress it in the future — record the
+    commit SHA in `.git-blame-ignore-revs` if you add that file.
+    Verified: `ruff check .` clean, `pytest -m "not integration and
+    not performance"` 238 passed / 1 skipped / 8 deselected.
+  - **B8 — pre-commit config.** New `.pre-commit-config.yaml` at repo
+    root wires three repo groups so the CI gates mirror into the
+    developer's pre-commit hook path:
+    - `pre-commit/pre-commit-hooks v6.0.0` for generic hygiene
+      (trailing-whitespace — with `\.md$` excluded so hard line breaks
+      survive — end-of-file-fixer, check-yaml with multi-doc support,
+      check-json with `tsconfig*.json` excluded because those files
+      are JSONC (comments + trailing commas) and Python's stdlib can't
+      parse them, check-toml, check-merge-conflict,
+      check-added-large-files with a 500 KB ceiling, mixed-line-ending
+      normalising to LF).
+    - `psf/black-pre-commit-mirror 26.3.1` running `black` scoped via
+      `files: ^backend/(app|tests|scripts)/` with
+      `--config backend/pyproject.toml` so the canonical 100-char
+      target-py311 config is reused — no dual source of truth.
+    - `astral-sh/ruff-pre-commit v0.15.11` running `ruff --fix` with
+      the same scoping and config reuse as black.
+    - A `local` hook for the frontend that shells out to `npx eslint
+      --max-warnings 0` on staged `frontend/**/*.{ts,tsx}` paths,
+      stripping the `frontend/` prefix before cd-ing in so eslint
+      resolves `.eslintrc.cjs` + `frontend/node_modules/` correctly.
+      Kept as a local (non-mirror) hook so we reuse the already-
+      installed plugin set (`@typescript-eslint`, `react-hooks`,
+      `react-refresh`) rather than pinning a duplicate copy.
+    - `default_language_version.python` is deliberately **not** pinned
+      to 3.11 — black's output is determined by its own version + the
+      `[tool.black] target-version` config, not the Python interpreter
+      running it, and pinning here locks out contributors on 3.10 /
+      3.12 / 3.13 distros. CI still enforces the canonical output on
+      3.11.
+  - **Hygiene auto-fixes on first run.** `pre-commit run --all-files`
+    caught 9 files with trailing whitespace and 28 files missing a
+    final newline — all auto-fixed and committed alongside the hook
+    config. Zero logic changes; pure whitespace.
+  - **Playwright artifact de-tracked.** `frontend/test-results/
+    .last-run.json` was previously tracked in git by accident (the
+    Playwright last-run state file, rewritten on every local test
+    invocation). Removed with `git rm --cached` and both
+    `frontend/test-results/` + `frontend/playwright-report/` added to
+    `.gitignore` so future runs don't re-leak.
+  - **Makefile + dependency wiring.** `backend/requirements-dev.txt`
+    (and the matching `[project.optional-dependencies].dev` table in
+    `backend/pyproject.toml`) gain `pre-commit>=3.5.0` so
+    `make install-backend` pulls the tool automatically. Three new
+    `make` targets: `install-hooks` (wraps `pre-commit install` — the
+    one-time setup step new contributors run after
+    `install-backend`), `precommit-run` (`pre-commit run --all-files`
+    for whole-tree verification), and `format-backend` (convenience
+    wrapper for `black app tests` without needing the hook). Help
+    output updated.
+  - **Validated locally.** Fresh `pre-commit install` + `pre-commit
+    run --all-files` → all 11 hooks green. Backend unit suite re-run
+    after the whitespace/EOF fixes: still 238 passed. No ruff or
+    eslint regressions.
+
 - **Docker Compose split into dev / prod (ROADMAP B6)** — `deployment/
   docker-compose.yml` removed and replaced by two explicit files so the
   inner-loop and deployment stacks diverge cleanly.

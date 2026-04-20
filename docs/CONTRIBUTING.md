@@ -47,7 +47,14 @@ Before you begin, ensure you have:
    ```bash
    make install-backend
    make install-frontend
+   make install-hooks       # wires black + ruff + eslint + hygiene hooks into `git commit`
    ```
+
+   The pre-commit hooks mirror the CI lint gates (black, ruff,
+   trailing-whitespace, EOF newline, JSON/YAML/TOML parsing, frontend
+   eslint) so formatting / lint regressions are caught locally instead
+   of in CI. Run `make precommit-run` to verify the whole tree at any
+   time.
 
 4. **Start Development Servers**
    ```bash
@@ -180,7 +187,11 @@ cd frontend && npm test -- --run
 
 ## Coding Standards
 
-- **Python**: PEP 8, Type Hints, Google-style docstrings.
+- **Python**: PEP 8, Type Hints, Google-style docstrings. Formatting is
+  enforced by `black` (line-length 100, target-version py311 — see
+  `[tool.black]` in `backend/pyproject.toml`) and linted by `ruff`. Both
+  run via the `make install-hooks` pre-commit hook and the backend CI
+  workflow. Run `make format-backend` to reformat manually.
 - **TypeScript**: 2 spaces, single quotes, explicit types, functional components.
 - **Security**: Never use f-strings for queries. Use `%(name)s`. Validate all identifiers.
 
