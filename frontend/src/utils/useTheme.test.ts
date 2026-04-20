@@ -35,13 +35,13 @@ function createFakeMedia(matches: boolean): FakeMediaQueryList {
 }
 
 describe('useTheme', () => {
-  let originalMatchMedia: typeof window.matchMedia | undefined
+  let originalMatchMedia: typeof globalThis.window.matchMedia | undefined
   let fakeMedia: FakeMediaQueryList
 
   beforeEach(() => {
-    originalMatchMedia = window.matchMedia
+    originalMatchMedia = globalThis.window.matchMedia
     fakeMedia = createFakeMedia(false)
-    Object.defineProperty(window, 'matchMedia', {
+    Object.defineProperty(globalThis.window, 'matchMedia', {
       configurable: true,
       writable: true,
       value: vi.fn().mockReturnValue(fakeMedia),
@@ -52,7 +52,7 @@ describe('useTheme', () => {
 
   afterEach(() => {
     if (originalMatchMedia) {
-      Object.defineProperty(window, 'matchMedia', {
+      Object.defineProperty(globalThis.window, 'matchMedia', {
         configurable: true,
         writable: true,
         value: originalMatchMedia,
@@ -135,7 +135,7 @@ describe('useTheme', () => {
     // Simulate Safari < 14 where addEventListener isn't available on MediaQueryList.
     const mutable = legacyMedia as unknown as Record<string, unknown>
     delete mutable.addEventListener
-    Object.defineProperty(window, 'matchMedia', {
+    Object.defineProperty(globalThis.window, 'matchMedia', {
       configurable: true,
       writable: true,
       value: vi.fn().mockReturnValue(legacyMedia),
@@ -151,15 +151,15 @@ describe('useTheme', () => {
 })
 
 describe('isDarkMode', () => {
-  let originalMatchMedia: typeof window.matchMedia | undefined
+  let originalMatchMedia: typeof globalThis.window.matchMedia | undefined
 
   beforeEach(() => {
-    originalMatchMedia = window.matchMedia
+    originalMatchMedia = globalThis.window.matchMedia
   })
 
   afterEach(() => {
     if (originalMatchMedia) {
-      Object.defineProperty(window, 'matchMedia', {
+      Object.defineProperty(globalThis.window, 'matchMedia', {
         configurable: true,
         writable: true,
         value: originalMatchMedia,
@@ -176,14 +176,14 @@ describe('isDarkMode', () => {
   })
 
   it('mirrors matchMedia in auto mode', () => {
-    Object.defineProperty(window, 'matchMedia', {
+    Object.defineProperty(globalThis.window, 'matchMedia', {
       configurable: true,
       writable: true,
       value: vi.fn().mockReturnValue(createFakeMedia(true)),
     })
     expect(isDarkMode('auto')).toBe(true)
 
-    Object.defineProperty(window, 'matchMedia', {
+    Object.defineProperty(globalThis.window, 'matchMedia', {
       configurable: true,
       writable: true,
       value: vi.fn().mockReturnValue(createFakeMedia(false)),

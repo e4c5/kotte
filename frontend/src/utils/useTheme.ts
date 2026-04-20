@@ -35,10 +35,11 @@ function applyDarkClass(isDark: boolean): void {
 export function isDarkMode(theme: Theme): boolean {
   if (theme === 'dark') return true
   if (theme === 'light') return false
-  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+  const win = globalThis.window
+  if (typeof win === 'undefined' || typeof win.matchMedia !== 'function') {
     return false
   }
-  return window.matchMedia('(prefers-color-scheme: dark)').matches
+  return win.matchMedia('(prefers-color-scheme: dark)').matches
 }
 
 export function useTheme(): void {
@@ -51,11 +52,12 @@ export function useTheme(): void {
       // Static theme — no need to listen for OS-level changes.
       return
     }
-    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+    const win = globalThis.window
+    if (typeof win === 'undefined' || typeof win.matchMedia !== 'function') {
       return
     }
 
-    const media = window.matchMedia('(prefers-color-scheme: dark)')
+    const media = win.matchMedia('(prefers-color-scheme: dark)')
     const onChange = (event: MediaQueryListEvent): void => {
       applyDarkClass(event.matches)
     }
@@ -65,7 +67,9 @@ export function useTheme(): void {
       media.addEventListener('change', onChange)
       return () => media.removeEventListener('change', onChange)
     }
-    media.addListener(onChange)
-    return () => media.removeListener(onChange)
+    // Safari < 14 only exposes the deprecated addListener/removeListener APIs;
+    // they remain the only way to subscribe on those browsers.
+    media.addListener(onChange) // NOSONAR: legacy Safari fallback (typescript:S1874)
+    return () => media.removeListener(onChange) // NOSONAR: legacy Safari fallback (typescript:S1874)
   }, [theme])
 }
