@@ -24,7 +24,7 @@ const DARK_CLASS = 'dark'
 // environments (SSR, tests without jsdom) to avoid React's
 // "useLayoutEffect does nothing on the server" warning.
 const useIsomorphicLayoutEffect =
-  typeof globalThis.window !== 'undefined' ? useLayoutEffect : useEffect
+  globalThis.window === undefined ? useEffect : useLayoutEffect
 
 function applyDarkClass(isDark: boolean): void {
   if (typeof document === 'undefined') return
@@ -44,7 +44,7 @@ export function isDarkMode(theme: Theme): boolean {
   if (theme === 'dark') return true
   if (theme === 'light') return false
   const win = globalThis.window
-  if (typeof win === 'undefined' || typeof win.matchMedia !== 'function') {
+  if (win === undefined || typeof win.matchMedia !== 'function') {
     return false
   }
   return win.matchMedia('(prefers-color-scheme: dark)').matches
@@ -61,7 +61,7 @@ export function useTheme(): void {
       return
     }
     const win = globalThis.window
-    if (typeof win === 'undefined' || typeof win.matchMedia !== 'function') {
+    if (win === undefined || typeof win.matchMedia !== 'function') {
       return
     }
 
