@@ -62,9 +62,7 @@ class DatabaseConnection:
         """Configure a connection for Apache AGE. Mandatory for every connection in the pool."""
         async with conn.cursor() as cur:
             # Verify AGE extension
-            await cur.execute(
-                "SELECT EXISTS(SELECT 1 FROM pg_extension WHERE extname = 'age')"
-            )
+            await cur.execute("SELECT EXISTS(SELECT 1 FROM pg_extension WHERE extname = 'age')")
             result = await cur.fetchone()
             if not result or not result.get("exists"):
                 raise APIException(
@@ -177,7 +175,7 @@ class DatabaseConnection:
         if self._metrics_task:
             self._metrics_task.cancel()
             self._metrics_task = None
-            
+
         if self._pool:
             await self._pool.close()
             self._pool = None
@@ -291,9 +289,7 @@ class DatabaseConnection:
                 raise
             except Exception:
                 query_hash = hashlib.sha256(query.encode()).hexdigest()[:8]
-                logger.error(
-                    "execute_command failed (hash: %s)", query_hash, exc_info=True
-                )
+                logger.error("execute_command failed (hash: %s)", query_hash, exc_info=True)
                 if rollback_on_error:
                     await conn.rollback()
                 raise
@@ -330,9 +326,7 @@ class DatabaseConnection:
         start_clock = time.time()
         async with conn.cursor() as cur:
             try:
-                await asyncio.wait_for(
-                    cur.execute(query, params), timeout=time_limit_seconds
-                )
+                await asyncio.wait_for(cur.execute(query, params), timeout=time_limit_seconds)
                 result = await cur.fetchone()
                 metrics.record_db_query(time.time() - start_clock)
                 return first_value(result)
@@ -358,9 +352,7 @@ class DatabaseConnection:
             )
         async with self.connection() as ac:
             try:
-                return await self._execute_scalar_on_conn(
-                    ac, query, params, time_limit_seconds
-                )
+                return await self._execute_scalar_on_conn(ac, query, params, time_limit_seconds)
             except Exception:
                 await ac.rollback()
                 raise

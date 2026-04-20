@@ -21,4 +21,3 @@ router.include_router(delete_node_router, prefix="/graphs", tags=["graphs"])
 router.include_router(query.router, prefix="/queries", tags=["queries"])
 router.include_router(query_stream_router, prefix="/queries", tags=["queries"])
 router.include_router(import_router, prefix="/import", tags=["import"])
-

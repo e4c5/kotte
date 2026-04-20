@@ -17,6 +17,7 @@ requires_real_db = pytest.mark.skipif(
     reason="Requires real test database (set USE_REAL_TEST_DB=true)",
 )
 
+
 @pytest.mark.integration
 @pytest.mark.asyncio
 @requires_real_db

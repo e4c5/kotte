@@ -12,6 +12,7 @@ requires_real_db = pytest.mark.skipif(
     reason="Requires real test database (set USE_REAL_TEST_DB=true)",
 )
 
+
 @pytest.mark.integration
 class TestDatabaseConnection:
     """Integration tests for database connection management."""
@@ -39,7 +40,7 @@ class TestDatabaseConnection:
             # Skip if database is not available (expected in CI/development)
             pytest.skip(f"Database not available: {e}")
         finally:
-            if hasattr(conn, '_conn') and conn._conn is not None:
+            if hasattr(conn, "_conn") and conn._conn is not None:
                 await conn.disconnect()
 
     @pytest.mark.asyncio
@@ -62,7 +63,7 @@ class TestDatabaseConnection:
             # Skip if database is not available
             pytest.skip(f"Database not available: {e}")
         finally:
-            if hasattr(conn, '_conn') and conn._conn is not None:
+            if hasattr(conn, "_conn") and conn._conn is not None:
                 await conn.disconnect()
 
     @pytest.mark.asyncio
@@ -79,15 +80,15 @@ class TestDatabaseConnection:
         try:
             await conn.connect()
             await conn.begin_transaction()
-            
+
             # Execute a query that would fail
             try:
                 await conn.execute_query("SELECT * FROM nonexistent_table")
             except Exception:
                 pass
-            
+
             await conn.rollback_transaction()
-            
+
             # Connection should still be usable
             result = await conn.execute_query("SELECT 1")
             assert len(result) > 0
@@ -95,7 +96,7 @@ class TestDatabaseConnection:
             # Skip if database is not available
             pytest.skip(f"Database not available: {e}")
         finally:
-            if hasattr(conn, '_conn') and conn._conn is not None:
+            if hasattr(conn, "_conn") and conn._conn is not None:
                 await conn.disconnect()
 
     @pytest.mark.asyncio

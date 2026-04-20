@@ -23,24 +23,26 @@ async def delete_node(
     graph_name: str,
     node_id: str,
     db_conn: Annotated[DatabaseConnection, Depends(get_db_connection)],
-    detach: bool = Query(default=False, description="If true, delete node and all its relationships"),
+    detach: bool = Query(
+        default=False, description="If true, delete node and all its relationships"
+    ),
 ) -> NodeDeleteResponse:
     """
     Delete a node from the graph.
-    
+
     Args:
         graph_name: Name of the graph
         node_id: ID of the node to delete
         detach: If true, delete node and all its relationships. If false, only delete if no relationships exist.
         db_conn: Database connection
-    
+
     Returns:
         NodeDeleteResponse with deletion status
     """
     try:
         # Validate graph name format (prevents SQL injection)
         validated_graph_name = validate_graph_name(graph_name)
-        
+
         # Validate node_id is numeric (AGE uses integer IDs)
         try:
             node_id_int = int(node_id)
@@ -51,7 +53,7 @@ async def delete_node(
                 category=ErrorCategory.VALIDATION,
                 status_code=422,
             )
-        
+
         node_id_param = {"node_id": node_id_int}
         graph_check = """
             SELECT graphid FROM ag_catalog.ag_graph WHERE name = %(graph_name)s
@@ -94,9 +96,11 @@ async def delete_node(
             )
             edges_deleted = 0
             if edge_count_result:
-                first_val = next(
-                    iter(edge_count_result[0].values()), None
-                ) if edge_count_result[0] else None
+                first_val = (
+                    next(iter(edge_count_result[0].values()), None)
+                    if edge_count_result[0]
+                    else None
+                )
                 parsed = AgTypeParser.parse(first_val)
                 if isinstance(parsed, dict) and "edge_count" in parsed:
                     edges_deleted = int(parsed["edge_count"]) or 0
@@ -116,7 +120,9 @@ async def delete_node(
             if detach:
                 delete_cypher = "MATCH (n) WHERE id(n) = $node_id DETACH DELETE n RETURN count(n) as deleted_count"
             else:
-                delete_cypher = "MATCH (n) WHERE id(n) = $node_id DELETE n RETURN count(n) as deleted_count"
+                delete_cypher = (
+                    "MATCH (n) WHERE id(n) = $node_id DELETE n RETURN count(n) as deleted_count"
+                )
             delete_result = await db_conn.execute_cypher(
                 validated_graph_name, delete_cypher, params=node_id_param, conn=conn
             )

@@ -104,9 +104,9 @@ def cypher_return_columns(cypher_query: str) -> List[str]:
     return_match = re.search(r"\bRETURN\s+", cypher_query, re.IGNORECASE)
     if not return_match:
         return ["result"]
-    
+
     start_pos = return_match.end()
-    
+
     # Find position of next keyword that ends the RETURN clause
     # Using \b instead of \s+ to avoid potential ReDoS from backtracking on spaces
     end_match = re.search(
@@ -114,7 +114,7 @@ def cypher_return_columns(cypher_query: str) -> List[str]:
         cypher_query[start_pos:],
         re.IGNORECASE | re.DOTALL,
     )
-    
+
     if end_match:
         return_expr = cypher_query[start_pos : start_pos + end_match.start()].strip()
     else:
@@ -122,11 +122,11 @@ def cypher_return_columns(cypher_query: str) -> List[str]:
 
     if not return_expr:
         return ["result"]
-        
+
     parts = split_top_level_commas(return_expr)
     if parts is None:
         return ["result"]
-        
+
     names: List[str] = []
     for i, part in enumerate(parts):
         # Prefer "AS alias"
@@ -136,12 +136,12 @@ def cypher_return_columns(cypher_query: str) -> List[str]:
             name = as_match.group(1)
         else:
             name = f"c{i + 1}"
-        
+
         # Safe identifier: alphanumeric and underscore only
         # \w matches [a-zA-Z0-9_] in Python 3 by default
         if re.match(r"^[a-zA-Z_]\w*$", name):
             names.append(name)
         else:
             names.append(f"c{i + 1}")
-            
+
     return names if names else ["result"]

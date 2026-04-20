@@ -25,22 +25,23 @@ def test_app(monkeypatch):
     monkeypatch.setenv("RATE_LIMIT_ENABLED", "false")
     monkeypatch.setenv("SESSION_SECRET_KEY", "test-secret-key-for-integration-tests-only")
     monkeypatch.setenv("ENVIRONMENT", "test")
-    
+
     # Force reload of config and main modules to pick up new settings
     import sys
-    
+
     # Remove from cache if present
-    modules_to_reload = ['app.core.config', 'app.main']
+    modules_to_reload = ["app.core.config", "app.main"]
     for module_name in modules_to_reload:
         if module_name in sys.modules:
             del sys.modules[module_name]
-    
+
     # Import inside the fixture (after the sys.modules eviction above) so the
     # local `create_app` binding references the freshly-loaded module with the
     # test env vars applied. Hoisting this to the module level would freeze it
     # against the import-time settings and silently bypass the CSRF/rate-limit
     # overrides set via monkeypatch.
     from app.main import create_app
+
     app = create_app()
     # Starlette/AnyIO can deadlock in ASGITransport with stacked BaseHTTPMiddleware.
     # For integration tests, keep behavior-focused middlewares and remove observability-only layers.
@@ -63,6 +64,7 @@ def client(test_app):
 async def async_client(test_app):
     """Async test client that properly supports session middleware."""
     from httpx import ASGITransport
+
     transport = ASGITransport(app=test_app)
     async with httpx.AsyncClient(
         transport=transport,
@@ -76,29 +78,29 @@ async def async_client(test_app):
 async def authenticated_client(async_client):
     """
     Async test client with authenticated session.
-    
+
     Creates a user, logs in, and returns client with session cookie.
     """
     # Create a test user if it doesn't exist
     test_username = TEST_USER_NAME
     test_password = TEST_USER_SECRET
-    
+
     # Clean up any existing test user
     if test_username in user_service._users:
         del user_service._users[test_username]
-    
+
     # Create test user
     user_service.create_user(test_username, test_password)
-    
+
     # Login to create session
     login_response = await async_client.post(
         "/api/v1/auth/login",
         json={"username": test_username, "password": test_password},
     )
-    
+
     if login_response.status_code != 200:
         pytest.skip(f"Failed to create authenticated session: {login_response.status_code}")
-    
+
     # Return client with session cookie
     return async_client
 
@@ -113,10 +115,10 @@ async def admin_client(async_client):
         "/api/v1/auth/login",
         json={"username": ADMIN_USER_NAME, "password": ADMIN_USER_SECRET},
     )
-    
+
     if login_response.status_code != 200:
         pytest.skip(f"Failed to login as admin: {login_response.status_code}")
-    
+
     return async_client
 
 
@@ -124,19 +126,19 @@ async def admin_client(async_client):
 async def connected_client(authenticated_client):
     """
     Test client with authenticated session and database connection.
-    
+
     Uses a real database connection (or can be configured to use test DB).
     For now, we'll use a mock only if no test database is available.
     """
     # Try to connect to database
     # In a real setup, this would connect to a test database
     # For now, we'll mock it but the infrastructure supports real connections
-    
+
     from app.core.database import DatabaseConnection
-    
+
     # Check if we should use real DB or mock
     use_real_db = os.getenv("USE_REAL_TEST_DB", "false").lower() == "true"
-    
+
     if use_real_db:
         # Use real database connection
         db_config = {
@@ -146,7 +148,7 @@ async def connected_client(authenticated_client):
             "user": os.getenv("TEST_DB_USER", "test_user"),
             "password": os.getenv("TEST_DB_PASSWORD", "test_password"),
         }
-        
+
         db_conn = DatabaseConnection(**db_config)
         try:
             await db_conn.connect()
@@ -166,17 +168,23 @@ async def connected_client(authenticated_client):
 
         # Transaction context manager for node delete and other transactional ops
         class _MockTransaction:
-            async def __aenter__(self): return None
-            async def __aexit__(self, *args): return None
+            async def __aenter__(self):
+                return None
+
+            async def __aexit__(self, *args):
+                return None
+
         mock_conn.transaction = lambda time_limit_seconds=None: _MockTransaction()
 
         # Patch DatabaseConnection for all modules that use it
-        with patch('app.api.v1.session.DatabaseConnection') as mock_db_class, \
-             patch('app.api.v1.query.DatabaseConnection', mock_db_class), \
-             patch('app.api.v1.graph.DatabaseConnection', mock_db_class), \
-             patch('app.api.v1.graph_delete_node.DatabaseConnection', mock_db_class):
+        with (
+            patch("app.api.v1.session.DatabaseConnection") as mock_db_class,
+            patch("app.api.v1.query.DatabaseConnection", mock_db_class),
+            patch("app.api.v1.graph.DatabaseConnection", mock_db_class),
+            patch("app.api.v1.graph_delete_node.DatabaseConnection", mock_db_class),
+        ):
             mock_db_class.return_value = mock_conn
-            
+
             # Store mock for tests to access
             authenticated_client._mock_db = mock_conn
             authenticated_client._mock_db_class = mock_db_class
@@ -202,17 +210,17 @@ async def connected_client(authenticated_client):
 
             yield authenticated_client
             return
-    
+
     # Real DB path
     try:
         connect_response = await authenticated_client.post(
             "/api/v1/session/connect",
             json={"connection": db_config},
         )
-        
+
         if connect_response.status_code != 201:
             pytest.skip(f"Failed to connect to database: {connect_response.status_code}")
-        
+
         yield authenticated_client
     finally:
         if db_conn:
@@ -244,13 +252,13 @@ def cleanup_test_users():
 # def docker_compose():
 #     """Start Docker Compose services for integration tests."""
 #     compose_file = os.path.join(os.path.dirname(__file__), "..", "docker-compose.test.yml")
-#     
+#
 #     # Start services
 #     subprocess.run(
 #         ["docker-compose", "-f", compose_file, "up", "-d"],
 #         check=True,
 #     )
-#     
+#
 #     # Wait for services to be ready
 #     max_wait = 60
 #     elapsed = 0
@@ -272,9 +280,9 @@ def cleanup_test_users():
 #         elapsed += 2
 #     else:
 #         pytest.fail("Docker services did not become ready in time")
-#     
+#
 #     yield
-#     
+#
 #     # Stop services
 #     subprocess.run(
 #         ["docker-compose", "-f", compose_file, "down", "-v"],

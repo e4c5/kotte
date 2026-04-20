@@ -30,7 +30,10 @@ def _object_to_dict(value: Any) -> Optional[Dict[str, Any]]:
         # Try attribute access for known keys (e.g. psycopg custom type)
         for start_key in ("start_id", "startid", "startId"):
             for end_key in ("end_id", "endid", "endId"):
-                if getattr(value, start_key, None) is not None and getattr(value, end_key, None) is not None:
+                if (
+                    getattr(value, start_key, None) is not None
+                    and getattr(value, end_key, None) is not None
+                ):
                     return {
                         "id": getattr(value, "id", None),
                         "label": getattr(value, "label", None),
@@ -294,7 +297,9 @@ class AgTypeParser:
             return None
         first = elements[0]
         last = elements[-1]
-        start_id = str(first["id"]) if isinstance(first, dict) and first.get("type") == "node" else None
+        start_id = (
+            str(first["id"]) if isinstance(first, dict) and first.get("type") == "node" else None
+        )
         end_id = str(last["id"]) if isinstance(last, dict) and last.get("type") == "node" else None
         return {
             "type": "path",
@@ -320,7 +325,14 @@ class AgTypeParser:
         if built:
             built["elements"] = elements
             return built
-        return {"type": "path", "elements": elements, "segments": [], "length": 0, "node_ids": [], "edge_ids": []}
+        return {
+            "type": "path",
+            "elements": elements,
+            "segments": [],
+            "length": 0,
+            "node_ids": [],
+            "edge_ids": [],
+        }
 
     @staticmethod
     def _parse_id(id_value: Any) -> Union[int, str]:
@@ -349,9 +361,7 @@ class AgTypeParser:
         return str(id_value)
 
     @staticmethod
-    def extract_graph_elements(
-        rows: List[Dict[str, Any]]
-    ) -> Dict[str, Any]:
+    def extract_graph_elements(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
         Extract nodes, edges, and paths from query results.
 
@@ -432,8 +442,7 @@ class AgTypeParser:
                                 elif item.get("type") == "edge":
                                     _add_edge(item)
                         if not any(
-                            isinstance(item, dict)
-                            and item.get("type") in ("node", "edge")
+                            isinstance(item, dict) and item.get("type") in ("node", "edge")
                             for item in parsed
                         ):
                             other.append({"column": col_name, "value": parsed})
@@ -448,20 +457,24 @@ class AgTypeParser:
                 sid = e.get("source")
                 tid = e.get("target")
                 if sid is not None and sid not in node_ids:
-                    nodes.append({
-                        "id": sid,
-                        "label": "",
-                        "properties": {},
-                        "type": "node",
-                    })
+                    nodes.append(
+                        {
+                            "id": sid,
+                            "label": "",
+                            "properties": {},
+                            "type": "node",
+                        }
+                    )
                     node_ids.add(sid)
                 if tid is not None and tid not in node_ids:
-                    nodes.append({
-                        "id": tid,
-                        "label": "",
-                        "properties": {},
-                        "type": "node",
-                    })
+                    nodes.append(
+                        {
+                            "id": tid,
+                            "label": "",
+                            "properties": {},
+                            "type": "node",
+                        }
+                    )
                     node_ids.add(tid)
 
         return {
@@ -470,4 +483,3 @@ class AgTypeParser:
             "paths": paths,
             "other": other,
         }
-

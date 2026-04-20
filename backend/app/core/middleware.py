@@ -20,9 +20,7 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
     """Add request ID to request state and response headers.
     Preserves X-Request-ID from request if provided, otherwise generates one."""
 
-    async def dispatch(
-        self, request: Request, call_next: Callable
-    ) -> Response:
+    async def dispatch(self, request: Request, call_next: Callable) -> Response:
         request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
         request.state.request_id = request_id
 
@@ -46,9 +44,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
         # HSTS only in production over HTTPS (avoid sending on plain HTTP dev servers)
         if is_production and request.url.scheme == "https":
-            response.headers["Strict-Transport-Security"] = (
-                "max-age=31536000; includeSubDomains"
-            )
+            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
 
         if is_production:
             script_policy = "'self'"
@@ -56,13 +52,9 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         else:
             # Development: allow Swagger UI / ReDoc assets from common CDNs when docs are enabled
             script_policy = (
-                "'self' 'unsafe-inline' 'unsafe-eval' "
-                "https://cdn.jsdelivr.net https://unpkg.com"
+                "'self' 'unsafe-inline' 'unsafe-eval' " "https://cdn.jsdelivr.net https://unpkg.com"
             )
-            style_policy = (
-                "'self' 'unsafe-inline' "
-                "https://cdn.jsdelivr.net https://unpkg.com"
-            )
+            style_policy = "'self' 'unsafe-inline' " "https://cdn.jsdelivr.net https://unpkg.com"
 
         csp = (
             f"default-src 'self'; "
@@ -78,9 +70,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["Content-Security-Policy"] = csp
 
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-        response.headers["Permissions-Policy"] = (
-            "geolocation=(), microphone=(), camera=()"
-        )
+        response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
 
         return response
 
@@ -88,9 +78,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 class MetricsMiddleware(BaseHTTPMiddleware):
     """Collect HTTP request metrics for Prometheus."""
 
-    async def dispatch(
-        self, request: Request, call_next: Callable
-    ) -> Response:
+    async def dispatch(self, request: Request, call_next: Callable) -> Response:
         # Skip metrics endpoint itself
         if request.url.path == "/api/v1/metrics" or request.url.path == "/metrics":
             return await call_next(request)
@@ -126,13 +114,16 @@ class MetricsMiddleware(BaseHTTPMiddleware):
 
         # Replace UUIDs and IDs with placeholders
         import re
+
         # Replace UUIDs
-        path = re.sub(r'/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', '/{id}', path)
+        path = re.sub(
+            r"/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", "/{id}", path
+        )
         # Replace numeric IDs
-        path = re.sub(r'/\d+', '/{id}', path)
+        path = re.sub(r"/\d+", "/{id}", path)
         # Replace graph names and node IDs in specific patterns
-        path = re.sub(r'/graphs/[^/]+', '/graphs/{graph}', path)
-        path = re.sub(r'/nodes/[^/]+', '/nodes/{node_id}', path)
+        path = re.sub(r"/graphs/[^/]+", "/graphs/{graph}", path)
+        path = re.sub(r"/nodes/[^/]+", "/nodes/{node_id}", path)
 
         return path
 
@@ -143,9 +134,7 @@ class CSRFMiddleware(BaseHTTPMiddleware):
     # Methods that require CSRF protection
     PROTECTED_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
-    async def dispatch(
-        self, request: Request, call_next: Callable
-    ) -> Response:
+    async def dispatch(self, request: Request, call_next: Callable) -> Response:
         if not settings.csrf_enabled:
             return await call_next(request)
 
@@ -164,11 +153,12 @@ class CSRFMiddleware(BaseHTTPMiddleware):
         # Get CSRF token from header
         csrf_token = request.headers.get("X-CSRF-Token")
         session_csrf = request.session.get("csrf_token")
-        
+
         # Also check session manager if available
         session_id = request.session.get("session_id")
         if not session_csrf and session_id:
             from app.core.auth import session_manager
+
             session_data = session_manager.get_session(session_id)
             if session_data:
                 session_csrf = session_data.get("csrf_token")
@@ -214,25 +204,19 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         # Clean IP requests
         for ip in list(self._ip_requests.keys()):
-            self._ip_requests[ip] = [
-                t for t in self._ip_requests[ip] if t > cutoff
-            ]
+            self._ip_requests[ip] = [t for t in self._ip_requests[ip] if t > cutoff]
             if not self._ip_requests[ip]:
                 del self._ip_requests[ip]
 
         # Clean user requests
         for user_id in list(self._user_requests.keys()):
-            self._user_requests[user_id] = [
-                t for t in self._user_requests[user_id] if t > cutoff
-            ]
+            self._user_requests[user_id] = [t for t in self._user_requests[user_id] if t > cutoff]
             if not self._user_requests[user_id]:
                 del self._user_requests[user_id]
 
         self._last_cleanup = now
 
-    async def dispatch(
-        self, request: Request, call_next: Callable
-    ) -> Response:
+    async def dispatch(self, request: Request, call_next: Callable) -> Response:
         if not settings.rate_limit_enabled:
             return await call_next(request)
 
@@ -256,6 +240,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         user_id = None
         if session_id:
             from app.core.auth import session_manager
+
             user_id = session_manager.get_user_id(session_id)
 
         now = time.time()
@@ -323,4 +308,3 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         response.headers["X-RateLimit-Reset"] = str(int(now + 60))
 
         return response
-

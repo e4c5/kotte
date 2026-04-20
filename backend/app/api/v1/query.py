@@ -67,12 +67,10 @@ async def execute_query(
 
     # Validate graph name format (prevents SQL injection)
     validated_graph_name = validate_graph_name(request.graph)
-    
+
     # Validate query length
     validate_query_length(request.cypher)
-    validate_variable_length_traversal(
-        request.cypher, settings.query_max_variable_hops
-    )
+    validate_variable_length_traversal(request.cypher, settings.query_max_variable_hops)
 
     # Apply result caps (visualization cap is stricter than generic query cap)
     if request.for_visualization:
@@ -85,7 +83,7 @@ async def execute_query(
             request.cypher, settings.query_max_result_rows
         )
         applied_limit = settings.query_max_result_rows if limit_added else None
-    
+
     # Register query for cancellation tracking
     query_tracker.register_query(
         request_id=request_id,
@@ -99,9 +97,7 @@ async def execute_query(
         SELECT graphid FROM ag_catalog.ag_graph WHERE name = %(graph_name)s
     """
     try:
-        graph_id = await db_conn.execute_scalar(
-            graph_check, {"graph_name": validated_graph_name}
-        )
+        graph_id = await db_conn.execute_scalar(graph_check, {"graph_name": validated_graph_name})
     except Exception as e:
         logger.exception("Graph existence check failed")
         api_exc = translate_db_error(e, context={"graph": request.graph})
@@ -124,9 +120,7 @@ async def execute_query(
     # Safe mode: reject mutating queries if enabled
     if settings.query_safe_mode:
         cypher_upper = request.cypher.upper()
-        mutating_pattern = re.compile(
-            r"\b(CREATE|DELETE|SET|REMOVE|MERGE|DETACH)\b"
-        )
+        mutating_pattern = re.compile(r"\b(CREATE|DELETE|SET|REMOVE|MERGE|DETACH)\b")
         if mutating_pattern.search(cypher_upper):
             raise APIException(
                 code=ErrorCode.QUERY_VALIDATION_ERROR,
@@ -168,11 +162,11 @@ async def execute_query(
                 time_limit_seconds=settings.query_timeout,
                 conn=exec_conn,
             )
-        
+
         # Parse agtype results
         parsed_rows = []
         all_columns = set()
-        
+
         for raw_row in raw_rows:
             parsed_row = {}
             for col_name, agtype_value in raw_row.items():
@@ -180,7 +174,7 @@ async def execute_query(
                 parsed_value = AgTypeParser.parse(agtype_value)
                 parsed_row[col_name] = parsed_value
             parsed_rows.append(parsed_row)
-        
+
         # Extract graph elements (nodes and edges) for visualization
         graph_elements = AgTypeParser.extract_graph_elements(parsed_rows)
         nodes_count = len(graph_elements["nodes"])
@@ -195,7 +189,9 @@ async def execute_query(
             first_raw = raw_rows[0]
             for col_name, raw_val in first_raw.items():
                 if isinstance(raw_val, dict):
-                    logger.debug("agtype_debug: column %r = dict keys=%s", col_name, list(raw_val.keys()))
+                    logger.debug(
+                        "agtype_debug: column %r = dict keys=%s", col_name, list(raw_val.keys())
+                    )
                 elif isinstance(raw_val, str):
                     logger.debug(
                         "agtype_debug: column %r = str len=%s prefix=%s",
@@ -213,9 +209,7 @@ async def execute_query(
 
         # Build result rows
         columns = sorted(all_columns) if all_columns else ["result"]
-        result_rows = [
-            QueryResultRow(data=row) for row in parsed_rows
-        ]
+        result_rows = [QueryResultRow(data=row) for row in parsed_rows]
 
         # Add graph elements to response stats
         paths_list = graph_elements.get("paths", [])
@@ -232,7 +226,10 @@ async def execute_query(
         # Check visualization limits
         visualization_warning = None
         if nodes_count > settings.max_nodes_for_graph or edges_count > settings.max_edges_for_graph:
-            if nodes_count > settings.max_nodes_for_graph and edges_count > settings.max_edges_for_graph:
+            if (
+                nodes_count > settings.max_nodes_for_graph
+                and edges_count > settings.max_edges_for_graph
+            ):
                 visualization_warning = (
                     f"Result too large for graph visualization ({nodes_count} nodes, {edges_count} edges). "
                     f"Maximum: {settings.max_nodes_for_graph} nodes, {settings.max_edges_for_graph} edges. "
@@ -269,11 +266,15 @@ async def execute_query(
             row_count=len(result_rows),
             request_id=request_id,
             stats=stats,
-            graph_elements={
-                "nodes": graph_elements["nodes"],
-                "edges": graph_elements["edges"],
-                "paths": paths_list,
-            } if (graph_elements["nodes"] or graph_elements["edges"] or paths_list) else None,
+            graph_elements=(
+                {
+                    "nodes": graph_elements["nodes"],
+                    "edges": graph_elements["edges"],
+                    "paths": paths_list,
+                }
+                if (graph_elements["nodes"] or graph_elements["edges"] or paths_list)
+                else None
+            ),
             visualization_warning=visualization_warning,
         )
 
@@ -324,9 +325,7 @@ async def execute_query(
             metrics.record_query_execution(
                 graph=validated_graph_name, status="error", duration=query_duration
             )
-            metrics.record_error(
-                ErrorCode.GRAPH_CONSTRAINT_VIOLATION, ErrorCategory.VALIDATION
-            )
+            metrics.record_error(ErrorCode.GRAPH_CONSTRAINT_VIOLATION, ErrorCategory.VALIDATION)
             raise api_exc from e
 
         if "syntax" in error_msg.lower():
@@ -372,11 +371,11 @@ async def cancel_query(
 ) -> QueryCancelResponse:
     """
     Cancel a running query.
-    
+
     Uses PostgreSQL pg_cancel_backend() to cancel the query at the database level.
     """
     user_id = session.get("user_id", "unknown")
-    
+
     # Check if query exists
     query_info = query_tracker.get_query_info(request_id)
     if not query_info:
@@ -389,7 +388,7 @@ async def cancel_query(
 
     # Cancel the query
     success = await query_tracker.cancel_query(request_id, user_id)
-    
+
     if not success:
         raise APIException(
             code=ErrorCode.QUERY_CANCELLED,

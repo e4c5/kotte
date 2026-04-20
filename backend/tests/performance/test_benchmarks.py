@@ -7,7 +7,6 @@ Skipped when no test database is configured.
 import os
 import pytest
 
-
 pytestmark = pytest.mark.performance
 
 

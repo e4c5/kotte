@@ -1,6 +1,5 @@
 """Authentication models."""
 
-
 from pydantic import BaseModel, Field
 
 
@@ -31,5 +30,3 @@ class UserInfo(BaseModel):
 
     user_id: str
     username: str
-
-

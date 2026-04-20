@@ -92,5 +92,3 @@ class TestSettings:
                     db_pool_min_size=10,
                     db_pool_max_size=5,
                 )
-
-

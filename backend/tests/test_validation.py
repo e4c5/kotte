@@ -188,9 +188,7 @@ class TestEscapeIdentifier:
 
     def test_escape_identifier_malicious_input(self):
         """Malicious-looking input is treated as a single identifier when escaped."""
-        malicious = 'test; DROP TABLE users; --'
+        malicious = "test; DROP TABLE users; --"
         escaped = escape_identifier(malicious)
         # Should be a single quoted identifier; no characters removed
         assert escaped == '"test; DROP TABLE users; --"'
-
-

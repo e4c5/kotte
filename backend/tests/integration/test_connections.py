@@ -21,13 +21,14 @@ class TestSavedConnections:
                 "password": "test_password",
             },
         )
-        
+
         assert response.status_code == 401
 
     @pytest.mark.asyncio
     async def test_save_connection_success(self, authenticated_client: httpx.AsyncClient):
         """Test successfully saving a connection."""
         import uuid
+
         unique_name = f"Test Connection {uuid.uuid4().hex[:8]}"
         response = await authenticated_client.post(
             "/api/v1/connections",
@@ -40,7 +41,7 @@ class TestSavedConnections:
                 "password": "test_password",
             },
         )
-        
+
         assert response.status_code == 201
         data = response.json()
         assert "id" in data
@@ -56,6 +57,7 @@ class TestSavedConnections:
     async def test_save_connection_duplicate_name(self, authenticated_client: httpx.AsyncClient):
         """Test saving connection with duplicate name."""
         import uuid
+
         unique_name = f"Duplicate Test {uuid.uuid4().hex[:8]}"
         # Save first connection
         response1 = await authenticated_client.post(
@@ -70,7 +72,7 @@ class TestSavedConnections:
             },
         )
         assert response1.status_code == 201
-        
+
         # Try to save another with same name
         response2 = await authenticated_client.post(
             "/api/v1/connections",
@@ -83,7 +85,7 @@ class TestSavedConnections:
                 "password": "test_password2",
             },
         )
-        
+
         assert response2.status_code == 422
         data = response2.json()
         assert "error" in data
@@ -93,6 +95,7 @@ class TestSavedConnections:
     async def test_list_connections(self, authenticated_client: httpx.AsyncClient):
         """Test listing saved connections."""
         import uuid
+
         unique_name = f"List Test Connection {uuid.uuid4().hex[:8]}"
         # Save a connection first
         save_response = await authenticated_client.post(
@@ -107,15 +110,15 @@ class TestSavedConnections:
             },
         )
         assert save_response.status_code == 201
-        
+
         # List connections
         list_response = await authenticated_client.get("/api/v1/connections")
-        
+
         assert list_response.status_code == 200
         data = list_response.json()
         assert isinstance(data, list)
         assert len(data) > 0
-        
+
         # Verify no credentials in list
         for conn in data:
             assert "username" not in conn
@@ -127,6 +130,7 @@ class TestSavedConnections:
     async def test_get_connection(self, authenticated_client: httpx.AsyncClient):
         """Test getting a saved connection with credentials."""
         import uuid
+
         unique_name = f"Get Test Connection {uuid.uuid4().hex[:8]}"
         # Save a connection first
         save_response = await authenticated_client.post(
@@ -142,10 +146,10 @@ class TestSavedConnections:
         )
         assert save_response.status_code == 201
         connection_id = save_response.json()["id"]
-        
+
         # Get the connection
         get_response = await authenticated_client.get(f"/api/v1/connections/{connection_id}")
-        
+
         assert get_response.status_code == 200
         data = get_response.json()
         assert data["id"] == connection_id
@@ -160,7 +164,7 @@ class TestSavedConnections:
     async def test_get_connection_not_found(self, authenticated_client: httpx.AsyncClient):
         """Test getting non-existent connection."""
         response = await authenticated_client.get("/api/v1/connections/nonexistent-id")
-        
+
         assert response.status_code == 404
         data = response.json()
         assert "error" in data
@@ -182,12 +186,12 @@ class TestSavedConnections:
         )
         assert save_response.status_code == 201
         connection_id = save_response.json()["id"]
-        
+
         # Delete the connection
         delete_response = await authenticated_client.delete(f"/api/v1/connections/{connection_id}")
-        
+
         assert delete_response.status_code == 204
-        
+
         # Verify it's deleted
         get_response = await authenticated_client.get(f"/api/v1/connections/{connection_id}")
         assert get_response.status_code == 404
@@ -196,6 +200,5 @@ class TestSavedConnections:
     async def test_delete_connection_not_found(self, authenticated_client: httpx.AsyncClient):
         """Test deleting non-existent connection."""
         response = await authenticated_client.delete("/api/v1/connections/nonexistent-id")
-        
-        assert response.status_code == 404
 
+        assert response.status_code == 404

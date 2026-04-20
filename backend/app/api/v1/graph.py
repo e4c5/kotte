@@ -46,10 +46,7 @@ async def list_graphs(
         """
         rows = await db_conn.execute_query(query)
 
-        return [
-            GraphInfo(name=row["name"], id=str(row["graphid"]))
-            for row in rows
-        ]
+        return [GraphInfo(name=row["name"], id=str(row["graphid"])) for row in rows]
     except Exception as e:
         logger.exception("Error listing graphs")
         api_exc = translate_db_error(e)
@@ -74,14 +71,12 @@ async def get_graph_metadata(
     try:
         # Validate graph name format (prevents SQL injection)
         validated_graph_name = validate_graph_name(graph_name)
-        
+
         # Verify graph exists (using parameterized query)
         graph_check = """
             SELECT graphid FROM ag_catalog.ag_graph WHERE name = %(graph_name)s
         """
-        graph_id = await db_conn.execute_scalar(
-            graph_check, {"graph_name": validated_graph_name}
-        )
+        graph_id = await db_conn.execute_scalar(graph_check, {"graph_name": validated_graph_name})
         if not graph_id:
             raise APIException(
                 code=ErrorCode.GRAPH_NOT_FOUND,
@@ -213,9 +208,7 @@ async def get_meta_graph(
         graph_check = """
             SELECT graphid FROM ag_catalog.ag_graph WHERE name = %(graph_name)s
         """
-        graph_id = await db_conn.execute_scalar(
-            graph_check, {"graph_name": validated_graph_name}
-        )
+        graph_id = await db_conn.execute_scalar(graph_check, {"graph_name": validated_graph_name})
         if not graph_id:
             raise APIException(
                 code=ErrorCode.GRAPH_NOT_FOUND,
@@ -244,9 +237,7 @@ async def get_meta_graph(
                 {"graph_name": validated_graph_name, "cypher": meta_cypher.strip()},
             )
         except Exception as e:
-            logger.warning(
-                "Meta-graph Cypher query failed, falling back to empty: %s", e
-            )
+            logger.warning("Meta-graph Cypher query failed, falling back to empty: %s", e)
             raw_rows = []
 
         relationships = []
@@ -297,14 +288,12 @@ async def expand_node_neighborhood(
     try:
         # Validate graph name
         validated_graph_name = validate_graph_name(graph_name)
-        
+
         # Verify graph exists
         graph_check = """
             SELECT graphid FROM ag_catalog.ag_graph WHERE name = %(graph_name)s
         """
-        graph_id = await db_conn.execute_scalar(
-            graph_check, {"graph_name": validated_graph_name}
-        )
+        graph_id = await db_conn.execute_scalar(graph_check, {"graph_name": validated_graph_name})
         if not graph_id:
             raise APIException(
                 code=ErrorCode.GRAPH_NOT_FOUND,
@@ -347,25 +336,23 @@ async def expand_node_neighborhood(
             UNWIND relationships(path) as rel
             RETURN DISTINCT n, pn, rel
         """
-        
+
         # Execute via execute_cypher (literal SQL) to avoid cypher() overload issues
         params = {
             "node_id": node_id_int,
             "limit": limit,
         }
-        raw_rows = await db_conn.execute_cypher(
-            validated_graph_name, cypher_query, params=params
-        )
-        
+        raw_rows = await db_conn.execute_cypher(validated_graph_name, cypher_query, params=params)
+
         # Parse results and extract nodes/edges
         all_nodes = {}
         all_edges = []
         edge_ids = set()
-        
+
         for raw_row in raw_rows:
             for col_name, agtype_value in raw_row.items():
                 parsed_value = AgTypeParser.parse(agtype_value)
-                
+
                 if isinstance(parsed_value, dict):
                     # Could be a node or a list of relationships
                     if parsed_value.get("type") == "node":
@@ -390,10 +377,10 @@ async def expand_node_neighborhood(
                                 node_id = item.get("id")
                                 if node_id:
                                     all_nodes[str(node_id)] = item
-        
+
         # Convert nodes dict to list
         nodes_list = list(all_nodes.values())
-        
+
         return NodeExpandResponse(
             nodes=nodes_list,
             edges=all_edges,
@@ -405,9 +392,7 @@ async def expand_node_neighborhood(
         raise
     except Exception as e:
         logger.exception(f"Error expanding neighborhood for node {node_id} in graph {graph_name}")
-        api_exc = translate_db_error(
-            e, context={"graph": graph_name, "node_id": node_id}
-        )
+        api_exc = translate_db_error(e, context={"graph": graph_name, "node_id": node_id})
         if api_exc:
             raise api_exc from e
         raise APIException(
@@ -436,9 +421,7 @@ async def find_shortest_path(
         graph_check = """
             SELECT graphid FROM ag_catalog.ag_graph WHERE name = %(graph_name)s
         """
-        graph_id = await db_conn.execute_scalar(
-            graph_check, {"graph_name": validated_graph_name}
-        )
+        graph_id = await db_conn.execute_scalar(graph_check, {"graph_name": validated_graph_name})
         if not graph_id:
             raise APIException(
                 code=ErrorCode.GRAPH_NOT_FOUND,
@@ -516,9 +499,7 @@ async def find_shortest_path(
     except APIException:
         raise
     except Exception as e:
-        logger.exception(
-            f"Error finding shortest path in graph {graph_name}: {e}"
-        )
+        logger.exception(f"Error finding shortest path in graph {graph_name}: {e}")
         api_exc = translate_db_error(
             e,
             context={

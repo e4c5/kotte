@@ -13,9 +13,7 @@ class ConnectionConfig(BaseModel):
     database: str = Field(..., description="Database name")
     user: str = Field(..., description="Database user")
     password: str = Field(..., description="Database password")
-    sslmode: Optional[str] = Field(
-        default=None, description="SSL mode (disable, require, etc.)"
-    )
+    sslmode: Optional[str] = Field(default=None, description="SSL mode (disable, require, etc.)")
 
 
 class ConnectRequest(BaseModel):
@@ -50,4 +48,3 @@ class SessionStatusResponse(BaseModel):
     port: Optional[int] = None
     current_graph: Optional[str] = None
     # Note: credentials are NOT included in response
-

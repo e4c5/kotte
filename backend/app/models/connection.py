@@ -6,6 +6,7 @@ from typing import Optional
 
 class SavedConnectionRequest(BaseModel):
     """Request to save a connection."""
+
     name: str = Field(..., description="Connection name", min_length=1, max_length=100)
     host: str = Field(..., description="Database host")
     port: int = Field(..., description="Database port", ge=1, le=65535)
@@ -17,6 +18,7 @@ class SavedConnectionRequest(BaseModel):
 
 class SavedConnectionResponse(BaseModel):
     """Response with saved connection metadata (no credentials)."""
+
     id: str
     name: str
     host: str
@@ -28,6 +30,7 @@ class SavedConnectionResponse(BaseModel):
 
 class SavedConnectionDetail(SavedConnectionRequest):
     """Full connection details including credentials (for connection use)."""
+
     id: str
     created_at: str
     updated_at: str
@@ -35,6 +38,5 @@ class SavedConnectionDetail(SavedConnectionRequest):
 
 class SavedConnectionListResponse(BaseModel):
     """List of saved connections."""
+
     connections: list[SavedConnectionResponse]
-
-

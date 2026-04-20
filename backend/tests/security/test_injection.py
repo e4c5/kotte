@@ -4,12 +4,11 @@ import pytest
 import httpx
 from urllib.parse import quote
 
-
 # Graph/label names that attempt injection or bypass
 INJECTION_ATTEMPTS = [
     "'; DROP TABLE graphs; --",
     "1; SELECT * FROM graphs",
-    "graph\"; DELETE FROM nodes",
+    'graph"; DELETE FROM nodes',
     "' OR '1'='1",
     "${graph}",
     "{{graph}}",
@@ -62,9 +61,9 @@ class TestGraphNameInjection:
                 encoded = quote(invalid, safe="")
                 response = await async_client.get(f"/api/v1/graphs/{encoded}/metadata")
             # Must not return 200 with metadata
-            assert response.status_code != 200, (
-                f"Invalid graph name '{invalid!r}' was accepted: {response.status_code}"
-            )
+            assert (
+                response.status_code != 200
+            ), f"Invalid graph name '{invalid!r}' was accepted: {response.status_code}"
 
 
 class TestValidationBypass:

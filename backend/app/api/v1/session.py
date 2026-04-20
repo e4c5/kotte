@@ -79,9 +79,7 @@ async def connect(
     # Set session cookie
     http_request.session["session_id"] = session_id
 
-    logger.info(
-        f"Session {session_id[:8]}... connected to {request.connection.database}"
-    )
+    logger.info(f"Session {session_id[:8]}... connected to {request.connection.database}")
 
     # Record metrics
     metrics.record_session_creation()
@@ -139,4 +137,3 @@ async def get_status(
         port=conn_config.get("port") if connected else None,
         current_graph=session.get("graph_context"),
     )
-

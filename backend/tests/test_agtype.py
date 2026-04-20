@@ -54,7 +54,7 @@ class TestAgTypeParser:
             "properties": {"name": "Alice", "age": 30},
         }
         result = AgTypeParser.parse(vertex)
-        
+
         assert result["type"] == "node"
         assert result["id"] == "1"  # IDs are converted to strings
         assert result["label"] == "Person"
@@ -73,7 +73,7 @@ class TestAgTypeParser:
             "properties": {},
         }
         result = AgTypeParser.parse(vertex)
-        
+
         assert result["type"] == "node"
         assert result["label"] == "Person"
 
@@ -85,7 +85,7 @@ class TestAgTypeParser:
             "properties": {},
         }
         result = AgTypeParser.parse(vertex)
-        
+
         assert result["type"] == "node"
         assert result["label"] == ""
 
@@ -97,7 +97,7 @@ class TestAgTypeParser:
             "properties": '{"name": "Alice", "age": 30}',
         }
         result = AgTypeParser.parse(vertex)
-        
+
         assert result["type"] == "node"
         assert result["properties"] == {"name": "Alice", "age": 30}
 
@@ -111,7 +111,7 @@ class TestAgTypeParser:
             "properties": {"since": 2020},
         }
         result = AgTypeParser.parse(edge)
-        
+
         assert result["type"] == "edge"
         assert result["id"] == "1"
         assert result["label"] == "KNOWS"
@@ -129,7 +129,7 @@ class TestAgTypeParser:
             "properties": {},
         }
         result = AgTypeParser.parse(edge)
-        
+
         assert result["type"] == "edge"
         assert result["label"] == "KNOWS"
 
@@ -185,7 +185,7 @@ class TestAgTypeParser:
             ],
         }
         result = AgTypeParser.parse(data)
-        
+
         assert result["person"]["type"] == "node"
         assert len(result["friends"]) == 2
         assert result["friends"][0]["type"] == "node"
@@ -194,7 +194,7 @@ class TestAgTypeParser:
         """Test parsing JSON string."""
         json_str = '{"id": 1, "label": "Person", "properties": {}}'
         result = AgTypeParser.parse(json_str)
-        
+
         assert result["type"] == "node"
         assert result["id"] == "1"
 
@@ -202,7 +202,7 @@ class TestAgTypeParser:
         """Test parsing invalid JSON string."""
         invalid_json = "not valid json"
         result = AgTypeParser.parse(invalid_json)
-        
+
         # Should return the string as-is
         assert result == "not valid json"
 
@@ -234,9 +234,9 @@ class TestGraphElementExtraction:
             {"result": {"id": 1, "label": "Person", "properties": {}}},
             {"result": {"id": 2, "label": "Person", "properties": {}}},
         ]
-        
+
         result = AgTypeParser.extract_graph_elements(rows)
-        
+
         assert len(result["nodes"]) == 2
         assert len(result["edges"]) == 0
         assert len(result["other"]) == 0
@@ -255,9 +255,9 @@ class TestGraphElementExtraction:
                 }
             }
         ]
-        
+
         result = AgTypeParser.extract_graph_elements(rows)
-        
+
         assert len(result["nodes"]) == 2  # Placeholders for start_id and end_id
         assert len(result["edges"]) == 1
         assert len(result["other"]) == 0
@@ -277,9 +277,9 @@ class TestGraphElementExtraction:
             },
             {"result": {"id": 2, "label": "Person", "properties": {}}},
         ]
-        
+
         result = AgTypeParser.extract_graph_elements(rows)
-        
+
         assert len(result["nodes"]) == 2
         assert len(result["edges"]) == 1
         assert len(result["other"]) == 0
@@ -290,9 +290,9 @@ class TestGraphElementExtraction:
             {"result": {"id": 1, "label": "Person", "properties": {}}},
             {"result": {"id": 1, "label": "Person", "properties": {}}},  # Duplicate
         ]
-        
+
         result = AgTypeParser.extract_graph_elements(rows)
-        
+
         # Should only have one node
         assert len(result["nodes"]) == 1
 
@@ -318,9 +318,9 @@ class TestGraphElementExtraction:
                 }
             },  # Duplicate
         ]
-        
+
         result = AgTypeParser.extract_graph_elements(rows)
-        
+
         # Should only have one edge
         assert len(result["edges"]) == 1
 
@@ -331,9 +331,9 @@ class TestGraphElementExtraction:
             {"result": "scalar_value"},
             {"result": {"key": "value"}},  # Regular dict, not graph element
         ]
-        
+
         result = AgTypeParser.extract_graph_elements(rows)
-        
+
         assert len(result["nodes"]) == 1
         assert len(result["edges"]) == 0
         assert len(result["other"]) == 2  # Scalar and regular dict
@@ -353,9 +353,9 @@ class TestGraphElementExtraction:
                 },
             }
         ]
-        
+
         result = AgTypeParser.extract_graph_elements(rows)
-        
+
         assert len(result["nodes"]) == 2  # Node 1 + placeholder for end_id 2
         assert len(result["edges"]) == 1
 
@@ -363,7 +363,7 @@ class TestGraphElementExtraction:
         """Test extracting from empty rows."""
         rows = []
         result = AgTypeParser.extract_graph_elements(rows)
-        
+
         assert len(result["nodes"]) == 0
         assert len(result["edges"]) == 0
         assert len(result["other"]) == 0
@@ -429,4 +429,3 @@ class TestGraphElementExtraction:
         assert result["paths"][0]["type"] == "path"
         assert result["paths"][0]["node_ids"] == ["1", "2"]
         assert result["paths"][0]["edge_ids"] == ["10"]
-

@@ -38,9 +38,7 @@ def test_hsts_only_when_production_and_https(monkeypatch):
     client = TestClient(app, base_url="https://testserver")
     response = client.get("/")
 
-    assert response.headers["Strict-Transport-Security"] == (
-        "max-age=31536000; includeSubDomains"
-    )
+    assert response.headers["Strict-Transport-Security"] == ("max-age=31536000; includeSubDomains")
 
 
 def test_no_hsts_on_http_even_in_production(monkeypatch):

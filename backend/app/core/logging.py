@@ -33,10 +33,27 @@ class JSONFormatter(logging.Formatter):
         # Add extra fields from the record
         # Filter out standard attributes to only include user-provided 'extra'
         standard_attrs = {
-            "name", "msg", "args", "levelname", "levelno", "pathname", "filename",
-            "module", "exc_info", "exc_text", "stack_info", "lineno", "funcName",
-            "created", "msecs", "relativeCreated", "thread", "threadName",
-            "processName", "process", "message"
+            "name",
+            "msg",
+            "args",
+            "levelname",
+            "levelno",
+            "pathname",
+            "filename",
+            "module",
+            "exc_info",
+            "exc_text",
+            "stack_info",
+            "lineno",
+            "funcName",
+            "created",
+            "msecs",
+            "relativeCreated",
+            "thread",
+            "threadName",
+            "processName",
+            "process",
+            "message",
         }
         for key, value in record.__dict__.items():
             if key not in standard_attrs and not key.startswith("_"):
@@ -48,7 +65,7 @@ class JSONFormatter(logging.Formatter):
 def setup_logging():
     """Configure logging for the application."""
     log_level = getattr(logging, settings.log_level.upper(), logging.INFO)
-    
+
     root_logger = logging.getLogger()
     root_logger.setLevel(log_level)
 
@@ -58,14 +75,12 @@ def setup_logging():
 
     # Add console handler
     handler = logging.StreamHandler(sys.stdout)
-    
+
     if settings.structured_logging:
         handler.setFormatter(JSONFormatter())
     else:
         # Standard human-readable format
-        formatter = logging.Formatter(
-            "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-        )
+        formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
         handler.setFormatter(formatter)
 
     root_logger.addHandler(handler)

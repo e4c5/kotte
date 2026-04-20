@@ -21,10 +21,10 @@ async def test_error_response_structure(async_client: httpx.AsyncClient):
     # Note: This may fail if session middleware is required
     try:
         response = await async_client.get("/api/v1/nonexistent")
-        
+
         assert response.status_code == 404
         data = response.json()
-        
+
         # Check error structure
         # Note: FastAPI's default 404 may not have our custom error format
         # Check if it's our custom format or FastAPI's default
@@ -53,7 +53,7 @@ def test_api_exception():
         category=ErrorCategory.AUTHENTICATION,
         status_code=401,
     )
-    
+
     assert exc.code == ErrorCode.AUTH_REQUIRED
     assert exc.message == "Test error"
     assert exc.category == ErrorCategory.AUTHENTICATION
@@ -62,7 +62,7 @@ def test_api_exception():
 
 def test_format_cypher_error_basic():
     """Test format_cypher_error maps PostgreSQL patterns."""
-    err = format_cypher_error("syntax error at or near \")\"")
+    err = format_cypher_error('syntax error at or near ")"')
     assert "Syntax error near" in err
 
 
@@ -94,7 +94,7 @@ def test_translate_db_error_constraint_with_context():
 
 def test_graph_cypher_syntax_error_uses_format():
     """Test GraphCypherSyntaxError uses format_cypher_error for message."""
-    exc = GraphCypherSyntaxError("MATCH (n", "syntax error at or near \")\"")
+    exc = GraphCypherSyntaxError("MATCH (n", 'syntax error at or near ")"')
     assert "Syntax error near" in exc.message
     assert exc.details.get("query") == "MATCH (n"
 
@@ -139,7 +139,4 @@ async def test_validation_error_structure(async_client: httpx.AsyncClient):
         assert "error" in data
         error_obj = data["error"]
         assert isinstance(error_obj, dict)
-        assert any(
-            "password" in str(v).lower()
-            for v in error_obj.values()
-        )
+        assert any("password" in str(v).lower() for v in error_obj.values())

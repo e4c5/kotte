@@ -217,9 +217,7 @@ async def import_csv(
             import json
 
             data_rows = [
-                (line_num, line)
-                for line_num, line in enumerate(lines[1:], start=2)
-                if line.strip()
+                (line_num, line) for line_num, line in enumerate(lines[1:], start=2) if line.strip()
             ]
 
             batch_size = 1000
@@ -234,9 +232,7 @@ async def import_csv(
                         errors.append(f"Row {line_num}: column count mismatch")
                         continue
 
-                    properties = {
-                        header[i]: values[i] for i in range(len(header))
-                    }
+                    properties = {header[i]: values[i] for i in range(len(header))}
 
                     if label_kind == "v":
                         props_json = json.dumps(properties).replace("'", "''")
@@ -250,7 +246,9 @@ async def import_csv(
                             errors.append(f"Row {line_num}: missing source or target")
                             continue
 
-                        props = {k: v for k, v in properties.items() if k not in {"source", "target"}}
+                        props = {
+                            k: v for k, v in properties.items() if k not in {"source", "target"}
+                        }
                         props_json = json.dumps(props).replace("'", "''")
                         try:
                             source_id = int(properties["source"])
@@ -288,9 +286,7 @@ async def import_csv(
         job_status.progress = 1.0
 
         try:
-            await invalidate_property_metadata_cache(
-                validated_graph_name, validated_label_name
-            )
+            await invalidate_property_metadata_cache(validated_graph_name, validated_label_name)
         except Exception as e:
             logger.warning(
                 "Post-import metadata cache invalidation failed for graph=%s label=%s: %s",
@@ -301,9 +297,7 @@ async def import_csv(
             )
 
         try:
-            await MetadataService.analyze_table(
-                db_conn, validated_graph_name, validated_label_name
-            )
+            await MetadataService.analyze_table(db_conn, validated_graph_name, validated_label_name)
         except Exception as e:
             logger.warning(
                 "Post-import ANALYZE failed for graph=%s label=%s: %s",

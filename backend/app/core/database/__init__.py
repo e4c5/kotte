@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 class DatabaseConnection(BaseConnection):
     """
     Manages a PostgreSQL connection with Apache AGE.
-    
+
     This class acts as a facade, delegating specialized tasks to focused components
     while maintaining the original interface for backward compatibility.
     """
