@@ -88,6 +88,45 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   state from `useGraphStore` and wires the toggles. Adds 8 unit tests
   covering label flipping, conditional rendering, ordering, and handler
   wiring.
+- **Camera focus on newly-added neighbourhood (ROADMAP A11 phase 2)** —
+  double-clicking a node previously merged the new neighbours additively
+  (phase 1) but then the canvas just re-fit to the *whole* expanded graph,
+  which felt like the focus had been "lost" on a large result. Phase 2
+  consumes the `addedNodeIds` already returned by `queryStore.mergeGraphElements`:
+  `WorkspacePage.handleDoubleClickNode` now sets
+  `graphStore.cameraFocusAnchorIds = [clickedNodeId, ...addedNodeIds]` after
+  the merge, and `GraphView` watches that field. When non-empty, GraphView
+  defers one animation frame (so the simulation has seeded positions for the
+  new nodes), computes the bounding box of the anchor union, animates the
+  d3-zoom transform with `transition().duration(400)` to that box (clamped
+  to scale ∈ [0.3, 2.0] so single-node anchors don't max out the zoom),
+  briefly pins the clicked node for 2s with `fx`/`fy` so the simulation
+  settles around it, and then clears the field so the effect doesn't
+  re-fire on every tick. Honours an explicit `pinnedNodes` entry — the
+  2-second auto-release won't unpin a node the user has separately pinned.
+  Adds 6 unit tests for the new `graphStore` actions
+  (`setCameraFocusAnchorIds`, `clearCameraFocusAnchorIds`, dedup, identity
+  preservation on no-op clear).
+- **Reversible "isolate neighbourhood" mode (ROADMAP A11 phase 3)** —
+  the destructive "show only this node" gesture that the original
+  double-click attempt got wrong now lives where it belongs: as an
+  explicit menu action with a one-click undo. `NodeContextMenu` adds a
+  `Show only this & its neighbourhood` entry (between Hide and Delete)
+  wired to a new `onIsolateNeighborhood` prop. `queryStore` gains
+  `isolateNeighborhood(tabId, nodeId)` which snapshots the current
+  `tab.result.graph_elements` into a new `tab.previousGraphElements`
+  field and rewrites the canvas to keep only the clicked node, its
+  incident edges, and those edges' endpoints (deterministic client-side
+  filter — no API call). The companion `restoreGraphElements(tabId)`
+  copies the snapshot back and clears it. `ResultTab` renders a
+  `← Back to full result` breadcrumb above the canvas while the
+  snapshot is held; it also hides the Isolate menu entry while in
+  isolate mode (re-isolating would clobber the snapshot). The snapshot
+  is dropped on `persist` rehydrate, since it's a view of `result`
+  which is already dropped. Adds 7 store tests (round-trip,
+  no-incident-edges edge case, no-graph-elements edge case, double-
+  isolate guard, restore no-op) plus 3 menu tests + 4 ResultTab
+  breadcrumb tests.
 - **Client-side viz limit enforced before rendering (ROADMAP A5)** —
   `settingsStore.maxNodesForGraph` / `maxEdgesForGraph` (default
   5000 / 10000) were never checked, so a 50k-node accidental query would

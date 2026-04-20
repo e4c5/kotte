@@ -56,6 +56,8 @@ export default function WorkspacePage() {
     history,
     mergeGraphElements,
     updateResult,
+    isolateNeighborhood,
+    restoreGraphElements,
     currentGraph,
     loading,
     error,
@@ -72,6 +74,7 @@ export default function WorkspacePage() {
     selectedEdge,
     layout,
     setLayout,
+    setCameraFocusAnchorIds,
   } = useGraphStore()
 
   useEffect(() => {
@@ -175,7 +178,12 @@ export default function WorkspacePage() {
   const handleTabClose = (tabId: string, e: React.MouseEvent) => {
     e.stopPropagation()
     if (tabs.length <= 1) {
-      updateTab(tabId, { query: '', result: null, error: null })
+      updateTab(tabId, {
+        query: '',
+        result: null,
+        error: null,
+        previousGraphElements: null,
+      })
       return
     }
     closeTab(tabId)
@@ -186,17 +194,20 @@ export default function WorkspacePage() {
     setActiveTab(newTabId)
   }
 
-  const handleExpandNode = async (nodeId: string) => {
-    if (!activeTabId || !currentGraph || expanding) return
+  const handleExpandNode = async (
+    nodeId: string,
+  ): Promise<{ addedNodeIds: string[]; addedEdgeIds: string[] } | null> => {
+    if (!activeTabId || !currentGraph || expanding) return null
     setExpanding(true)
     try {
       const expandResult = await graphAPI.expandNode(currentGraph, nodeId, {
         depth: 1,
         limit: 100,
       })
-      mergeGraphElements(activeTabId, expandResult.nodes, expandResult.edges)
+      return mergeGraphElements(activeTabId, expandResult.nodes, expandResult.edges)
     } catch (err) {
       console.error('Failed to expand node:', err)
+      return null
     } finally {
       setExpanding(false)
     }
@@ -205,10 +216,35 @@ export default function WorkspacePage() {
   // Double-clicking a node is a discoverable shortcut for the right-click
   // "Expand neighborhood" action: it merges the node's first-level neighbours
   // into the current view (additive — never destructive). See ROADMAP.md A11.
+  // Phase 2 also focuses the camera on `{clicked} ∪ addedNodeIds` so the user
+  // sees what they just expanded instead of having the whole canvas re-fit.
   // Typed against the structural minimum so it accepts both the GraphView and
   // services/graph GraphNode shapes without coupling the page to either.
-  const handleDoubleClickNode = (node: { id: string }) => {
-    void handleExpandNode(node.id)
+  const handleDoubleClickNode = async (node: { id: string }) => {
+    // `cameraFocusAnchorIds` is a global graphStore value consumed by the
+    // currently-mounted GraphView. If the user switches tabs while the expand
+    // is in flight, applying the focus would zoom the *other* tab's canvas to
+    // anchors that don't belong to it. Capture the originating tab id and
+    // bail if the active tab moved on by the time the await resolves. We use
+    // `getState()` (not the closed-over `activeTabId`) to read the *current*
+    // value, since a setState may have happened during the await.
+    const requestTabId = activeTabId
+    const merged = await handleExpandNode(node.id)
+    if (!merged || !requestTabId) return
+    if (useQueryStore.getState().activeTabId !== requestTabId) return
+    // Always include the clicked node in the focus union so a no-op expand
+    // (node already had all its neighbours on canvas) still recentres on it.
+    setCameraFocusAnchorIds([node.id, ...merged.addedNodeIds])
+  }
+
+  const handleNodeIsolate = (nodeId: string) => {
+    if (!activeTabId) return
+    isolateNeighborhood(activeTabId, nodeId)
+  }
+
+  const handleRestoreFullResult = () => {
+    if (!activeTabId) return
+    restoreGraphElements(activeTabId)
   }
 
   const handleDeleteNode = async (nodeId: string) => {
@@ -358,11 +394,15 @@ export default function WorkspacePage() {
                 vizDisabledReason={vizDisabledReason}
                 onOpenSettings={() => setShowSettings(true)}
                 onViewModeChange={(mode) => handleTabViewModeChange(activeTab.id, mode)}
-                onNodeExpand={handleExpandNode}
+                onNodeExpand={async (id) => {
+                  await handleExpandNode(id)
+                }}
                 onNodeDelete={handleDeleteNode}
                 onNodeSelect={(node) => setSelectedNode(node.id)}
                 onNodeDoubleClick={handleDoubleClickNode}
                 onEdgeSelect={(edge) => setSelectedEdge(edge.id)}
+                onNodeIsolate={handleNodeIsolate}
+                onRestoreFullResult={handleRestoreFullResult}
                 onExportReady={(exportFn) => handleTabExportReady(activeTab.id, exportFn)}
               />
             ) : (

@@ -77,6 +77,16 @@ interface GraphState {
   togglePinNode: (nodeId: string) => void
   hiddenNodes: Set<string>
   toggleHideNode: (nodeId: string) => void
+
+  // Camera focus (ROADMAP A11 phase 2). Populated by `WorkspacePage` after
+  // an additive double-click expand merges new neighbours into the canvas;
+  // consumed by `GraphView`, which animates the d3-zoom transform to fit the
+  // union {clicked node} ∪ addedNodeIds and then clears the field. Empty
+  // array means "no pending focus" — the canvas keeps whatever transform
+  // it already has.
+  cameraFocusAnchorIds: string[]
+  setCameraFocusAnchorIds: (ids: string[]) => void
+  clearCameraFocusAnchorIds: () => void
 }
 
 const defaultNodeStyle: LabelStyle = {
@@ -115,6 +125,7 @@ export const useGraphStore = create<GraphState>()(
       selectedEdge: null,
       pinnedNodes: new Set(),
       hiddenNodes: new Set(),
+      cameraFocusAnchorIds: [],
 
       setLayout: (layout) => set({ layout }),
 
@@ -243,6 +254,16 @@ export const useGraphStore = create<GraphState>()(
           }
           return { hiddenNodes: newSet }
         }),
+
+      setCameraFocusAnchorIds: (ids) =>
+        set({ cameraFocusAnchorIds: Array.from(new Set(ids)) }),
+
+      clearCameraFocusAnchorIds: () =>
+        set((state) =>
+          state.cameraFocusAnchorIds.length === 0
+            ? state
+            : { cameraFocusAnchorIds: [] },
+        ),
     }),
     {
       name: 'kotte-graph-styles',

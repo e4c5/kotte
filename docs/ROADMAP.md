@@ -281,39 +281,13 @@ The work splits cleanly into three PRs, sized to ship and merge independently.
 - Threaded `onNodeDoubleClick` through `ResultTab` to `WorkspacePage`, where `handleDoubleClickNode` delegates to the existing `handleExpandNode`.
 - Acceptance check: double-clicking a node merges its first-hop neighbours; existing nodes keep positions; pinned nodes stay pinned; double-clicking the same node twice does not duplicate edges. Frontend tests: 34/34 passing. tsc error count dropped by 1 (a pre-existing `GraphEdge` type lie at the queryStore boundary is now resolved).
 
-#### Phase 2 — Camera focus on newly-added neighbourhood
+#### Phase 2 — Camera focus on newly-added neighbourhood ✅ shipped
 
-**Why:** Today the canvas just shifts whatever D3's simulation does after the merge. Users expect the view to centre on what they just expanded. The pure helper already returns the newly-added node ids; phase 2 consumes them.
+**Status:** Shipped on `feat/a11-camera-focus-and-isolate` (bundled with phase 3 in PR #35). `graphStore` gained `cameraFocusAnchorIds: string[]` plus `setCameraFocusAnchorIds` (which dedups its input) and `clearCameraFocusAnchorIds` (which preserves the array reference when already empty so subscribers don't re-render). `WorkspacePage.handleExpandNode` was changed to return the merge result and `handleDoubleClickNode` now sets the anchor union `[clickedNodeId, ...merged.addedNodeIds]` after `await`. `GraphView` watches the field via a new `useEffect` (deps include `filteredNodes` so it runs *after* the main mount effect rebuilds the simulation) that defers one animation frame, reads positions from `simulationRef.current.nodes()`, computes the anchor bounding box, animates `d3.zoomIdentity` with `transition().duration(400)`, briefly pins the clicked node for 2s, then clears the anchors on `transition().on('end')`. Single-anchor / tightly-clustered cases are handled by flooring content size at 200px and clamping `scale ∈ [0.3, 2.0]` so the zoom doesn't max out on a zero-area box. Honours `pinnedNodes` — the 2s auto-release won't unpin a user-pinned node. Adds 6 unit tests on the new store actions.
 
-**Files & changes:**
+#### Phase 3 — Explicit reversible "isolate" mode ✅ shipped
 
-- `frontend/src/stores/graphStore.ts` — add `cameraFocusNodeId: string | null` and `cameraFocusAnchorIds: string[]` (the union of `{clicked node} ∪ addedNodeIds`), plus setters.
-- `frontend/src/pages/WorkspacePage.tsx` — in `handleDoubleClickNode`, after the merge, call `setCameraFocusAnchorIds([nodeId, ...addedNodeIds])`. (Use the new return value from `mergeGraphElements`.)
-- `frontend/src/components/GraphView.tsx` — read `cameraFocusAnchorIds` from the store; when it changes and is non-empty, animate the d3-zoom transform to fit those nodes in the viewport with a smooth `transition().duration(400)`. Briefly pin the anchor for ~2s (`fx`/`fy` set, then cleared on `setTimeout(2000)`) so the simulation settles around the focus.
-- After the animation the page clears `cameraFocusAnchorIds` so subsequent simulation ticks don't keep retriggering it.
-
-**Acceptance:** Double-clicking a node smoothly recentres the view on the union of the clicked node and its newly-added neighbours. The clicked node is briefly pinned then released. The animation does not re-fit on every simulation tick.
-
-**Estimate:** 2–3 hours.
-
-#### Phase 3 — Explicit reversible "isolate" mode
-
-**Why:** The "show only this node and its neighbourhood" gesture is genuinely useful — but as an explicit, reversible action, not as an accident of double-clicking.
-
-**Files & changes:**
-
-- `frontend/src/components/NodeContextMenu.tsx` — add a new menu item `Show only this & its neighbourhood`, wired to a new `onIsolateNeighborhood` prop.
-- `frontend/src/stores/queryStore.ts`
-  - Add `previousGraphElements?: GraphElements | null` per tab.
-  - Add `isolateNeighborhood(tabId, nodeId)`: snapshots `tab.result.graph_elements` into `previousGraphElements`, then rewrites `graph_elements` to keep only the node and its incident edges/endpoints **from the current canvas** (no API call — this is a deterministic client-side filter).
-  - Add `restoreGraphElements(tabId)`: copies `previousGraphElements` back and clears the snapshot.
-- `frontend/src/components/ResultTab.tsx`
-  - Pass an `onIsolateNeighborhood` handler to `NodeContextMenu` that calls `isolateNeighborhood(activeTabId, nodeId)`.
-  - When `tab.previousGraphElements` is set, render a `← Back to full result` breadcrumb above the graph; clicking it calls `restoreGraphElements(tab.id)`.
-
-**Acceptance:** Right-click → `Show only this & its neighbourhood` collapses the canvas to the local neighbourhood; a `← Back to full result` breadcrumb appears; clicking it restores the previous canvas exactly. A unit test on `queryStore.isolateNeighborhood` + `restoreGraphElements` confirms the snapshot round-trips.
-
-**Estimate:** 2–3 hours.
+**Status:** Shipped on `feat/a11-camera-focus-and-isolate` (bundled with phase 2 in PR #35). `NodeContextMenu` gained an `onIsolateNeighborhood?` prop and a new `Show only this & its neighbourhood` entry rendered between Hide and Delete (with `aria-label="Show only node {id} and its neighbourhood"`). `queryStore` gained `previousGraphElements: GraphElements | null` on `QueryTab` plus two actions: `isolateNeighborhood(tabId, nodeId)` snapshots the current `result.graph_elements`, then filters to the clicked node + every edge incident to it + those edges' endpoints (deterministic client-side filter, no API call); `restoreGraphElements(tabId)` puts the snapshot back and nulls the field. `isolateNeighborhood` is a no-op while a snapshot is already held so re-isolating can't clobber the original canvas. `ResultTab` reads `tab.previousGraphElements` to render a `← Back to full result` breadcrumb above the canvas; the breadcrumb only shows when both the snapshot and an `onRestoreFullResult` handler are present, so omitting the handler hides the affordance entirely. The Isolate menu entry is also hidden while in isolate mode for the same reason. Snapshots are dropped from `persist`'s `partialize` (they're a view of `result`, which is already dropped). Adds 7 store tests + 3 menu tests + 4 ResultTab breadcrumb tests.
 
 ---
 
@@ -476,7 +450,7 @@ Only if you intend Kotte to be deployed beyond a single analyst. **Total: ~4–6
 
 ## Suggested execution order
 
-> **Status note (2026-04-19):** the week-numbered plan below was the original sequencing proposal. Actual progress is tracked in the **[Progress checklist](#progress-checklist)** below — that's the authoritative source for what's done. As of this writing, week 1 has shipped A2/A3/A4/A6/A7/A11.1 (still pending: A1, A11.2, A11.3); week 2 has shipped A5/A8/A9/A10 (B1/B2 not yet started). The "Path 1" decision (finish the rest of Milestone A, then start Milestone B) is being executed against this checklist rather than against the week numbers; smaller related tickets are now bundled into one PR (A3+A5 ship together as the "graph-canvas safety" pair).
+> **Status note (2026-04-19):** the week-numbered plan below was the original sequencing proposal. Actual progress is tracked in the **[Progress checklist](#progress-checklist)** below — that's the authoritative source for what's done. As of this writing, week 1 has shipped A2/A3/A4/A6/A7 + all three phases of A11 (still pending from week 1: A1); week 2 has shipped A5/A8/A9/A10 (B1/B2 not yet started). The "Path 1" decision (finish the rest of Milestone A, then start Milestone B) is being executed against this checklist rather than against the week numbers; smaller related tickets are now bundled into one PR (A3+A5 shipped together as the "graph-canvas safety" pair; A11.2+A11.3 shipped together as the "double-click follow-through" pair).
 
 1. **Week 1**: A1, A2, A3, A4, A6, A7, A11 phases 2–3 (UI quick wins + the AGE bug + finishing the additive double-click work). A11 phase 1 already shipped.
 2. **Week 2**: A5, A8, A9, A10 + start B1/B2 (CI for tests/lint).
@@ -504,10 +478,10 @@ Toggle `- [ ]` → `- [x]` as items ship, and add a short **Status** line under 
 - [x] **A8** — Make the per-user rate limit actually fire (PR #29 on `fix/per-user-rate-limit`; resolves user via `session_manager.get_user_id` so the cookie can't drift from the manager)
 - [x] **A9** — Add `LICENSE`, `CHANGELOG.md`, `backend/.env.example` (PR #30 on `chore/license-changelog-env`; Apache-2.0 LICENSE + matching NOTICE, Keep-a-Changelog-style CHANGELOG seeded with 0.1.0, full env example covering every `Settings` key + `ADMIN_PASSWORD` with required-in-prod markers; verified that `cp backend/.env.example backend/.env` boots cleanly. Caught a doc/code drift along the way: pydantic-settings parses `List[str]` as JSON, so `CORS_ORIGINS` must be a JSON array even though `docs/CONFIGURATION.md` shows the comma form — recorded as follow-up)
 - [x] **A10** — Surface JSON parameter parse errors instead of silently dropping them (PR #31 on `fix/query-params-error-surface`; `getQueryParams` now returns `{ ok, value } | { ok, error }`, the editor renders an inline `role="alert"` caption + red border under the params textarea, disables Execute with a tooltip, blocks Shift+Enter, and shows a red dot on the `Parameters` toggle when the panel is collapsed; 12 unit tests added)
-- [~] **A11** — Add additive double-click expand (with reversible "isolate" mode)
+- [x] **A11** — Add additive double-click expand (with reversible "isolate" mode)
   - [x] Phase 1 — additive double-click via shared `mergeGraphElements` (PR #23, commits `461b202`, `dc11d06` on `main`)
-  - [ ] Phase 2 — camera focus animation on newly-added neighbourhood
-  - [ ] Phase 3 — explicit reversible "isolate" context-menu action with `← Back to full result` breadcrumb
+  - [x] Phase 2 — camera focus animation on newly-added neighbourhood (PR #35 on `feat/a11-camera-focus-and-isolate`, bundled with phase 3; `graphStore.cameraFocusAnchorIds` set after merge, GraphView animates `d3.zoomIdentity` over 400ms to the anchor union and briefly pins the clicked node for 2s)
+  - [x] Phase 3 — explicit reversible "isolate" context-menu action with `← Back to full result` breadcrumb (PR #35 on `feat/a11-camera-focus-and-isolate`, bundled with phase 2; `queryStore.isolateNeighborhood` snapshots into `previousGraphElements` and filters to incident edges, `restoreGraphElements` round-trips the snapshot, `ResultTab` renders the breadcrumb when both snapshot + handler are present)
 
 ### Milestone B — CI and production deployment are real
 

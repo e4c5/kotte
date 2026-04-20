@@ -1,3 +1,4 @@
+import type { ComponentProps } from 'react'
 import { describe, it, expect, vi, beforeAll } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -74,20 +75,43 @@ function makeTab(overrides: Partial<QueryTab> = {}): QueryTab {
   }
 }
 
+type ResultTabProps = ComponentProps<typeof ResultTab>
+
+// Centralised renderer so individual tests only declare the props they care
+// about. This keeps the JSX out of every `it()` block (Sonar S4144 / new-code
+// duplication on the wide ResultTab prop list).
+function renderResultTab(overrides: Partial<ResultTabProps> = {}) {
+  const props: ResultTabProps = {
+    tab: makeTab(),
+    tablePageSize: 50,
+    onOpenSettings: vi.fn(),
+    onViewModeChange: vi.fn(),
+    onNodeExpand: vi.fn(),
+    onNodeDelete: vi.fn(),
+    onRestoreFullResult: vi.fn(),
+    onExportReady: vi.fn(),
+    ...overrides,
+  }
+  return { ...render(<ResultTab {...props} />), props }
+}
+
+const snapshotTab = (overrides: Partial<QueryTab> = {}) =>
+  makeTab({
+    // Any non-null snapshot is enough to flip the breadcrumb on; ResultTab
+    // only checks truthiness of `tab.previousGraphElements`.
+    previousGraphElements: {
+      nodes: [{ id: 'a', label: 'X', properties: {}, type: 'node' }],
+      edges: [],
+    },
+    ...overrides,
+  })
+
 describe('ResultTab — viz limit enforcement (ROADMAP A5)', () => {
   it('renders the banner when vizDisabledReason is set', () => {
-    render(
-      <ResultTab
-        tab={makeTab()}
-        tablePageSize={50}
-        vizDisabledReason="Result has 6,000 nodes, exceeding the visualization limit of 5,000."
-        onOpenSettings={vi.fn()}
-        onViewModeChange={vi.fn()}
-        onNodeExpand={vi.fn()}
-        onNodeDelete={vi.fn()}
-        onExportReady={vi.fn()}
-      />,
-    )
+    renderResultTab({
+      vizDisabledReason:
+        'Result has 6,000 nodes, exceeding the visualization limit of 5,000.',
+    })
     const banner = screen.getByTestId('viz-unavailable-banner')
     expect(banner).toBeInTheDocument()
     expect(banner.textContent).toMatch(/Visualization unavailable/)
@@ -95,18 +119,7 @@ describe('ResultTab — viz limit enforcement (ROADMAP A5)', () => {
   })
 
   it('disables the Graph View button when vizDisabledReason is set', () => {
-    render(
-      <ResultTab
-        tab={makeTab()}
-        tablePageSize={50}
-        vizDisabledReason="too big"
-        onOpenSettings={vi.fn()}
-        onViewModeChange={vi.fn()}
-        onNodeExpand={vi.fn()}
-        onNodeDelete={vi.fn()}
-        onExportReady={vi.fn()}
-      />,
-    )
+    renderResultTab({ vizDisabledReason: 'too big' })
     const btn = screen.getByRole('button', { name: /switch to graph view/i })
     expect(btn).toBeDisabled()
     expect(btn).toHaveAttribute('title', 'too big')
@@ -114,18 +127,7 @@ describe('ResultTab — viz limit enforcement (ROADMAP A5)', () => {
 
   it('exposes an Open Settings action when vizDisabledReason is client-side', async () => {
     const onOpenSettings = vi.fn()
-    render(
-      <ResultTab
-        tab={makeTab()}
-        tablePageSize={50}
-        vizDisabledReason="too big"
-        onOpenSettings={onOpenSettings}
-        onViewModeChange={vi.fn()}
-        onNodeExpand={vi.fn()}
-        onNodeDelete={vi.fn()}
-        onExportReady={vi.fn()}
-      />,
-    )
+    renderResultTab({ vizDisabledReason: 'too big', onOpenSettings })
     await userEvent.click(screen.getByRole('button', { name: /open settings/i }))
     expect(onOpenSettings).toHaveBeenCalledTimes(1)
   })
@@ -137,17 +139,7 @@ describe('ResultTab — viz limit enforcement (ROADMAP A5)', () => {
         visualization_warning: 'Server truncated the result',
       },
     })
-    render(
-      <ResultTab
-        tab={tab}
-        tablePageSize={50}
-        onOpenSettings={vi.fn()}
-        onViewModeChange={vi.fn()}
-        onNodeExpand={vi.fn()}
-        onNodeDelete={vi.fn()}
-        onExportReady={vi.fn()}
-      />,
-    )
+    renderResultTab({ tab })
     const banner = screen.getByTestId('viz-unavailable-banner')
     expect(banner.textContent).toMatch(/Server truncated the result/)
     expect(screen.queryByRole('button', { name: /open settings/i })).toBeNull()
@@ -163,18 +155,11 @@ describe('ResultTab — viz limit enforcement (ROADMAP A5)', () => {
         visualization_warning: 'Server truncated the result',
       },
     })
-    render(
-      <ResultTab
-        tab={tab}
-        tablePageSize={50}
-        vizDisabledReason="Result has 6,000 nodes, exceeding the visualization limit of 5,000."
-        onOpenSettings={vi.fn()}
-        onViewModeChange={vi.fn()}
-        onNodeExpand={vi.fn()}
-        onNodeDelete={vi.fn()}
-        onExportReady={vi.fn()}
-      />,
-    )
+    renderResultTab({
+      tab,
+      vizDisabledReason:
+        'Result has 6,000 nodes, exceeding the visualization limit of 5,000.',
+    })
     const banner = screen.getByTestId('viz-unavailable-banner')
     expect(banner.textContent).toMatch(/Server truncated the result/)
     expect(banner.textContent).not.toMatch(/6,000 nodes/)
@@ -182,18 +167,39 @@ describe('ResultTab — viz limit enforcement (ROADMAP A5)', () => {
   })
 
   it('renders no banner when neither reason is present', () => {
-    render(
-      <ResultTab
-        tab={makeTab()}
-        tablePageSize={50}
-        onOpenSettings={vi.fn()}
-        onViewModeChange={vi.fn()}
-        onNodeExpand={vi.fn()}
-        onNodeDelete={vi.fn()}
-        onExportReady={vi.fn()}
-      />,
-    )
+    renderResultTab()
     expect(screen.queryByTestId('viz-unavailable-banner')).toBeNull()
     expect(screen.getByRole('button', { name: /switch to graph view/i })).not.toBeDisabled()
+  })
+})
+
+describe('ResultTab — isolate breadcrumb (ROADMAP A11.3)', () => {
+  it('renders no breadcrumb when previousGraphElements is unset', () => {
+    renderResultTab()
+    expect(screen.queryByTestId('isolate-breadcrumb')).toBeNull()
+  })
+
+  it('renders the back-to-full-result breadcrumb when the tab holds a snapshot', () => {
+    renderResultTab({ tab: snapshotTab() })
+    const crumb = screen.getByTestId('isolate-breadcrumb')
+    expect(crumb).toBeInTheDocument()
+    expect(crumb.textContent).toMatch(/Back to full result/)
+  })
+
+  it('clicking the breadcrumb invokes onRestoreFullResult', async () => {
+    const onRestoreFullResult = vi.fn()
+    renderResultTab({ tab: snapshotTab(), onRestoreFullResult })
+    await userEvent.click(
+      screen.getByRole('button', { name: /back to full result/i }),
+    )
+    expect(onRestoreFullResult).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not render the breadcrumb when onRestoreFullResult is not provided, even if a snapshot exists', () => {
+    // Defensive: ResultTab guards rendering on both the snapshot AND the
+    // handler, so omitting the handler hides the affordance entirely
+    // (no dead button).
+    renderResultTab({ tab: snapshotTab(), onRestoreFullResult: undefined })
+    expect(screen.queryByTestId('isolate-breadcrumb')).toBeNull()
   })
 })
