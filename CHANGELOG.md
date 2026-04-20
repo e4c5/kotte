@@ -61,17 +61,20 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
     GHA-backed layer cache (`cache-from: type=gha, scope=<image>`,
     `mode=max`), tags via `docker/metadata-action` (semver
     major.minor.patch + major.minor + short sha + latest on default
-    branch + raw `image_tag`/`latest` on dispatch), and Trivy v0.28.0
+    branch + raw `image_tag`/`latest` on dispatch), and Trivy v0.35.0
     with `severity: HIGH,CRITICAL`, `exit-code: 1`,
     `ignore-unfixed: true`. `concurrency.cancel-in-progress` enabled.
     All third-party actions pinned to commit SHAs (checkout 4.2.2,
     setup-buildx 3.12.0, login 3.7.0, metadata 5.7.0, build-push
-    6.19.2, trivy-action 0.28.0) for supply-chain hygiene; Docker Hub
+    6.19.2, trivy-action 0.35.0) for supply-chain hygiene; Docker Hub
     login gated on `github.event_name != 'pull_request'` so fork PRs
     don't try to auth with secrets they can't see. Required secrets:
     `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`. Optional variable
     `DOCKERHUB_NAMESPACE` overrides the publish namespace (defaults to
-    `DOCKERHUB_USERNAME`) for org accounts.
+    `DOCKERHUB_USERNAME`) for org accounts. On fork / secretless PRs
+    the namespace resolve step falls back to a local-only `ci`
+    placeholder so the build + Trivy scan path still runs (the image
+    is never pushed in that case, so the placeholder tag is harmless).
 - **GitHub Actions CI for backend and frontend (ROADMAP B1+B2)** —
   two new workflows guard the test and lint surface on every push to
   `main` and every PR.

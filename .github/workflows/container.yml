@@ -80,20 +80,26 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       # Resolve the publish namespace: explicit DOCKERHUB_NAMESPACE variable
-      # wins, otherwise fall back to the login username. Fails fast when
-      # neither is configured so the mistake surfaces before the build
-      # burns CI minutes.
+      # wins, otherwise fall back to the login username. On push / dispatch
+      # we fail fast when neither is configured so the mistake surfaces
+      # before the build burns CI minutes. On PRs (including fork PRs that
+      # can't see org secrets by design) we fall back to a local-only `ci`
+      # namespace so the build + Trivy scan path still runs — the tag is
+      # never pushed anywhere in that case, so the placeholder is fine.
       - name: Resolve Docker Hub repository
         id: repo
         env:
           DOCKERHUB_NAMESPACE: ${{ vars.DOCKERHUB_NAMESPACE }}
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
           IMAGE: ${{ matrix.image }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
           if [ -n "${DOCKERHUB_NAMESPACE}" ]; then
             namespace="${DOCKERHUB_NAMESPACE}"
           elif [ -n "${DOCKERHUB_USERNAME}" ]; then
             namespace="${DOCKERHUB_USERNAME}"
+          elif [ "${EVENT_NAME}" = "pull_request" ]; then
+            namespace="ci"
           else
             echo "Set DOCKERHUB_NAMESPACE (variable) or DOCKERHUB_USERNAME (secret) to specify the Docker Hub namespace." >&2
             exit 1
@@ -155,7 +161,7 @@ jobs:
       # match as blocking. `ignore-unfixed` keeps the gate useful even
       # when upstream distros lag on CVE patches.
       - name: Trivy scan (HIGH, CRITICAL)
-        uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2 # v0.28.0
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0
         with:
           image-ref: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
           severity: HIGH,CRITICAL
