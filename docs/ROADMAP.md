@@ -322,19 +322,25 @@ Bigger but well-scoped. Listed as headline tickets here; expand into A-style det
 
 The `--max-warnings 0` ratchet stays in place; the `no-explicit-any` rule stays at `error` severity. Each disable-next-line carries a comment explaining why, so reviewers can audit the ratchet's edges.
 
-### B3. GitHub Actions: `container.yml`
+### B3. GitHub Actions: `container.yml` — ✅ shipped (PR #38 on `feat/b3-b4-b5-container-images`, bundled with B4+B5)
 
 - Build both images on tag pushes; push to GHCR.
 - `trivy image` scan with severity `HIGH,CRITICAL` failing the build.
 
-### B4. Multi-stage backend image
+**Status (PR #38):** `.github/workflows/container.yml` shipped. Triggers split across two paths so we catch Dockerfile regressions before a release cut: tag pushes matching `v*` go through the full build + Trivy scan + push-to-GHCR pipeline; PRs that touch the Dockerfiles / `nginx.conf` / the workflow itself / `backend/requirements.txt` / `frontend/package-lock.json` go through the build + Trivy scan path only (`push: false`, `load: true` so Trivy can see the image). Matrix strategy over `{backend, frontend}` so both images are handled in parallel with separate GHA layer-cache scopes. Trivy 0.28 with `severity: HIGH,CRITICAL`, `exit-code: 1`, `ignore-unfixed: true` (so CVEs without vendor fixes don't block merges — those belong in a base-image-bump PR instead). Tag computation via `docker/metadata-action` (semver major.minor.patch + `latest` on the default branch + `pr-<N>` for PRs). `permissions: {contents: read, packages: write}` scoped for GHCR; the login step is gated on `startsWith(github.ref, 'refs/tags/')` so fork PRs don't fail on auth.
+
+### B4. Multi-stage backend image — ✅ shipped (PR #38, bundled with B3+B5)
 
 - `deployment/backend.Dockerfile`: stage 1 `python:3.11-slim` builder with build deps + `pip install --target=/app/site-packages`; stage 2 `python:3.11-slim` runtime, copy site-packages and source, `USER kotte`, `HEALTHCHECK CMD curl -f http://localhost:8000/api/v1/health`.
 
-### B5. Multi-stage frontend image (production)
+**Status (PR #38):** `deployment/backend.Dockerfile` rewritten as the two-stage pattern above. Builder stage installs `build-essential` + `libpq-dev` and runs `pip install --no-cache-dir --target=/install -r requirements.txt`; runtime stage has only `libpq5` + `curl` plus the copied `/install` tree (`COPY --from=builder /install /app/site-packages`, with `PYTHONPATH` + `PATH` set so uvicorn's console script resolves). Non-root `kotte` user created with `/usr/sbin/nologin` as its shell. `HEALTHCHECK` uses `curl --fail --silent --show-error` with interval/timeout/retries tuned for a FastAPI startup (`--interval=30s --timeout=5s --start-period=15s --retries=3`). Validated locally: the image builds via `docker build`, the container boots, and `GET /api/v1/health` returns `{"status":"healthy","version":"0.1.0", ...}`. Final runtime image ~400 MB; the builder stage (~600 MB with gcc + headers) is thrown away after the `COPY --from=builder`, so the build tools never reach production.
+
+### B5. Multi-stage frontend image (production) — ✅ shipped (PR #38, bundled with B3+B4)
 
 - New file `deployment/frontend.Dockerfile.prod`: stage 1 `node:20-alpine` runs `npm ci` + `npm run build`; stage 2 `nginx:alpine` with a custom `nginx.conf` doing SPA fallback + gzip + cache headers. Expose 80.
 - Keep current `frontend.Dockerfile` for dev compose.
+
+**Status (PR #38):** `deployment/frontend.Dockerfile.prod` (new) and `deployment/nginx.conf` (new) shipped. The existing `deployment/frontend.Dockerfile` is untouched so `deployment/docker-compose.yml` continues to work for local dev with HMR on port 5173. Prod image uses `node:20-alpine` as the builder (matches the version `frontend-ci.yml` runs against), runs `npm ci --no-audit --no-fund` + `npm run build`, then hands only the `dist/` tree to `nginx:alpine`. Runtime image ~64 MB (vs. backend's ~400 MB). The nginx config drops the default server block, sets `server_tokens off`, turns on gzip above 1 KB for JS/CSS/JSON/XML/wasm, and encodes three routing rules: `/assets/*` gets `Cache-Control: public, max-age=31536000, immutable` (safe because vite hashes filenames), `/index.html` gets `Cache-Control: no-cache, no-store, must-revalidate` (so deploys propagate instantly), and everything else falls through `try_files $uri $uri/ /index.html` so React-router sub-routes survive a hard refresh. Static hardening headers (`X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`) added at the `server {}` level — these overlap partially with `SecurityHeadersMiddleware` on the backend but cover the static-response path where FastAPI isn't in the chain. Validated locally: image builds, SPA fallback works (`/workspace/anything` returns 200 + index.html content), the asset response carries a single `Cache-Control` header (not two — earlier draft had `expires 1y` + `add_header Cache-Control` which emitted both), and gzip is active for JS/CSS responses when the client sends `Accept-Encoding: gzip`.
 
 ### B6. Compose split
 
@@ -466,7 +472,7 @@ Only if you intend Kotte to be deployed beyond a single analyst. **Total: ~4–6
 
 ## Suggested execution order
 
-> **Status note (2026-04-19):** the week-numbered plan below was the original sequencing proposal. Actual progress is tracked in the **[Progress checklist](#progress-checklist)** below — that's the authoritative source for what's done. As of this writing, **all of Milestone A is shipped** (A1–A11 inclusive) and **Milestone B's CI band (B1+B2) is in PR #37**; B1 is partial — the lint/unit jobs are wired but `black --check` (B1.1), `mypy app` (B1.2), and the AGE-backed integration job (B1.3) are deferred to follow-up tickets so the day-one CI gate stays green rather than gating on pre-existing debt. Next active work after PR #37 lands: B3–B6 (containers + compose split) or B7 (Alembic migrations), depending on which deliverable users hit first. Smaller related tickets are bundled into one PR (A3+A5 shipped together as the "graph-canvas safety" pair; A11.2+A11.3 as the "double-click follow-through" pair; B1+B2 as the "CI for tests and lint" pair).
+> **Status note (2026-04-20):** the week-numbered plan below was the original sequencing proposal. Actual progress is tracked in the **[Progress checklist](#progress-checklist)** below — that's the authoritative source for what's done. As of this writing, **all of Milestone A is shipped** (A1–A11 inclusive), **B1+B2 shipped in PR #37** (B1 partial — B1.1/B1.2/B1.3 sub-tickets deferred so the day-one CI gate stays green rather than gating on pre-existing debt), and **B3+B4+B5 shipped in PR #38** (the "container images + GHCR publish pipeline" trio — multi-stage Dockerfiles for both services, nginx config with SPA fallback + gzip + cache headers, tag-triggered GHA workflow that builds, Trivy-scans, and pushes to GHCR). Next active work after PR #38 lands: B6 (compose split into dev/prod), B7 (Alembic migrations), or B8 (pre-commit). Smaller related tickets are bundled into one PR (A3+A5 as the "graph-canvas safety" pair; A11.2+A11.3 as the "double-click follow-through" pair; B1+B2 as the "CI for tests and lint" pair; B3+B4+B5 as the "container images + GHCR publish" trio).
 
 1. **Week 1**: A1, A2, A3, A4, A6, A7, A11 phases 2–3 (UI quick wins + the AGE bug + finishing the additive double-click work). A11 phase 1 already shipped.
 2. **Week 2**: A5, A8, A9, A10 + start B1/B2 (CI for tests/lint).
@@ -506,9 +512,9 @@ Toggle `- [ ]` → `- [x]` as items ship, and add a short **Status** line under 
   - [ ] **B1.2** — enable `mypy app` in the lint job (deferred: needs Python 3.11 venv triage; local 3.10 hides real coverage behind a PEP-604 syntax error in `app/core/metrics.py:93`)
   - [ ] **B1.3** — wire the integration job with `apache/age:PG16_latest` service container + `USE_REAL_TEST_DB=true` (deferred: `tests/integration/conftest.py::connected_client` still has mock-vs-real branching that needs auditing first, otherwise the service container would be ignored)
 - [x] **B2** — GitHub Actions: `frontend-ci.yml` (PR #37, bundled with B1; eslint/typecheck/vitest/vite-build all wired, pre-existing tsc + eslint debt cleared so the gate is green on day one)
-- [ ] **B3** — GitHub Actions: `container.yml`
-- [ ] **B4** — Multi-stage backend image
-- [ ] **B5** — Multi-stage frontend image (production)
+- [x] **B3** — GitHub Actions: `container.yml` (PR #38 on `feat/b3-b4-b5-container-images`, bundled with B4+B5; matrix build over `{backend, frontend}`, tag-triggered push-to-GHCR + PR-triggered build-only, Trivy 0.28 `HIGH,CRITICAL` gate with `ignore-unfixed`, GHA-backed layer cache per image)
+- [x] **B4** — Multi-stage backend image (PR #38, bundled with B3+B5; two-stage `python:3.11-slim` with `pip install --target=/install` in stage 1 and `libpq5` + `curl` + non-root `kotte` user + curl-based `HEALTHCHECK` in stage 2; validated locally, ~400 MB runtime)
+- [x] **B5** — Multi-stage frontend image (production) (PR #38, bundled with B3+B4; new `deployment/frontend.Dockerfile.prod` + `deployment/nginx.conf`; `node:20-alpine` builder → `nginx:alpine` runtime ~64 MB; SPA fallback + gzip + immutable asset caching + no-cache on index.html + static-hardening headers; dev `frontend.Dockerfile` left untouched for compose)
 - [ ] **B6** — Compose split (dev / prod)
 - [ ] **B7** — Migrations system (Alembic)
 - [ ] **B8** — Pre-commit

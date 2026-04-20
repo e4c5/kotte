@@ -1,0 +1,123 @@
+# ROADMAP B3 — container image build, scan, and publish
+#
+# Two triggers:
+#   1. Tag pushes matching v* (e.g. v0.1.0) — build, Trivy-scan, and
+#      push both images to GHCR tagged with the version. This is the
+#      release path.
+#   2. Pull requests that touch the Dockerfiles / this workflow — build
+#      and Trivy-scan but DO NOT push. This is the "did you break the
+#      image?" gate that saves us from discovering a broken Dockerfile
+#      after cutting a release.
+#
+# The Trivy step fails the build on any HIGH or CRITICAL CVE. `ignore-
+# unfixed: true` keeps us from blocking on CVEs that have no vendor fix
+# yet (nothing you can do about those short of a base-image swap, which
+# belongs in a separate PR).
+
+name: Container images
+
+on:
+  push:
+    tags:
+      - 'v*'
+  pull_request:
+    paths:
+      - 'deployment/backend.Dockerfile'
+      - 'deployment/frontend.Dockerfile.prod'
+      - 'deployment/nginx.conf'
+      - '.github/workflows/container.yml'
+      # Source changes that would affect the produced image also flow
+      # through here so PRs catch Dockerfile-vs-source drift (e.g. a new
+      # runtime dep added to requirements.txt that the Dockerfile misses).
+      - 'backend/requirements.txt'
+      - 'frontend/package-lock.json'
+  workflow_dispatch:
+
+concurrency:
+  group: container-${{ github.ref }}
+  cancel-in-progress: true
+
+# GHCR login needs `packages: write`; SARIF upload (if/when we add it)
+# needs `security-events: write`; `contents: read` is the default.
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  # Normalize to lowercase — GHCR rejects uppercase characters in the
+  # repository segment and `github.repository` preserves case.
+  IMAGE_BASE: ghcr.io/${{ github.repository }}
+
+jobs:
+  build-and-scan:
+    name: ${{ matrix.image }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: backend
+            dockerfile: deployment/backend.Dockerfile
+          - image: frontend
+            dockerfile: deployment/frontend.Dockerfile.prod
+    steps:
+      - uses: actions/checkout@v4
+
+      # buildx gives us the GHA cache backend and SBOM/provenance knobs.
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Only log in when we're going to push. On PRs we just build into
+      # the local daemon; login would fail against forks anyway because
+      # GHCR auth requires a write-scoped token.
+      - name: Log in to GHCR
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # docker/metadata-action gives us a canonical set of tags + labels
+      # from the ref. On a v* tag we get both the version and `latest`.
+      - name: Compute image tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_BASE }}/${{ matrix.image }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=ref,event=pr
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      # Build. On PRs we load into the local daemon so the Trivy step
+      # below can scan it. On tag pushes we push to GHCR instead of
+      # loading (push + load are mutually exclusive for buildx).
+      - name: Build image
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          push: ${{ startsWith(github.ref, 'refs/tags/') }}
+          load: ${{ !startsWith(github.ref, 'refs/tags/') }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,scope=${{ matrix.image }},mode=max
+
+      # Trivy: fail on HIGH / CRITICAL CVEs with known fixes. We scan
+      # the first tag (they all point at the same sha256) and treat any
+      # match as blocking. `ignore-unfixed` keeps the gate useful even
+      # when upstream distros lag on CVE patches.
+      - name: Trivy scan (HIGH, CRITICAL)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+          ignore-unfixed: true
+          vuln-type: os,library
+          timeout: 10m

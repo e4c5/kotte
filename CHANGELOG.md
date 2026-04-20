@@ -12,6 +12,55 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ## [Unreleased]
 
 ### Added
+- **Container images + GHCR publish pipeline (ROADMAP B3+B4+B5)** —
+  production-oriented multi-stage Dockerfiles for both services and a
+  GitHub Actions workflow that builds, scans, and publishes them.
+  - `deployment/backend.Dockerfile` rewritten as two stages. Stage 1
+    uses `python:3.11-slim` with `build-essential` + `libpq-dev` and
+    `pip install --target=/install -r requirements.txt`; stage 2 is a
+    fresh `python:3.11-slim` with only `libpq5` + `curl`, imports the
+    pre-built tree via `COPY --from=builder /install /app/site-packages`
+    (with `PYTHONPATH` + `PATH` set so the console scripts resolve),
+    copies the backend source, creates a non-root `kotte` user with
+    `/usr/sbin/nologin` shell, `USER kotte`, exposes 8000, and ships a
+    `HEALTHCHECK CMD curl --fail --silent --show-error
+    http://localhost:8000/api/v1/health`. Validated end-to-end locally
+    (image builds, container boots, `/api/v1/health` returns
+    `{"status":"healthy", ...}`). Final runtime image ~400 MB — build
+    tools stay in the builder stage so CVEs there never reach
+    production.
+  - `deployment/frontend.Dockerfile.prod` (new) is also two stages.
+    Stage 1 `node:20-alpine` runs `npm ci --no-audit --no-fund` +
+    `npm run build`; stage 2 `nginx:alpine` drops the default server
+    block, ships our `nginx.conf`, and copies only the `dist/` tree
+    from the builder. Runtime image ~64 MB. Validated locally: SPA
+    fallback (`/workspace/anything` → 200 + index.html), single
+    `Cache-Control: public, max-age=31536000, immutable` header on
+    hashed `/assets/*`, `no-cache, no-store, must-revalidate` on
+    `/index.html`, and gzip active on JS/CSS responses. The dev
+    `frontend.Dockerfile` is unchanged so `deployment/docker-compose.yml`
+    continues to work for local development.
+  - `deployment/nginx.conf` (new) carries the gzip rules (1 KB
+    threshold, text/JS/CSS/JSON/wasm types), SPA fallback via
+    `try_files`, asset cache-control (immutable for `/assets/`,
+    no-cache for `/index.html`), `server_tokens off`, and static-
+    response hardening headers (`X-Content-Type-Options: nosniff`,
+    `X-Frame-Options: DENY`, `Referrer-Policy:
+    strict-origin-when-cross-origin`).
+  - `.github/workflows/container.yml` (new) drives the image pipeline
+    for both services in a matrix. Triggers: tag pushes matching `v*`
+    (build + Trivy scan + push to GHCR) and PRs that touch the
+    Dockerfiles / nginx config / workflow / `requirements.txt` /
+    `package-lock.json` (build + Trivy scan, no push, so Dockerfile
+    regressions are caught before release). Uses buildx with
+    GHA-backed layer cache (`cache-from: type=gha, scope=<image>`,
+    `mode=max`), tags via `docker/metadata-action` (semver + latest
+    on default branch), and Trivy 0.28 with `severity: HIGH,CRITICAL`,
+    `exit-code: 1`, `ignore-unfixed: true`. `concurrency.cancel-in-
+    progress` enabled. `permissions: {contents: read, packages:
+    write}` scoped for GHCR login; login step itself is gated on
+    `startsWith(github.ref, 'refs/tags/')` so fork PRs don't fail on
+    auth.
 - **GitHub Actions CI for backend and frontend (ROADMAP B1+B2)** —
   two new workflows guard the test and lint surface on every push to
   `main` and every PR.
