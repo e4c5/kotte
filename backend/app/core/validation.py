@@ -153,9 +153,7 @@ def add_result_limit_if_missing(cypher: str, max_limit: int) -> tuple[str, bool]
     return f"{normalized} LIMIT {max_limit}", True
 
 
-def validate_variable_length_traversal(
-    cypher_query: str, max_variable_hops: int
-) -> str:
+def validate_variable_length_traversal(cypher_query: str, max_variable_hops: int) -> str:
     """
     Validate variable-length traversals to avoid unbounded/high-cost queries.
 

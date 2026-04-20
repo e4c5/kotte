@@ -64,4 +64,3 @@ export async function getConnection(connectionId: string): Promise<SavedConnecti
 export async function deleteConnection(connectionId: string): Promise<void> {
   await api.delete(`/connections/${connectionId}`);
 }
-

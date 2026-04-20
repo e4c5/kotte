@@ -4,7 +4,7 @@ import GraphView, { type GraphNode, type GraphEdge } from '../GraphView'
 
 vi.mock('d3', async (importOriginal) => {
   const actual = await importOriginal<typeof import('d3')>()
-  
+
   const createMockSelection = () => {
     // d3 simulation/selection mocks are deliberately untyped: we mock a
     // dozen-method fluent API that's tedious to mirror in TypeScript and

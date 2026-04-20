@@ -28,7 +28,7 @@ http_request_duration_seconds = Histogram(
 query_executions_total = Counter(
     "query_executions_total",
     "Total number of Cypher query executions",
-    ["graph", "status"], # status: success, error
+    ["graph", "status"],  # status: success, error
 )
 
 query_execution_duration_seconds = Histogram(
@@ -64,7 +64,7 @@ active_sessions = Gauge(
 db_connection_attempts_total = Counter(
     "db_connection_attempts_total",
     "Total number of database connection attempts",
-    ["status"], # status: success, failure, disconnect
+    ["status"],  # status: success, failure, disconnect
 )
 
 active_db_connections = Gauge(
@@ -82,14 +82,14 @@ db_query_duration_seconds = Histogram(
 cache_requests_total = Counter(
     "cache_requests_total",
     "Total number of cache requests",
-    ["cache_name", "status"], # status: hit, miss
+    ["cache_name", "status"],  # status: hit, miss
 )
 
 # Database Connection Pool Metrics
 db_pool_size = Gauge(
     "db_pool_size",
     "Number of connections in the pool",
-    ["database", "type"], # type: total, available, in_use
+    ["database", "type"],  # type: total, available, in_use
 )
 
 # Error Metrics
@@ -125,7 +125,7 @@ class MetricsCollector:
     def __init__(self):
         self._known_graphs = set()
         self._known_databases = set()
-        self._max_labels = 100 # Maximum unique labels for graphs/databases to prevent explosion
+        self._max_labels = 100  # Maximum unique labels for graphs/databases to prevent explosion
         self._lock = threading.Lock()
 
     def _sanitize_graph(self, graph: str) -> str:
@@ -148,7 +148,9 @@ class MetricsCollector:
             self._known_databases.add(database)
             return database
 
-    def record_http_request(self, method: str, endpoint: str, status_code: int, duration: float) -> None:
+    def record_http_request(
+        self, method: str, endpoint: str, status_code: int, duration: float
+    ) -> None:
         """Record HTTP request metrics."""
         http_requests_total.labels(method=method, endpoint=endpoint, status_code=status_code).inc()
         http_request_duration_seconds.labels(method=method, endpoint=endpoint).observe(duration)

@@ -51,7 +51,7 @@ class QueryManager:
     async def cancel_backend(self, pid: int) -> bool:
         """
         Cancel a PostgreSQL backend process.
-        
+
         Requires a separate connection to perform the cancellation.
         """
         try:
@@ -64,7 +64,7 @@ class QueryManager:
                 async with cancel_conn.cursor() as cur:
                     await cur.execute("SELECT pg_cancel_backend(%(pid)s)", {"pid": pid})
                     result = await cur.fetchone()
-                    cancelled = (list(result.values())[0] if result else False)
+                    cancelled = list(result.values())[0] if result else False
                     if cancelled:
                         logger.info(f"Successfully cancelled backend PID {pid}")
                     return cancelled

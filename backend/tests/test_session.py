@@ -5,7 +5,6 @@ from fastapi.testclient import TestClient
 from unittest.mock import AsyncMock, MagicMock, patch
 
 
-
 class TestConnect:
     """Tests for /session/connect endpoint."""
 
@@ -23,11 +22,11 @@ class TestConnect:
                 }
             },
         )
-        
+
         # Should require authentication first
         assert response.status_code == 401
 
-    @patch('app.api.v1.session.DatabaseConnection')
+    @patch("app.api.v1.session.DatabaseConnection")
     def test_connect_success(self, mock_db_class, client: TestClient):
         """Test successful connection."""
         # First login
@@ -35,15 +34,15 @@ class TestConnect:
             "/api/v1/auth/login",
             json={"username": "admin", "password": "admin"},
         )
-        
+
         if login_response.status_code != 200:
             pytest.skip("Login failed, cannot test connect")
-        
+
         # Mock database connection
         mock_db = MagicMock()
         mock_db.connect = AsyncMock()
         mock_db_class.return_value = mock_db
-        
+
         response = client.post(
             "/api/v1/session/connect",
             json={
@@ -56,10 +55,10 @@ class TestConnect:
                 }
             },
         )
-        
+
         # May fail due to session middleware, but endpoint should exist
         assert response.status_code in [201, 401, 500]
-        
+
         if response.status_code == 201:
             data = response.json()
             assert data["connected"] is True
@@ -74,16 +73,16 @@ class TestConnect:
             "/api/v1/auth/login",
             json={"username": "admin", "password": "admin"},
         )
-        
+
         if login_response.status_code != 200:
             pytest.skip("Login failed, cannot test connect")
-        
+
         # Mock database connection to raise error
-        with patch('app.api.v1.session.DatabaseConnection') as mock_db_class:
+        with patch("app.api.v1.session.DatabaseConnection") as mock_db_class:
             mock_db = MagicMock()
             mock_db.connect = AsyncMock(side_effect=Exception("Connection failed"))
             mock_db_class.return_value = mock_db
-            
+
             response = client.post(
                 "/api/v1/session/connect",
                 json={
@@ -96,7 +95,7 @@ class TestConnect:
                     }
                 },
             )
-            
+
             # Should fail with connection error
             assert response.status_code in [500, 401]
 
@@ -107,10 +106,10 @@ class TestConnect:
             "/api/v1/auth/login",
             json={"username": "admin", "password": "admin"},
         )
-        
+
         if login_response.status_code != 200:
             pytest.skip("Login failed, cannot test connect")
-        
+
         response = client.post(
             "/api/v1/session/connect",
             json={
@@ -120,7 +119,7 @@ class TestConnect:
                 }
             },
         )
-        
+
         # Should fail validation
         assert response.status_code == 422
 
@@ -131,7 +130,7 @@ class TestDisconnect:
     def test_disconnect_without_session(self, client: TestClient):
         """Test disconnect without active session."""
         response = client.post("/api/v1/session/disconnect")
-        
+
         # Should require authentication
         assert response.status_code == 401
 
@@ -142,21 +141,21 @@ class TestDisconnect:
             "/api/v1/auth/login",
             json={"username": "admin", "password": "admin"},
         )
-        
+
         if login_response.status_code != 200:
             pytest.skip("Login failed, cannot test disconnect")
-        
+
         # Mock database disconnect
-        with patch('app.api.v1.session.DatabaseConnection') as mock_db_class:
+        with patch("app.api.v1.session.DatabaseConnection") as mock_db_class:
             mock_db = MagicMock()
             mock_db.disconnect = AsyncMock()
             mock_db_class.return_value = mock_db
-            
+
             response = client.post("/api/v1/session/disconnect")
-            
+
             # May fail due to session middleware
             assert response.status_code in [200, 401, 500]
-            
+
             if response.status_code == 200:
                 data = response.json()
                 assert data["disconnected"] is True
@@ -168,7 +167,7 @@ class TestStatus:
     def test_status_without_session(self, client: TestClient):
         """Test status without active session."""
         response = client.get("/api/v1/session/status")
-        
+
         # Should require authentication
         assert response.status_code == 401
 
@@ -179,15 +178,15 @@ class TestStatus:
             "/api/v1/auth/login",
             json={"username": "admin", "password": "admin"},
         )
-        
+
         if login_response.status_code != 200:
             pytest.skip("Login failed, cannot test status")
-        
+
         response = client.get("/api/v1/session/status")
-        
+
         # May fail due to session middleware
         assert response.status_code in [200, 401, 500]
-        
+
         if response.status_code == 200:
             data = response.json()
             assert data["connected"] is False
@@ -199,16 +198,16 @@ class TestStatus:
             "/api/v1/auth/login",
             json={"username": "admin", "password": "admin"},
         )
-        
+
         if login_response.status_code != 200:
             pytest.skip("Login failed, cannot test status")
-        
+
         # Mock connection
-        with patch('app.api.v1.session.DatabaseConnection') as mock_db_class:
+        with patch("app.api.v1.session.DatabaseConnection") as mock_db_class:
             mock_db = MagicMock()
             mock_db.connect = AsyncMock()
             mock_db_class.return_value = mock_db
-            
+
             # Connect
             connect_response = client.post(
                 "/api/v1/session/connect",
@@ -222,15 +221,14 @@ class TestStatus:
                     }
                 },
             )
-            
+
             if connect_response.status_code == 201:
                 # Get status
                 response = client.get("/api/v1/session/status")
-                
+
                 if response.status_code == 200:
                     data = response.json()
                     assert data["connected"] is True
                     assert data["database"] == "test_db"
                     assert data["host"] == "localhost"
                     assert data["port"] == 5432
-

@@ -20,7 +20,7 @@ class TestMetadataService:
         await metadata_cache.clear()
         # execute_cypher returns AS (k agtype); k is list of keys from keys(n)
         mock_result = [
-            {"k": '["age", "city", "name"]'}, # Parser expects AgType string in some mocks, or list
+            {"k": '["age", "city", "name"]'},  # Parser expects AgType string in some mocks, or list
         ]
         mock_db_connection.execute_cypher = AsyncMock(return_value=mock_result)
 

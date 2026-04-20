@@ -17,9 +17,7 @@ class CSVImportRequest(BaseModel):
         default_factory=list,
         description="Edge file configurations (label, file, drop_if_exists)",
     )
-    options: Optional[Dict[str, Any]] = Field(
-        default=None, description="Import options"
-    )
+    options: Optional[Dict[str, Any]] = Field(default=None, description="Import options")
 
 
 class ImportJobStatus(BaseModel):
@@ -43,4 +41,3 @@ class CSVImportResponse(BaseModel):
     job_id: str
     status: str
     message: str
-

@@ -9,6 +9,7 @@ import httpx
 from fastapi.testclient import TestClient
 from unittest.mock import Mock, AsyncMock
 
+
 def pytest_configure(config):
     """Set up environment variables before tests run."""
     os.environ["SESSION_SECRET_KEY"] = "test-secret-key-for-unit-tests"
@@ -30,6 +31,7 @@ def test_app(monkeypatch):
         if mod in sys.modules:
             del sys.modules[mod]
     from app.main import create_app
+
     app = create_app()
     # Keep unit/security tests aligned with integration middleware behavior.
     # These two layers can deadlock under test transports in some environments.
@@ -65,6 +67,7 @@ def cleanup_sessions():
     """Clean up sessions after each test to avoid state leakage."""
     yield
     from app.core.auth import session_manager
+
     session_manager._sessions.clear()
 
 

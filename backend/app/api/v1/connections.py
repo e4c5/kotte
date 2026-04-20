@@ -27,7 +27,7 @@ async def save_connection(
 ) -> SavedConnectionResponse:
     """
     Save a database connection (encrypted).
-    
+
     Credentials are encrypted using AES-256-GCM with user-specific key derivation.
     """
     user_id = session.get("user_id")
@@ -38,7 +38,7 @@ async def save_connection(
             category=ErrorCategory.AUTHORIZATION,
             status_code=status.HTTP_401_UNAUTHORIZED,
         )
-    
+
     try:
         connection_id = connection_storage.save_connection(
             user_id=user_id,
@@ -50,7 +50,7 @@ async def save_connection(
             password=request.password,
             sslmode=request.sslmode,
         )
-        
+
         # Get the saved connection to return metadata
         conn = connection_storage.get_connection(user_id, connection_id)
         if not conn:
@@ -60,7 +60,7 @@ async def save_connection(
                 category=ErrorCategory.INTERNAL,
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
-        
+
         logger.info(
             "Saved connection for user",
             extra={
@@ -70,7 +70,7 @@ async def save_connection(
                 "connection_name": request.name,
             },
         )
-        
+
         return SavedConnectionResponse(
             id=conn["id"],
             name=conn["name"],
@@ -111,7 +111,7 @@ async def list_connections(
             category=ErrorCategory.AUTHORIZATION,
             status_code=status.HTTP_401_UNAUTHORIZED,
         )
-    
+
     try:
         connections = connection_storage.list_connections(user_id)
         return [
@@ -143,7 +143,7 @@ async def get_connection(
 ) -> SavedConnectionDetail:
     """
     Get a saved connection with decrypted credentials.
-    
+
     Use this endpoint to retrieve connection details for connecting.
     Credentials are decrypted server-side and returned in the response.
     """
@@ -155,7 +155,7 @@ async def get_connection(
             category=ErrorCategory.AUTHORIZATION,
             status_code=status.HTTP_401_UNAUTHORIZED,
         )
-    
+
     try:
         conn = connection_storage.get_connection(user_id, connection_id)
         if not conn:
@@ -165,7 +165,7 @@ async def get_connection(
                 category=ErrorCategory.NOT_FOUND,
                 status_code=status.HTTP_404_NOT_FOUND,
             )
-        
+
         logger.info(
             "Retrieved connection for user",
             extra={
@@ -174,7 +174,7 @@ async def get_connection(
                 "connection_id": connection_id,
             },
         )
-        
+
         return SavedConnectionDetail(
             id=conn["id"],
             name=conn["name"],
@@ -213,7 +213,7 @@ async def delete_connection(
             category=ErrorCategory.AUTHORIZATION,
             status_code=status.HTTP_401_UNAUTHORIZED,
         )
-    
+
     try:
         success = connection_storage.delete_connection(user_id, connection_id)
         if not success:
@@ -223,7 +223,7 @@ async def delete_connection(
                 category=ErrorCategory.NOT_FOUND,
                 status_code=status.HTTP_404_NOT_FOUND,
             )
-        
+
         logger.info(
             "Deleted connection for user",
             extra={
@@ -232,7 +232,7 @@ async def delete_connection(
                 "connection_id": connection_id,
             },
         )
-        
+
         return Response(status_code=status.HTTP_204_NO_CONTENT)
     except APIException:
         raise
@@ -244,4 +244,3 @@ async def delete_connection(
             category=ErrorCategory.INTERNAL,
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         ) from e
-

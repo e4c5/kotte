@@ -48,7 +48,7 @@ class ConnectionStorage:
                 except OSError:
                     logger.error(f"Could not create fallback storage directory: {e}")
                     raise
-        
+
         if not self.storage_path.exists():
             # Create empty file
             self._write_connections({})
@@ -215,4 +215,3 @@ class ConnectionStorage:
 
 # Global instance
 connection_storage = ConnectionStorage()
-

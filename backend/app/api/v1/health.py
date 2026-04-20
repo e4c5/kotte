@@ -17,6 +17,7 @@ router = APIRouter()
 
 class HealthResponse(BaseModel):
     """Health check response."""
+
     status: str
     timestamp: str
     version: str = "0.1.0"
@@ -24,6 +25,7 @@ class HealthResponse(BaseModel):
 
 class ReadinessResponse(BaseModel):
     """Readiness check response."""
+
     status: str
     timestamp: str
     database: dict
@@ -34,7 +36,7 @@ class ReadinessResponse(BaseModel):
 async def health_check() -> HealthResponse:
     """
     Basic health check endpoint.
-    
+
     Returns 200 if the service is running.
     No authentication required.
     """
@@ -50,18 +52,18 @@ async def readiness_check(
 ) -> ReadinessResponse:
     """
     Readiness check endpoint.
-    
+
     Checks if the service is ready to serve requests:
     - Service is running
     - Database connection is available (if session has one)
-    
+
     Returns 200 if ready, 503 if not ready.
     """
     db_status = {
         "connected": False,
         "status": "not_connected",
     }
-    
+
     # Check if there's a database connection in the session
     db_conn = session.get("db_connection")
     if db_conn:
@@ -83,7 +85,7 @@ async def readiness_check(
                 "status": "error",
                 "error": str(e),
             }
-    
+
     # Service is ready if it's running (database connection is optional)
     return ReadinessResponse(
         status="ready",
@@ -96,7 +98,7 @@ async def readiness_check(
 async def metrics_endpoint() -> Response:
     """
     Prometheus metrics endpoint.
-    
+
     Returns metrics in Prometheus text format.
     No authentication required (metrics are typically scraped by Prometheus).
     """
@@ -105,4 +107,3 @@ async def metrics_endpoint() -> Response:
         content=metrics_data,
         media_type="text/plain; version=0.0.4; charset=utf-8",
     )
-

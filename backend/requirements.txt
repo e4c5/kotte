@@ -20,4 +20,3 @@ urllib3>=2.2.1
 cryptography>=46.0.7
 certifi>=2024.7.4
 pillow>=10.3.0
-

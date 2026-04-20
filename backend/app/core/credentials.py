@@ -66,9 +66,7 @@ class CredentialEncryption:
             if not key_str:
                 # Generate or load persisted key for development
                 if settings.environment == "production":
-                    raise ValueError(
-                        "MASTER_ENCRYPTION_KEY must be set in production environment"
-                    )
+                    raise ValueError("MASTER_ENCRYPTION_KEY must be set in production environment")
                 key_str = _load_or_create_dev_key()
                 if settings.environment != "test":
                     logger.warning(
@@ -141,5 +139,3 @@ class CredentialEncryption:
 
 # Global instance
 credential_encryption = CredentialEncryption()
-
-

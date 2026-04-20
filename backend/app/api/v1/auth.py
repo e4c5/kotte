@@ -47,9 +47,7 @@ async def login(request: LoginRequest, http_request: Request) -> LoginResponse:
         )
 
     # Create session
-    session_id = session_manager.create_session(
-        user["user_id"], {"username": user["username"]}
-    )
+    session_id = session_manager.create_session(user["user_id"], {"username": user["username"]})
 
     # Set session cookie and CSRF token
     http_request.session["session_id"] = session_id
@@ -174,4 +172,3 @@ async def get_csrf_token(http_request: Request) -> dict:
         category=ErrorCategory.AUTHENTICATION,
         status_code=status.HTTP_401_UNAUTHORIZED,
     )
-

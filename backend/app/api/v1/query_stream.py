@@ -83,27 +83,23 @@ async def stream_query_results(
 ) -> AsyncGenerator[str, None]:
     """
     Stream query results in chunks.
-    
+
     Yields JSON lines (NDJSON format) where each line is a JSON object
     representing a chunk of results.
     """
     try:
         # Validate graph name format (prevents SQL injection)
         validated_graph_name = validate_graph_name(graph_name)
-        
+
         # Validate query length
         validate_query_length(cypher_query)
-        validate_variable_length_traversal(
-            cypher_query, settings.query_max_variable_hops
-        )
-        
+        validate_variable_length_traversal(cypher_query, settings.query_max_variable_hops)
+
         # Verify graph exists
         graph_check = """
             SELECT graphid FROM ag_catalog.ag_graph WHERE name = %(graph_name)s
         """
-        graph_id = await db_conn.execute_scalar(
-            graph_check, {"graph_name": validated_graph_name}
-        )
+        graph_id = await db_conn.execute_scalar(graph_check, {"graph_name": validated_graph_name})
         if not graph_id:
             raise APIException(
                 code=ErrorCode.GRAPH_NOT_FOUND,
@@ -230,9 +226,7 @@ async def stream_query_results(
 
                 # Safety fallback
                 if current_offset >= 1_000_000:
-                    logger.warning(
-                        f"Streaming stopped at {current_offset} rows (safety limit)"
-                    )
+                    logger.warning(f"Streaming stopped at {current_offset} rows (safety limit)")
                     break
 
     except APIException:
@@ -260,18 +254,18 @@ async def stream_query(
 ) -> StreamingResponse:
     """
     Stream query results in chunks (NDJSON format).
-    
+
     Returns a streaming response where each line is a JSON object containing
     a chunk of results. Use this endpoint for large result sets that would
     be too large to load into memory at once.
-    
+
     Example response format (NDJSON):
     {"columns": ["name", "age"], "rows": [{"data": {"name": "Alice", "age": 30}}], "chunk_size": 1, "offset": 0, "has_more": true}
     {"columns": ["name", "age"], "rows": [{"data": {"name": "Bob", "age": 25}}], "chunk_size": 1, "offset": 1, "has_more": false}
     """
     request_id = str(uuid.uuid4())
     user_id = session.get("user_id", "unknown")
-    
+
     # Register query for cancellation tracking
     query_tracker.register_query(
         request_id=request_id,

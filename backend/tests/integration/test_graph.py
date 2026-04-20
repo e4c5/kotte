@@ -12,7 +12,7 @@ class TestGraphEndpoints:
     async def test_list_graphs_without_connection(self, authenticated_client: httpx.AsyncClient):
         """Test listing graphs without database connection."""
         response = await authenticated_client.get("/api/v1/graphs")
-        
+
         # Should fail because no database connection
         assert response.status_code == 500
         data = response.json()
@@ -20,20 +20,22 @@ class TestGraphEndpoints:
         assert data["error"]["code"] == "DB_UNAVAILABLE"
 
     @pytest.mark.asyncio
-    @patch('app.api.v1.graph.DatabaseConnection')
+    @patch("app.api.v1.graph.DatabaseConnection")
     async def test_list_graphs_success(self, mock_db_class, connected_client: httpx.AsyncClient):
         """Test successful graph listing."""
-        mock_db = connected_client._mock_db if hasattr(connected_client, '_mock_db') else MagicMock()
-        
+        mock_db = (
+            connected_client._mock_db if hasattr(connected_client, "_mock_db") else MagicMock()
+        )
+
         # Mock graph list result
         mock_result = [
             {"name": "test_graph", "graphid": 1},
             {"name": "another_graph", "graphid": 2},
         ]
         mock_db.execute_query = AsyncMock(return_value=mock_result)
-        
+
         response = await connected_client.get("/api/v1/graphs")
-        
+
         assert response.status_code == 200
         data = response.json()
         assert isinstance(data, list)
@@ -42,26 +44,34 @@ class TestGraphEndpoints:
             assert "id" in data[0]
 
     @pytest.mark.asyncio
-    @patch('app.api.v1.graph.DatabaseConnection')
-    async def test_get_graph_metadata_without_connection(self, mock_db_class, authenticated_client: httpx.AsyncClient):
+    @patch("app.api.v1.graph.DatabaseConnection")
+    async def test_get_graph_metadata_without_connection(
+        self, mock_db_class, authenticated_client: httpx.AsyncClient
+    ):
         """Test getting graph metadata without database connection."""
         response = await authenticated_client.get("/api/v1/graphs/test_graph/metadata")
-        
+
         assert response.status_code == 500
 
     @pytest.mark.asyncio
     async def test_get_graph_metadata_success(self, connected_client: httpx.AsyncClient):
         """Test getting graph metadata."""
         mock_db = connected_client._mock_db
-        
+
         # Graph exists check
         mock_db.execute_scalar = AsyncMock(return_value=1)
 
         async def query_side_effect(query, params=None):
             query_text = " ".join(str(query).split())
-            if "label.kind = 'v'" in query_text and "SELECT DISTINCT label.name as label_name" in query_text:
+            if (
+                "label.kind = 'v'" in query_text
+                and "SELECT DISTINCT label.name as label_name" in query_text
+            ):
                 return [{"label_name": "Person"}, {"label_name": "Company"}]
-            if "label.kind = 'e'" in query_text and "SELECT DISTINCT label.name as label_name" in query_text:
+            if (
+                "label.kind = 'e'" in query_text
+                and "SELECT DISTINCT label.name as label_name" in query_text
+            ):
                 return [{"label_name": "KNOWS"}, {"label_name": "WORKS_FOR"}]
             if "COALESCE(c.reltuples::bigint, 0) as estimate" in query_text:
                 if params and params.get("label_kind") == "v":
@@ -78,9 +88,9 @@ class TestGraphEndpoints:
             return []
 
         mock_db.execute_query = AsyncMock(side_effect=query_side_effect)
-        
+
         response = await connected_client.get("/api/v1/graphs/test_graph/metadata")
-        
+
         assert response.status_code == 200
         data = response.json()
         assert "graph_name" in data
@@ -88,14 +98,18 @@ class TestGraphEndpoints:
         assert "edge_labels" in data
 
     @pytest.mark.asyncio
-    @patch('app.api.v1.graph.DatabaseConnection')
-    async def test_get_graph_metadata_not_found(self, mock_db_class, connected_client: httpx.AsyncClient):
+    @patch("app.api.v1.graph.DatabaseConnection")
+    async def test_get_graph_metadata_not_found(
+        self, mock_db_class, connected_client: httpx.AsyncClient
+    ):
         """Test getting metadata for non-existent graph."""
-        mock_db = connected_client._mock_db if hasattr(connected_client, '_mock_db') else MagicMock()
+        mock_db = (
+            connected_client._mock_db if hasattr(connected_client, "_mock_db") else MagicMock()
+        )
         mock_db.execute_scalar = AsyncMock(return_value=None)  # Graph doesn't exist
-        
+
         response = await connected_client.get("/api/v1/graphs/nonexistent_graph/metadata")
-        
+
         assert response.status_code == 404
         data = response.json()
         assert "error" in data
@@ -105,7 +119,7 @@ class TestGraphEndpoints:
     async def test_get_graph_metadata_invalid_name(self, connected_client: httpx.AsyncClient):
         """Test getting metadata with invalid graph name."""
         response = await connected_client.get("/api/v1/graphs/123-invalid-name/metadata")
-        
+
         assert response.status_code == 400
         data = response.json()
         assert "error" in data
@@ -120,9 +134,9 @@ class TestGraphEndpoints:
         # For now, we'll just verify the endpoint exists and handles errors gracefully
         # The actual query structure is complex and would need a real DB to test properly
         mock_db.execute_query = AsyncMock(return_value=[])  # Empty result for simplicity
-        
+
         response = await connected_client.get("/api/v1/graphs/test_graph/meta-graph")
-        
+
         # May return 200 with empty relationships or 500 if query structure is wrong
         # The important thing is the endpoint exists and is accessible
         assert response.status_code in [200, 500]
@@ -136,23 +150,27 @@ class TestNeighborhoodExpansion:
     """Integration tests for neighborhood expansion."""
 
     @pytest.mark.asyncio
-    @patch('app.api.v1.graph.DatabaseConnection')
-    async def test_expand_node_without_connection(self, mock_db_class, authenticated_client: httpx.AsyncClient):
+    @patch("app.api.v1.graph.DatabaseConnection")
+    async def test_expand_node_without_connection(
+        self, mock_db_class, authenticated_client: httpx.AsyncClient
+    ):
         """Test expanding node without database connection."""
         response = await authenticated_client.post(
             "/api/v1/graphs/test_graph/nodes/1/expand",
             json={"depth": 1, "limit": 100},
         )
-        
+
         assert response.status_code == 500
 
     @pytest.mark.asyncio
-    @patch('app.api.v1.graph.DatabaseConnection')
+    @patch("app.api.v1.graph.DatabaseConnection")
     async def test_expand_node_success(self, mock_db_class, connected_client: httpx.AsyncClient):
         """Test successful neighborhood expansion."""
-        mock_db = connected_client._mock_db if hasattr(connected_client, '_mock_db') else MagicMock()
+        mock_db = (
+            connected_client._mock_db if hasattr(connected_client, "_mock_db") else MagicMock()
+        )
         mock_db.execute_scalar = AsyncMock(return_value=1)  # Graph exists
-        
+
         # Mock expansion result
         mock_result = [
             {
@@ -172,14 +190,14 @@ class TestNeighborhoodExpansion:
                 ],
             }
         ]
-        
+
         mock_db.execute_cypher = AsyncMock(return_value=mock_result)
-        
+
         response = await connected_client.post(
             "/api/v1/graphs/test_graph/nodes/1/expand",
             json={"depth": 1, "limit": 100},
         )
-        
+
         assert response.status_code == 200
         data = response.json()
         assert "nodes" in data
@@ -188,17 +206,21 @@ class TestNeighborhoodExpansion:
         assert "edge_count" in data
 
     @pytest.mark.asyncio
-    @patch('app.api.v1.graph.DatabaseConnection')
-    async def test_expand_node_invalid_graph(self, mock_db_class, connected_client: httpx.AsyncClient):
+    @patch("app.api.v1.graph.DatabaseConnection")
+    async def test_expand_node_invalid_graph(
+        self, mock_db_class, connected_client: httpx.AsyncClient
+    ):
         """Test expanding node in non-existent graph."""
-        mock_db = connected_client._mock_db if hasattr(connected_client, '_mock_db') else MagicMock()
+        mock_db = (
+            connected_client._mock_db if hasattr(connected_client, "_mock_db") else MagicMock()
+        )
         mock_db.execute_scalar = AsyncMock(return_value=None)  # Graph doesn't exist
-        
+
         response = await connected_client.post(
             "/api/v1/graphs/nonexistent_graph/nodes/1/expand",
             json={"depth": 1, "limit": 100},
         )
-        
+
         assert response.status_code == 404
         data = response.json()
         assert "error" in data
@@ -209,14 +231,14 @@ class TestNeighborhoodExpansion:
         """Test expanding node with invalid node ID."""
         mock_db = connected_client._mock_db
         mock_db.execute_scalar = AsyncMock(return_value=1)  # Graph exists
-        
+
         # Node ID validation happens in the endpoint - check if it validates
         # If node_id is not an integer, it should fail
         response = await connected_client.post(
             "/api/v1/graphs/test_graph/nodes/invalid-id/expand",
             json={"depth": 1, "limit": 100},
         )
-        
+
         # The endpoint may accept string node IDs or validate them
         # Check if it's 422 (validation) or 400/404 (other error)
         assert response.status_code in [400, 404, 422]
@@ -225,33 +247,41 @@ class TestNeighborhoodExpansion:
             assert "error" in data
 
     @pytest.mark.asyncio
-    @patch('app.api.v1.graph.DatabaseConnection')
-    async def test_expand_node_invalid_depth(self, mock_db_class, connected_client: httpx.AsyncClient):
+    @patch("app.api.v1.graph.DatabaseConnection")
+    async def test_expand_node_invalid_depth(
+        self, mock_db_class, connected_client: httpx.AsyncClient
+    ):
         """Test expanding node with invalid depth."""
-        mock_db = connected_client._mock_db if hasattr(connected_client, '_mock_db') else MagicMock()
+        mock_db = (
+            connected_client._mock_db if hasattr(connected_client, "_mock_db") else MagicMock()
+        )
         mock_db.execute_scalar = AsyncMock(return_value=1)  # Graph exists
-        
+
         # Test depth too high
         response = await connected_client.post(
             "/api/v1/graphs/test_graph/nodes/1/expand",
             json={"depth": 10, "limit": 100},  # Max depth is 5
         )
-        
+
         assert response.status_code == 422
 
     @pytest.mark.asyncio
-    @patch('app.api.v1.graph.DatabaseConnection')
-    async def test_expand_node_invalid_limit(self, mock_db_class, connected_client: httpx.AsyncClient):
+    @patch("app.api.v1.graph.DatabaseConnection")
+    async def test_expand_node_invalid_limit(
+        self, mock_db_class, connected_client: httpx.AsyncClient
+    ):
         """Test expanding node with invalid limit."""
-        mock_db = connected_client._mock_db if hasattr(connected_client, '_mock_db') else MagicMock()
+        mock_db = (
+            connected_client._mock_db if hasattr(connected_client, "_mock_db") else MagicMock()
+        )
         mock_db.execute_scalar = AsyncMock(return_value=1)  # Graph exists
-        
+
         # Test limit too high
         response = await connected_client.post(
             "/api/v1/graphs/test_graph/nodes/1/expand",
             json={"depth": 1, "limit": 2000},  # Max limit is 1000
         )
-        
+
         assert response.status_code == 422
 
     @pytest.mark.asyncio
@@ -268,12 +298,20 @@ class TestNeighborhoodExpansion:
         m1_node = {"id": 2, "type": "node", "label": "Person", "properties": {"name": "Bob"}}
         m_node = {"id": 3, "type": "node", "label": "Person", "properties": {"name": "Carol"}}
         r1 = {
-            "id": 10, "type": "edge", "label": "KNOWS",
-            "start_id": 1, "end_id": 2, "properties": {},
+            "id": 10,
+            "type": "edge",
+            "label": "KNOWS",
+            "start_id": 1,
+            "end_id": 2,
+            "properties": {},
         }
         r2 = {
-            "id": 11, "type": "edge", "label": "KNOWS",
-            "start_id": 2, "end_id": 3, "properties": {},
+            "id": 11,
+            "type": "edge",
+            "label": "KNOWS",
+            "start_id": 2,
+            "end_id": 3,
+            "properties": {},
         }
         mock_rows = [
             {"n": n_node, "pn": n_node, "rel": r1},
@@ -322,12 +360,12 @@ class TestNeighborhoodExpansion:
         mock_db = connected_client._mock_db
         mock_db.execute_scalar = AsyncMock(return_value=1)  # Graph exists
         mock_db.execute_cypher = AsyncMock(return_value=[])
-        
+
         response = await connected_client.post(
             "/api/v1/graphs/test_graph/nodes/1/expand",
             json={},  # Use defaults
         )
-        
+
         # Should use default depth=1, limit=100
         assert response.status_code == 200
         data = response.json()
@@ -344,16 +382,20 @@ class TestNodeDeletion:
         mock_db = connected_client._mock_db
         mock_db.execute_scalar = AsyncMock(return_value=1)  # Graph exists
         # When detach=false: node check, edge count, then delete (three execute_cypher calls)
-        mock_db.execute_cypher = AsyncMock(side_effect=[
-            [{"result": {"id": 1, "label": "Person", "properties": {}}}],  # Node exists
-            [{"result": 0}],  # Edge count (scalar; no edges so delete without detach is allowed)
-            [{"result": {"deleted_count": 1}}],  # Delete succeeded
-        ])
-        
+        mock_db.execute_cypher = AsyncMock(
+            side_effect=[
+                [{"result": {"id": 1, "label": "Person", "properties": {}}}],  # Node exists
+                [
+                    {"result": 0}
+                ],  # Edge count (scalar; no edges so delete without detach is allowed)
+                [{"result": {"deleted_count": 1}}],  # Delete succeeded
+            ]
+        )
+
         response = await connected_client.delete(
             "/api/v1/graphs/test_graph/nodes/1?detach=false",
         )
-        
+
         assert response.status_code == 200
         data = response.json()
         assert data["deleted"] is True
@@ -365,16 +407,18 @@ class TestNodeDeletion:
         mock_db = connected_client._mock_db
         mock_db.execute_scalar = AsyncMock(return_value=1)  # Graph exists
         # First call succeeds (node check), second (edge count) succeeds, third raises
-        mock_db.execute_cypher = AsyncMock(side_effect=[
-            [{"result": {"id": 1, "label": "Person", "properties": {}}}],  # Node exists
-            [{"result": 0}],  # Edge count (scalar)
-            Exception("Database connection lost"),  # Simulate failure during delete
-        ])
-        
+        mock_db.execute_cypher = AsyncMock(
+            side_effect=[
+                [{"result": {"id": 1, "label": "Person", "properties": {}}}],  # Node exists
+                [{"result": 0}],  # Edge count (scalar)
+                Exception("Database connection lost"),  # Simulate failure during delete
+            ]
+        )
+
         response = await connected_client.delete(
             "/api/v1/graphs/test_graph/nodes/1?detach=false",
         )
-        
+
         # Should return 500 with DB error (transaction would rollback on real DB)
         assert response.status_code == 500
         data = response.json()
@@ -386,11 +430,11 @@ class TestNodeDeletion:
         mock_db = connected_client._mock_db
         mock_db.execute_scalar = AsyncMock(return_value=1)  # Graph exists
         mock_db.execute_cypher = AsyncMock(return_value=[])  # Node not found
-        
+
         response = await connected_client.delete(
             "/api/v1/graphs/test_graph/nodes/999?detach=false",
         )
-        
+
         assert response.status_code == 404
         data = response.json()
         assert "error" in data

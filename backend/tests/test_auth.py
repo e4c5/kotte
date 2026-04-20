@@ -18,13 +18,13 @@ class TestLogin:
             "/api/v1/auth/login",
             json={"username": "admin", "password": "admin"},
         )
-        
+
         assert response.status_code == 200
         data = response.json()
         assert data["authenticated"] is True
         assert data["username"] == "admin"
         assert data["user_id"] == "admin"
-        
+
         # Check that session cookie is set
         assert "Set-Cookie" in response.headers
         cookies = response.headers["Set-Cookie"]
@@ -37,7 +37,7 @@ class TestLogin:
             "/api/v1/auth/login",
             json={"username": "nonexistent", "password": "password"},
         )
-        
+
         assert response.status_code == 401
         data = response.json()
         assert "error" in data
@@ -51,7 +51,7 @@ class TestLogin:
             "/api/v1/auth/login",
             json={"username": "admin", "password": "wrongpassword"},
         )
-        
+
         assert response.status_code == 401
         data = response.json()
         assert "error" in data
@@ -64,7 +64,7 @@ class TestLogin:
             "/api/v1/auth/login",
             json={"username": "admin"},
         )
-        
+
         assert response.status_code == 422  # Validation error
 
     @pytest.mark.asyncio
@@ -74,7 +74,7 @@ class TestLogin:
             "/api/v1/auth/login",
             json={"username": "", "password": ""},
         )
-        
+
         # Should fail validation or authentication
         assert response.status_code in [400, 401, 422]
 
@@ -86,7 +86,7 @@ class TestLogout:
     async def test_logout_without_session(self, async_client: httpx.AsyncClient):
         """Test logout without active session."""
         response = await async_client.post("/api/v1/auth/logout")
-        
+
         # Should fail with 401 (no session)
         assert response.status_code == 401
 
@@ -99,7 +99,7 @@ class TestLogout:
             json={"username": "admin", "password": "admin"},
         )
         assert login_response.status_code == 200
-        
+
         # Get session cookie
         # Async client keeps cookie jar; just call logout.
         response = await async_client.post("/api/v1/auth/logout")
@@ -113,7 +113,7 @@ class TestGetCurrentUser:
     async def test_get_current_user_without_session(self, async_client: httpx.AsyncClient):
         """Test getting current user without session."""
         response = await async_client.get("/api/v1/auth/me")
-        
+
         assert response.status_code == 401
         data = response.json()
         assert "error" in data
@@ -127,7 +127,7 @@ class TestGetCurrentUser:
             "/api/v1/auth/login",
             json={"username": "admin", "password": "admin"},
         )
-        
+
         if login_response.status_code == 200:
             # Try to get user info
             # Note: This may fail if session isn't properly maintained in test client
@@ -143,7 +143,7 @@ class TestCSRFToken:
     async def test_get_csrf_token_without_session(self, async_client: httpx.AsyncClient):
         """Test getting CSRF token without session."""
         response = await async_client.get("/api/v1/auth/csrf-token")
-        
+
         # Should require authentication
         assert response.status_code == 401
 
@@ -155,7 +155,7 @@ class TestCSRFToken:
             "/api/v1/auth/login",
             json={"username": "admin", "password": "admin"},
         )
-        
+
         if login_response.status_code == 200:
             response = await async_client.get("/api/v1/auth/csrf-token")
             # May fail due to session middleware, but endpoint should exist
@@ -202,11 +202,11 @@ class TestUserService:
         user = user_service.create_user("testuser", "testpass")
         assert user["username"] == "testuser"
         assert user["user_id"] == "testuser"
-        
+
         # Verify can authenticate
         authenticated = user_service.authenticate("testuser", "testpass")
         assert authenticated is not None
-        
+
         # Cleanup - remove test user
         if "testuser" in user_service._users:
             del user_service._users["testuser"]
@@ -225,7 +225,7 @@ class TestSessionManager:
         session_id = session_manager.create_session("user1")
         assert session_id is not None
         assert len(session_id) > 0
-        
+
         # Verify session exists
         session = session_manager.get_session(session_id)
         assert session is not None
@@ -235,7 +235,7 @@ class TestSessionManager:
         """Test getting a session."""
         session_id = session_manager.create_session("user1")
         session = session_manager.get_session(session_id)
-        
+
         assert session is not None
         assert session["user_id"] == "user1"
         assert "created_at" in session
@@ -250,7 +250,7 @@ class TestSessionManager:
         """Test updating a session."""
         session_id = session_manager.create_session("user1")
         session_manager.update_session(session_id, {"graph_context": "test_graph"})
-        
+
         session = session_manager.get_session(session_id)
         assert session["graph_context"] == "test_graph"
 
@@ -258,7 +258,7 @@ class TestSessionManager:
         """Test deleting a session."""
         session_id = session_manager.create_session("user1")
         session_manager.delete_session(session_id)
-        
+
         session = session_manager.get_session(session_id)
         assert session is None
 
@@ -266,5 +266,5 @@ class TestSessionManager:
         """Test getting user ID from session."""
         session_id = session_manager.create_session("user1")
         user_id = session_manager.get_user_id(session_id)
-        
+
         assert user_id == "user1"

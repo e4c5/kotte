@@ -68,7 +68,7 @@ export const getEdgeStyle = (
     captionField: 'label',
     showLabel: true,
   }
-  
+
   // Apply width mapping if enabled
   if (edgeWidthScale && edgeWidthProperty) {
     const propValue = edge.properties[edgeWidthProperty]
@@ -82,7 +82,7 @@ export const getEdgeStyle = (
       }
     }
   }
-  
+
   return baseStyle
 }
 
@@ -144,7 +144,7 @@ export const getNodeCaption = (
       caption = shortenLongIdentifier(descriptive)
     }
   }
-  
+
   return caption
 }
 

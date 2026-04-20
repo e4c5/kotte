@@ -211,9 +211,7 @@ def translate_db_error(
         if isinstance(e, pg_errors.UniqueViolation):
             return GraphConstraintViolation("unique", str(e), extra_details=context)
         if isinstance(e, pg_errors.ForeignKeyViolation):
-            return GraphConstraintViolation(
-                "referential integrity", str(e), extra_details=context
-            )
+            return GraphConstraintViolation("referential integrity", str(e), extra_details=context)
         if isinstance(e, pg_errors.NotNullViolation):
             return GraphConstraintViolation("not null", str(e), extra_details=context)
         if isinstance(e, pg_errors.CheckViolation):
@@ -278,9 +276,7 @@ async def error_handler(request: Request, exc: APIException) -> JSONResponse:
     )
 
 
-async def generic_exception_handler(
-    request: Request, exc: Exception
-) -> JSONResponse:
+def generic_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     """Handle unexpected exceptions."""
     logger.exception("Unhandled exception", exc_info=exc)
     message = "An internal error occurred"
@@ -303,4 +299,3 @@ def setup_error_handlers(app: FastAPI) -> None:
     """Register error handlers with FastAPI app."""
     app.add_exception_handler(APIException, error_handler)
     app.add_exception_handler(Exception, generic_exception_handler)
-

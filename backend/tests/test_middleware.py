@@ -226,9 +226,7 @@ class TestRateLimitPerUser:
         assert exc_b.value.status_code == 429
 
     @pytest.mark.asyncio
-    async def test_unknown_session_id_does_not_enforce_per_user_quota(
-        self, per_user_dispatch
-    ):
+    async def test_unknown_session_id_does_not_enforce_per_user_quota(self, per_user_dispatch):
         """If the cookie carries a session_id that session_manager doesn't know
         (e.g. backend restarted, session expired and was purged), the per-user
         branch must stay dormant rather than wrongly bucketing all such
@@ -240,9 +238,7 @@ class TestRateLimitPerUser:
             assert resp.status_code == 200
 
     @pytest.mark.asyncio
-    async def test_no_session_in_scope_does_not_enforce_per_user_quota(
-        self, per_user_dispatch
-    ):
+    async def test_no_session_in_scope_does_not_enforce_per_user_quota(self, per_user_dispatch):
         """Anonymous traffic (no session in scope at all) must skip the
         per-user check entirely. Only the IP cap applies.
         """
@@ -308,9 +304,7 @@ class TestMetricsMiddleware:
         return call
 
     @pytest.mark.asyncio
-    async def test_happy_path_records_response_status(
-        self, metrics_dispatch, record_calls
-    ):
+    async def test_happy_path_records_response_status(self, metrics_dispatch, record_calls):
         async def call_next(_request):
             await asyncio.sleep(0)
             return JSONResponse({"ok": True}, status_code=201)
@@ -326,9 +320,7 @@ class TestMetricsMiddleware:
         assert duration >= 0.0
 
     @pytest.mark.asyncio
-    async def test_exception_path_records_500_and_reraises(
-        self, metrics_dispatch, record_calls
-    ):
+    async def test_exception_path_records_500_and_reraises(self, metrics_dispatch, record_calls):
         """``Exception`` subclass from ``call_next`` must propagate, and
         we must still record a 500 sample in ``finally``.
         """
@@ -366,9 +358,7 @@ class TestMetricsMiddleware:
         assert status_code == 500
 
     @pytest.mark.asyncio
-    async def test_metrics_endpoint_is_short_circuited(
-        self, metrics_dispatch, record_calls
-    ):
+    async def test_metrics_endpoint_is_short_circuited(self, metrics_dispatch, record_calls):
         """Both ``/metrics`` and ``/api/v1/metrics`` must bypass the
         metrics bookkeeping -- scraping the metrics endpoint itself must
         not record a sample (otherwise a Prometheus scrape would perturb

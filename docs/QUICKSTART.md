@@ -138,4 +138,3 @@ Once you're connected and looking at a graph:
 - **Review the [User Guide](USER_GUIDE.md)** for keyboard shortcuts and the deeper feature surface.
 
 For where the project itself is heading, see [`ROADMAP.md`](ROADMAP.md) (prioritised tickets) and [`REVIEW.md`](REVIEW.md) (holistic gap analysis). The [`CHANGELOG.md`](../CHANGELOG.md) tracks what's shipped per release.
-

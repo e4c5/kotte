@@ -12,7 +12,7 @@ class TestHealthChecks:
     async def test_health_check(self, async_client: httpx.AsyncClient):
         """Test basic health check endpoint."""
         response = await async_client.get("/api/v1/health")
-        
+
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "healthy"
@@ -27,10 +27,12 @@ class TestHealthChecks:
         assert response.status_code == 200
 
     @pytest.mark.asyncio
-    async def test_readiness_check_without_connection(self, authenticated_client: httpx.AsyncClient):
+    async def test_readiness_check_without_connection(
+        self, authenticated_client: httpx.AsyncClient
+    ):
         """Test readiness check without database connection."""
         response = await authenticated_client.get("/api/v1/ready")
-        
+
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "ready"
@@ -38,15 +40,16 @@ class TestHealthChecks:
         assert data["database"]["connected"] is False
 
     @pytest.mark.asyncio
-    @patch('app.api.v1.session.DatabaseConnection')
-    async def test_readiness_check_with_connection(self, mock_db_class, connected_client: httpx.AsyncClient):
+    @patch("app.api.v1.session.DatabaseConnection")
+    async def test_readiness_check_with_connection(
+        self, mock_db_class, connected_client: httpx.AsyncClient
+    ):
         """Test readiness check with database connection."""
         response = await connected_client.get("/api/v1/ready")
-        
+
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "ready"
         assert "database" in data
         # May be connected or not depending on mock setup
         assert "status" in data["database"]
-

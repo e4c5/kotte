@@ -31,7 +31,9 @@ class TestCypherReturnColumns:
 
     def test_return_multiple_columns_mixed(self):
         """Handles multiple columns with and without aliases."""
-        cols = DatabaseConnection._cypher_return_columns("RETURN a.name AS name, b, count(*) AS total")
+        cols = DatabaseConnection._cypher_return_columns(
+            "RETURN a.name AS name, b, count(*) AS total"
+        )
         assert cols == ["name", "c2", "total"]
 
     def test_return_stops_at_order_by(self):
@@ -68,7 +70,7 @@ class TestCypherReturnColumns:
         """Handles multiline RETURN clauses."""
         cypher = """
         MATCH (a)-[r]->(b)
-        RETURN 
+        RETURN
             a.name AS source,
             type(r) AS rel,
             b.name AS target
@@ -173,9 +175,7 @@ class TestExecuteCypher:
         )
         conn.execute_query = AsyncMock(return_value=[])
         mock_params = {"n": 1}
-        await conn.execute_cypher(
-            "g", "RETURN n AS x", params=mock_params
-        )
+        await conn.execute_cypher("g", "RETURN n AS x", params=mock_params)
         conn.execute_query.assert_called_once()
         sql_str = self._query_string(conn.execute_query.call_args)
         params = conn.execute_query.call_args[0][1]

@@ -162,6 +162,7 @@ async def test_stream_query_respects_max_rows_and_emits_error_line():
     "we truncated". This test exercises the truncation branch: the probe must
     see at least one row beyond the cap for the error chunk to fire.
     """
+
     def exec_side_effect(_graph, cypher_query, params=None, **_kwargs):
         if "$__skip" not in cypher_query or "$__limit" not in cypher_query:
             return []
@@ -193,6 +194,7 @@ async def test_stream_query_no_cap_warning_when_results_exactly_match_max_rows()
     the probe should come back empty and NO cap-warning chunk must be emitted.
     Anything else would tell the UI 'we truncated your data' when we did not.
     """
+
     def exec_side_effect(_graph, cypher_query, params=None, **_kwargs):
         if "$__skip" not in cypher_query or "$__limit" not in cypher_query:
             return []
@@ -214,7 +216,8 @@ async def test_stream_query_no_cap_warning_when_results_exactly_match_max_rows()
     errs = [c for c in chunks if "error" in c]
     assert errs == [], f"expected no cap warning, got {errs}"
     probe_calls = [
-        call for call in mock_db.execute_cypher.await_args_list
+        call
+        for call in mock_db.execute_cypher.await_args_list
         if call.kwargs.get("params", {}).get("__limit") == 1
     ]
     assert len(probe_calls) == 1, "exactly one 1-row probe should have happened"
@@ -227,6 +230,7 @@ async def test_stream_query_multi_chunk_then_cap_error():
     Like the cap test above, the probe must see at least one row beyond the
     cap for the error chunk to fire. We mock that probe explicitly here.
     """
+
     def exec_side_effect(_graph, cypher_query, params=None, **_kwargs):
         if "$__skip" not in cypher_query or "$__limit" not in cypher_query:
             return []

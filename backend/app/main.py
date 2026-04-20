@@ -111,4 +111,3 @@ Apache AGE Graph Visualizer Backend API.
 
 
 app = create_app()
-

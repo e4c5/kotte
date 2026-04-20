@@ -84,9 +84,7 @@ class QueryTracker:
                 query_info["backend_pid"] = backend_pid
 
         if not backend_pid:
-            logger.warning(
-                f"Cannot cancel query {request_id[:8]}...: no backend PID available"
-            )
+            logger.warning(f"Cannot cancel query {request_id[:8]}...: no backend PID available")
             return False
 
         # Cancel the backend
@@ -95,9 +93,7 @@ class QueryTracker:
             logger.info(f"Cancelled query {request_id[:8]}... (PID: {backend_pid})")
             self.unregister_query(request_id)
         else:
-            logger.warning(
-                f"Failed to cancel query {request_id[:8]}... (PID: {backend_pid})"
-            )
+            logger.warning(f"Failed to cancel query {request_id[:8]}... (PID: {backend_pid})")
 
         return success
 
@@ -127,5 +123,3 @@ class QueryTracker:
 
 # Global query tracker instance
 query_tracker = QueryTracker()
-
-

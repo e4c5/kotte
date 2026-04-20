@@ -19,12 +19,10 @@ class SessionManager:
     def __init__(self):
         self._sessions: dict[str, dict] = {}
 
-    def create_session(
-        self, user_id: str, connection_config: Optional[dict] = None
-    ) -> str:
+    def create_session(self, user_id: str, connection_config: Optional[dict] = None) -> str:
         """
         Create a new session and return session ID.
-        
+
         Args:
             user_id: User ID
             connection_config: Optional connection config (for DB connections)
@@ -73,9 +71,7 @@ class SessionManager:
         """Update session data."""
         if session_id in self._sessions:
             self._sessions[session_id].update(updates)
-            self._sessions[session_id]["last_activity"] = datetime.now(
-                timezone.utc
-            )
+            self._sessions[session_id]["last_activity"] = datetime.now(timezone.utc)
 
     def delete_session(self, session_id: str) -> None:
         """Delete a session."""

@@ -3,9 +3,116 @@
 import json
 import logging
 import re
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Union
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class _GraphElementCollector:
+    """Accumulator for nodes/edges/paths/other while walking parsed query results."""
+
+    nodes: List[Dict[str, Any]] = field(default_factory=list)
+    edges: List[Dict[str, Any]] = field(default_factory=list)
+    paths: List[Dict[str, Any]] = field(default_factory=list)
+    other: List[Dict[str, Any]] = field(default_factory=list)
+    node_ids: set = field(default_factory=set)
+    edge_ids: set = field(default_factory=set)
+
+    def add_node(self, n: Dict[str, Any]) -> None:
+        nid = n.get("id")
+        if nid is not None and str(nid) not in self.node_ids:
+            self.nodes.append(n)
+            self.node_ids.add(str(nid))
+
+    def add_edge(self, e: Dict[str, Any]) -> None:
+        eid = e.get("id")
+        if eid is not None and str(eid) not in self.edge_ids:
+            self.edges.append(e)
+            self.edge_ids.add(str(eid))
+
+
+def _collect_from_item_list(items: List[Any], collector: _GraphElementCollector) -> None:
+    """Add any node/edge dicts from a flat list of items."""
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        if item.get("type") == "node":
+            collector.add_node(item)
+        elif item.get("type") == "edge":
+            collector.add_edge(item)
+
+
+def _collect_from_path_dict(path_dict: Dict[str, Any], collector: _GraphElementCollector) -> None:
+    """Pull nodes/edges out of a path dict's segments and elements."""
+    for seg in path_dict.get("segments", []):
+        if not isinstance(seg, dict):
+            continue
+        for key in ("start_node", "end_node"):
+            n = seg.get(key)
+            if isinstance(n, dict) and n.get("type") == "node":
+                collector.add_node(n)
+        e = seg.get("edge")
+        if isinstance(e, dict) and e.get("type") == "edge":
+            collector.add_edge(e)
+    _collect_from_item_list(path_dict.get("elements", []), collector)
+
+
+def _handle_dict_value(
+    col_name: str, parsed: Dict[str, Any], collector: _GraphElementCollector
+) -> None:
+    """Dispatch a parsed dict value (node, edge, path, or scalar-like)."""
+    kind = parsed.get("type")
+    if kind == "node":
+        collector.add_node(parsed)
+    elif kind == "edge":
+        collector.add_edge(parsed)
+    elif kind == "path":
+        collector.paths.append(parsed)
+        _collect_from_path_dict(parsed, collector)
+    else:
+        collector.other.append({"column": col_name, "value": parsed})
+
+
+def _handle_list_value(col_name: str, parsed: List[Any], collector: _GraphElementCollector) -> None:
+    """Dispatch a parsed list value; may be a path candidate or a plain list."""
+    path_candidate = AgTypeParser._build_path_structure(parsed)
+    if path_candidate:
+        path_candidate["elements"] = parsed
+        collector.paths.append(path_candidate)
+        _collect_from_item_list(parsed, collector)
+        return
+
+    _collect_from_item_list(parsed, collector)
+    has_graph_items = any(
+        isinstance(item, dict) and item.get("type") in ("node", "edge") for item in parsed
+    )
+    if not has_graph_items:
+        collector.other.append({"column": col_name, "value": parsed})
+
+
+def _synthesize_missing_endpoints(collector: _GraphElementCollector) -> None:
+    """For every edge, ensure a placeholder node exists for its source/target ids."""
+    if not collector.edges:
+        return
+    for e in collector.edges:
+        for endpoint_key in ("source", "target"):
+            eid = e.get(endpoint_key)
+            if eid is None:
+                continue
+            eid_str = str(eid)
+            if eid_str in collector.node_ids:
+                continue
+            collector.nodes.append(
+                {
+                    "id": eid_str,
+                    "label": "",
+                    "properties": {},
+                    "type": "node",
+                }
+            )
+            collector.node_ids.add(eid_str)
 
 
 def _get_first_value_for_key_containing(obj: Dict[str, Any], substring: str) -> Any:
@@ -30,7 +137,10 @@ def _object_to_dict(value: Any) -> Optional[Dict[str, Any]]:
         # Try attribute access for known keys (e.g. psycopg custom type)
         for start_key in ("start_id", "startid", "startId"):
             for end_key in ("end_id", "endid", "endId"):
-                if getattr(value, start_key, None) is not None and getattr(value, end_key, None) is not None:
+                if (
+                    getattr(value, start_key, None) is not None
+                    and getattr(value, end_key, None) is not None
+                ):
                     return {
                         "id": getattr(value, "id", None),
                         "label": getattr(value, "label", None),
@@ -294,7 +404,9 @@ class AgTypeParser:
             return None
         first = elements[0]
         last = elements[-1]
-        start_id = str(first["id"]) if isinstance(first, dict) and first.get("type") == "node" else None
+        start_id = (
+            str(first["id"]) if isinstance(first, dict) and first.get("type") == "node" else None
+        )
         end_id = str(last["id"]) if isinstance(last, dict) and last.get("type") == "node" else None
         return {
             "type": "path",
@@ -320,7 +432,14 @@ class AgTypeParser:
         if built:
             built["elements"] = elements
             return built
-        return {"type": "path", "elements": elements, "segments": [], "length": 0, "node_ids": [], "edge_ids": []}
+        return {
+            "type": "path",
+            "elements": elements,
+            "segments": [],
+            "length": 0,
+            "node_ids": [],
+            "edge_ids": [],
+        }
 
     @staticmethod
     def _parse_id(id_value: Any) -> Union[int, str]:
@@ -349,9 +468,7 @@ class AgTypeParser:
         return str(id_value)
 
     @staticmethod
-    def extract_graph_elements(
-        rows: List[Dict[str, Any]]
-    ) -> Dict[str, Any]:
+    def extract_graph_elements(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
         Extract nodes, edges, and paths from query results.
 
@@ -366,108 +483,25 @@ class AgTypeParser:
                 "other": [...]
             }
         """
-        nodes: List[Dict[str, Any]] = []
-        edges: List[Dict[str, Any]] = []
-        paths: List[Dict[str, Any]] = []
-        other: List[Dict[str, Any]] = []
-        node_ids: set[str] = set()
-        edge_ids: set[str] = set()
-
-        def _add_node(n: Dict[str, Any]) -> None:
-            nid = n.get("id")
-            if nid is not None and str(nid) not in node_ids:
-                nodes.append(n)
-                node_ids.add(str(nid))
-
-        def _add_edge(e: Dict[str, Any]) -> None:
-            eid = e.get("id")
-            if eid is not None and str(eid) not in edge_ids:
-                edges.append(e)
-                edge_ids.add(str(eid))
+        collector = _GraphElementCollector()
 
         for row in rows:
             for col_name, value in row.items():
                 parsed = AgTypeParser.parse(value)
-
                 if isinstance(parsed, dict):
-                    if parsed.get("type") == "node":
-                        _add_node(parsed)
-                    elif parsed.get("type") == "edge":
-                        _add_edge(parsed)
-                    elif parsed.get("type") == "path":
-                        paths.append(parsed)
-                        for seg in parsed.get("segments", []):
-                            if isinstance(seg, dict):
-                                for key in ("start_node", "end_node"):
-                                    n = seg.get(key)
-                                    if isinstance(n, dict) and n.get("type") == "node":
-                                        _add_node(n)
-                                e = seg.get("edge")
-                                if isinstance(e, dict) and e.get("type") == "edge":
-                                    _add_edge(e)
-                        for elem in parsed.get("elements", []):
-                            if isinstance(elem, dict):
-                                if elem.get("type") == "node":
-                                    _add_node(elem)
-                                elif elem.get("type") == "edge":
-                                    _add_edge(elem)
-                    else:
-                        other.append({"column": col_name, "value": parsed})
+                    _handle_dict_value(col_name, parsed, collector)
                 elif isinstance(parsed, list):
-                    path_candidate = AgTypeParser._build_path_structure(parsed)
-                    if path_candidate:
-                        path_candidate["elements"] = parsed
-                        paths.append(path_candidate)
-                        for elem in parsed:
-                            if isinstance(elem, dict):
-                                if elem.get("type") == "node":
-                                    _add_node(elem)
-                                elif elem.get("type") == "edge":
-                                    _add_edge(elem)
-                    else:
-                        for item in parsed:
-                            if isinstance(item, dict):
-                                if item.get("type") == "node":
-                                    _add_node(item)
-                                elif item.get("type") == "edge":
-                                    _add_edge(item)
-                        if not any(
-                            isinstance(item, dict)
-                            and item.get("type") in ("node", "edge")
-                            for item in parsed
-                        ):
-                            other.append({"column": col_name, "value": parsed})
+                    _handle_list_value(col_name, parsed, collector)
                 else:
-                    other.append({"column": col_name, "value": parsed})
+                    collector.other.append({"column": col_name, "value": parsed})
 
-        # If we have edges, ensure every source/target has a node (placeholder if missing).
-        # When there were no nodes (e.g. query was RETURN r), this synthesizes endpoints
-        # so the graph view can render.
-        if edges:
-            for e in edges:
-                sid = e.get("source")
-                tid = e.get("target")
-                if sid is not None and sid not in node_ids:
-                    nodes.append({
-                        "id": sid,
-                        "label": "",
-                        "properties": {},
-                        "type": "node",
-                    })
-                    node_ids.add(sid)
-                if tid is not None and tid not in node_ids:
-                    nodes.append({
-                        "id": tid,
-                        "label": "",
-                        "properties": {},
-                        "type": "node",
-                    })
-                    node_ids.add(tid)
+        # When queries return only edges (e.g. RETURN r), synthesize placeholder endpoint
+        # nodes so the graph view can still render them.
+        _synthesize_missing_endpoints(collector)
 
         return {
-            "nodes": nodes,
-            "edges": edges,
-            "paths": paths,
-            "other": other,
+            "nodes": collector.nodes,
+            "edges": collector.edges,
+            "paths": collector.paths,
+            "other": collector.other,
         }
-

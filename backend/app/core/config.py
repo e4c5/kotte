@@ -46,7 +46,7 @@ class Settings(BaseSettings):
     query_max_result_rows: int = 100000
     query_max_variable_hops: int = 20
     query_safe_mode: bool = False  # Reject mutating queries when True
-    
+
     # Visualization Limits
     max_nodes_for_graph: int = 5000  # Maximum nodes for graph visualization
     max_edges_for_graph: int = 10000  # Maximum edges for graph visualization
@@ -77,9 +77,7 @@ class Settings(BaseSettings):
         # Generate secret key if not provided (for development only)
         if not self.session_secret_key:
             if self.environment == "production":
-                raise ValueError(
-                    "SESSION_SECRET_KEY must be set in production environment"
-                )
+                raise ValueError("SESSION_SECRET_KEY must be set in production environment")
             self.session_secret_key = secrets.token_urlsafe(32)
             if self.environment != "test":
                 import warnings
@@ -93,9 +91,7 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def validate_pool_sizes(self) -> "Settings":
         if self.db_pool_min_size > self.db_pool_max_size:
-            raise ValueError(
-                "db_pool_min_size must be less than or equal to db_pool_max_size"
-            )
+            raise ValueError("db_pool_min_size must be less than or equal to db_pool_max_size")
         return self
 
 

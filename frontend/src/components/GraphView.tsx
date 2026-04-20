@@ -346,9 +346,9 @@ export default function GraphView({
     if (layout !== 'force' || !hasEdges) simulation.tick()
     if (userZoomedRef.current) { applyingAutoTransformRef.current = true; svg.call(zoom.transform, zoomTransformRef.current); applyingAutoTransformRef.current = false }
     else fitToView(false)
-    
-    return () => { 
-      fitToViewRef.current = null; 
+
+    return () => {
+      fitToViewRef.current = null;
       simulation.stop();
       // Explicitly release references
       simulation.nodes([]);

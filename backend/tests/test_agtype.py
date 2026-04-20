@@ -1,6 +1,10 @@
 """Tests for AgType parser."""
 
-from app.services.agtype import AgTypeParser
+from app.services.agtype import (
+    AgTypeParser,
+    _GraphElementCollector,
+    _synthesize_missing_endpoints,
+)
 
 
 class TestAgTypeParser:
@@ -54,7 +58,7 @@ class TestAgTypeParser:
             "properties": {"name": "Alice", "age": 30},
         }
         result = AgTypeParser.parse(vertex)
-        
+
         assert result["type"] == "node"
         assert result["id"] == "1"  # IDs are converted to strings
         assert result["label"] == "Person"
@@ -73,7 +77,7 @@ class TestAgTypeParser:
             "properties": {},
         }
         result = AgTypeParser.parse(vertex)
-        
+
         assert result["type"] == "node"
         assert result["label"] == "Person"
 
@@ -85,7 +89,7 @@ class TestAgTypeParser:
             "properties": {},
         }
         result = AgTypeParser.parse(vertex)
-        
+
         assert result["type"] == "node"
         assert result["label"] == ""
 
@@ -97,7 +101,7 @@ class TestAgTypeParser:
             "properties": '{"name": "Alice", "age": 30}',
         }
         result = AgTypeParser.parse(vertex)
-        
+
         assert result["type"] == "node"
         assert result["properties"] == {"name": "Alice", "age": 30}
 
@@ -111,7 +115,7 @@ class TestAgTypeParser:
             "properties": {"since": 2020},
         }
         result = AgTypeParser.parse(edge)
-        
+
         assert result["type"] == "edge"
         assert result["id"] == "1"
         assert result["label"] == "KNOWS"
@@ -129,7 +133,7 @@ class TestAgTypeParser:
             "properties": {},
         }
         result = AgTypeParser.parse(edge)
-        
+
         assert result["type"] == "edge"
         assert result["label"] == "KNOWS"
 
@@ -185,7 +189,7 @@ class TestAgTypeParser:
             ],
         }
         result = AgTypeParser.parse(data)
-        
+
         assert result["person"]["type"] == "node"
         assert len(result["friends"]) == 2
         assert result["friends"][0]["type"] == "node"
@@ -194,7 +198,7 @@ class TestAgTypeParser:
         """Test parsing JSON string."""
         json_str = '{"id": 1, "label": "Person", "properties": {}}'
         result = AgTypeParser.parse(json_str)
-        
+
         assert result["type"] == "node"
         assert result["id"] == "1"
 
@@ -202,7 +206,7 @@ class TestAgTypeParser:
         """Test parsing invalid JSON string."""
         invalid_json = "not valid json"
         result = AgTypeParser.parse(invalid_json)
-        
+
         # Should return the string as-is
         assert result == "not valid json"
 
@@ -234,9 +238,9 @@ class TestGraphElementExtraction:
             {"result": {"id": 1, "label": "Person", "properties": {}}},
             {"result": {"id": 2, "label": "Person", "properties": {}}},
         ]
-        
+
         result = AgTypeParser.extract_graph_elements(rows)
-        
+
         assert len(result["nodes"]) == 2
         assert len(result["edges"]) == 0
         assert len(result["other"]) == 0
@@ -255,9 +259,9 @@ class TestGraphElementExtraction:
                 }
             }
         ]
-        
+
         result = AgTypeParser.extract_graph_elements(rows)
-        
+
         assert len(result["nodes"]) == 2  # Placeholders for start_id and end_id
         assert len(result["edges"]) == 1
         assert len(result["other"]) == 0
@@ -277,9 +281,9 @@ class TestGraphElementExtraction:
             },
             {"result": {"id": 2, "label": "Person", "properties": {}}},
         ]
-        
+
         result = AgTypeParser.extract_graph_elements(rows)
-        
+
         assert len(result["nodes"]) == 2
         assert len(result["edges"]) == 1
         assert len(result["other"]) == 0
@@ -290,9 +294,9 @@ class TestGraphElementExtraction:
             {"result": {"id": 1, "label": "Person", "properties": {}}},
             {"result": {"id": 1, "label": "Person", "properties": {}}},  # Duplicate
         ]
-        
+
         result = AgTypeParser.extract_graph_elements(rows)
-        
+
         # Should only have one node
         assert len(result["nodes"]) == 1
 
@@ -318,9 +322,9 @@ class TestGraphElementExtraction:
                 }
             },  # Duplicate
         ]
-        
+
         result = AgTypeParser.extract_graph_elements(rows)
-        
+
         # Should only have one edge
         assert len(result["edges"]) == 1
 
@@ -331,9 +335,9 @@ class TestGraphElementExtraction:
             {"result": "scalar_value"},
             {"result": {"key": "value"}},  # Regular dict, not graph element
         ]
-        
+
         result = AgTypeParser.extract_graph_elements(rows)
-        
+
         assert len(result["nodes"]) == 1
         assert len(result["edges"]) == 0
         assert len(result["other"]) == 2  # Scalar and regular dict
@@ -353,9 +357,9 @@ class TestGraphElementExtraction:
                 },
             }
         ]
-        
+
         result = AgTypeParser.extract_graph_elements(rows)
-        
+
         assert len(result["nodes"]) == 2  # Node 1 + placeholder for end_id 2
         assert len(result["edges"]) == 1
 
@@ -363,7 +367,7 @@ class TestGraphElementExtraction:
         """Test extracting from empty rows."""
         rows = []
         result = AgTypeParser.extract_graph_elements(rows)
-        
+
         assert len(result["nodes"]) == 0
         assert len(result["edges"]) == 0
         assert len(result["other"]) == 0
@@ -430,3 +434,61 @@ class TestGraphElementExtraction:
         assert result["paths"][0]["node_ids"] == ["1", "2"]
         assert result["paths"][0]["edge_ids"] == ["10"]
 
+
+class TestSynthesizeMissingEndpoints:
+    """Regression tests for endpoint-synthesis ID-type consistency (PR #40 viper-review)."""
+
+    def test_does_not_duplicate_when_edge_endpoint_is_int_and_node_was_stringified(self):
+        """`node_ids` stores stringified ids (via `add_node`). If an edge's source/target
+        arrives as a raw int, the synthesis check must still find the matching stringified
+        node id and skip the placeholder.
+        """
+        collector = _GraphElementCollector()
+        collector.add_node({"id": 1, "label": "Person", "properties": {}, "type": "node"})
+        assert collector.node_ids == {"1"}
+
+        collector.edges.append(
+            {
+                "id": "99",
+                "label": "KNOWS",
+                "source": 1,
+                "target": 2,
+                "properties": {},
+                "type": "edge",
+            }
+        )
+
+        _synthesize_missing_endpoints(collector)
+
+        assert len(collector.nodes) == 2  # original node 1 + placeholder for 2
+        assert collector.node_ids == {"1", "2"}
+        placeholder = collector.nodes[1]
+        assert placeholder["id"] == "2"
+        assert placeholder["type"] == "node"
+
+    def test_placeholder_ids_are_stringified(self):
+        """Newly synthesized placeholder nodes use stringified ids so they match the rest
+        of the pipeline (`add_node` + `_parse_id` both produce strings).
+        """
+        collector = _GraphElementCollector()
+        collector.edges.append(
+            {
+                "id": "5",
+                "label": "LINKS",
+                "source": 10,
+                "target": 20,
+                "properties": {},
+                "type": "edge",
+            }
+        )
+
+        _synthesize_missing_endpoints(collector)
+
+        assert {n["id"] for n in collector.nodes} == {"10", "20"}
+        assert collector.node_ids == {"10", "20"}
+
+    def test_noop_when_no_edges(self):
+        collector = _GraphElementCollector()
+        collector.add_node({"id": 1, "label": "X", "properties": {}, "type": "node"})
+        _synthesize_missing_endpoints(collector)
+        assert len(collector.nodes) == 1

@@ -85,7 +85,8 @@ class NodeDeleteRequest(BaseModel):
     """Request to delete a node."""
 
     detach: bool = Field(
-        default=False, description="If true, delete node and all its relationships. If false, only delete if no relationships exist."
+        default=False,
+        description="If true, delete node and all its relationships. If false, only delete if no relationships exist.",
     )
 
 
@@ -129,4 +130,3 @@ class ShortestPathResponse(BaseModel):
         default_factory=list,
         description="Edges in path order",
     )
-

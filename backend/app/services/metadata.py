@@ -31,9 +31,7 @@ async def invalidate_property_metadata_cache(
     validated_label = validate_label_name(label_name) if label_name else None
     if validated_label:
         for kind in ("v", "e"):
-            await metadata_cache.delete(
-                f"props:{validated_graph}:{validated_label}:{kind}"
-            )
+            await metadata_cache.delete(f"props:{validated_graph}:{validated_label}:{kind}")
     else:
         await metadata_cache.clear(prefix=f"props:{validated_graph}:")
         await metadata_cache.clear(prefix=f"counts:{validated_graph}:")
@@ -57,26 +55,20 @@ class MetadataService:
         try:
             validated_graph_name = validate_graph_name(graph_name)
             validated_label_name = validate_label_name(label_name)
-            cache_key = (
-                f"props:{validated_graph_name}:{validated_label_name}:{label_kind}"
-            )
+            cache_key = f"props:{validated_graph_name}:{validated_label_name}:{label_kind}"
             cached = await metadata_cache.get(cache_key)
             if cached is not None:
                 return cached
             limit = min(max(1, sample_size), 500)
 
             if label_kind == "v":
-                cypher = (
-                    f"MATCH (n:{validated_label_name}) RETURN keys(n) AS k LIMIT {limit}"
-                )
+                cypher = f"MATCH (n:{validated_label_name}) RETURN keys(n) AS k LIMIT {limit}"
             else:
                 cypher = (
                     f"MATCH ()-[r:{validated_label_name}]->() RETURN keys(r) AS k LIMIT {limit}"
                 )
 
-            raw_rows = await db_conn.execute_cypher(
-                validated_graph_name, cypher, params=None
-            )
+            raw_rows = await db_conn.execute_cypher(validated_graph_name, cypher, params=None)
             all_keys: set = set()
             for row in raw_rows:
                 val = next(iter(row.values()), None) if row else None
@@ -86,7 +78,7 @@ class MetadataService:
                         if isinstance(k, str):
                             all_keys.add(k)
             properties = sorted(all_keys)
-            
+
             await metadata_cache.set(cache_key, properties)
             return properties
 
@@ -135,7 +127,7 @@ class MetadataService:
                 for row in rows
                 if row.get("label_name")
             }
-            
+
             # Cache for a shorter duration (10 minutes)
             await metadata_cache.set(cache_key, counts, ttl_seconds=600)
             return counts
@@ -215,7 +207,7 @@ class MetadataService:
                 cypher,
                 params={"key": property_name},
             )
-            
+
             numeric_values = []
             for row in raw_rows:
                 val = next(iter(row.values()), None) if row else None
@@ -225,11 +217,11 @@ class MetadataService:
                         numeric_values.append(float(parsed))
                     except (ValueError, TypeError):
                         continue
-            
+
             stats = {"min": None, "max": None}
             if numeric_values:
                 stats = {"min": min(numeric_values), "max": max(numeric_values)}
-            
+
             await metadata_cache.set(cache_key, stats)
             return stats
 
@@ -256,9 +248,7 @@ class MetadataService:
         """
         props = properties
         if props is None:
-            props = await MetadataService.discover_properties(
-                db_conn, graph_name, label_name, "e"
-            )
+            props = await MetadataService.discover_properties(db_conn, graph_name, label_name, "e")
         if not props:
             return {}
 
@@ -305,9 +295,7 @@ class MetadataService:
                 """
                 await db_conn.execute_command(create_index_sql)
 
-            logger.info(
-                f"Ensured indices on {table_name} for columns: {', '.join(columns)}"
-            )
+            logger.info(f"Ensured indices on {table_name} for columns: {', '.join(columns)}")
             await invalidate_property_metadata_cache(validated_graph_name)
         except Exception as e:
             logger.warning(

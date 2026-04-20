@@ -40,10 +40,10 @@ class CypherExecutor:
         cypher_normalized = cypher_query.rstrip()
         if cypher_normalized.endswith(";"):
             cypher_normalized = cypher_normalized[:-1].rstrip()
-        
+
         # Empty dict {} must use 3-arg cypher() when caller passed params= explicitly
         has_params = params is not None
-        
+
         # AGE requires AS (col1 agtype, ...) to match RETURN column count and names.
         return_cols = cypher_return_columns(cypher_query)
         as_clause_str = ", ".join(f'"{c}" agtype' for c in return_cols)
