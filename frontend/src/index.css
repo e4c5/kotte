@@ -1,5 +1,13 @@
 @import 'tailwindcss';
 
+/*
+ * ROADMAP A1: Switch the `dark:` variant from Tailwind v4's default
+ * `prefers-color-scheme` query to a class on <html>. The `useTheme()` hook
+ * (frontend/src/utils/useTheme.ts) toggles `.dark` on documentElement based on
+ * the persisted `settingsStore.theme` value.
+ */
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
   font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
   line-height: 1.5;

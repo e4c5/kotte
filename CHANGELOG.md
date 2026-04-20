@@ -12,6 +12,27 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ## [Unreleased]
 
 ### Added
+- **Functional Settings entry point + theme switching (ROADMAP A1)** —
+  the `WorkspacePage` header now renders a gear button next to `Disconnect`
+  (`aria-label="Open settings"`) so users have a discoverable way into
+  `SettingsModal`. Previously the modal could only be reached from a buried
+  banner inside the viz-limit warning, which most users never see. Wired the
+  modal's existing theme select to actually apply: a new `useTheme()` hook in
+  `frontend/src/utils/useTheme.ts` toggles a `dark` class on
+  `document.documentElement` based on the persisted `settingsStore.theme`
+  value, subscribing to `prefers-color-scheme` while in `auto` mode and
+  cleaning up on unmount. Tailwind v4's `dark:` variant is rebound to the
+  class via `@custom-variant dark (&:where(.dark, .dark *));` in
+  `frontend/src/index.css`. Repainted the shell-level surfaces
+  (`WorkspacePage` outer/header/query bar, `Layout` non-workspace shell,
+  `App` LoadingFallback) with `dark:` pairs so theme changes take effect
+  without reload. Adds 11 new unit tests
+  (`useTheme.test.ts` + `SettingsModal.test.tsx`).
+  *Scope note:* leaf components (`TableView`, `QueryEditor`, `GraphView`
+  canvas, `GraphControls` panels, `ConnectionPage`, `LoginPage`,
+  `SettingsModal`'s own inline-styled inputs) keep their existing dark
+  palette; an end-to-end light-mode repaint is left as follow-up work
+  because it's a per-component design exercise rather than a refactor.
 - `LICENSE` (Apache-2.0) at the repo root, with a matching `NOTICE` for attribution.
 - `CHANGELOG.md` (this file) seeded with the work shipped to date.
 - `backend/.env.example` enumerating every key on `app.core.config.Settings`
