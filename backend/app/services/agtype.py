@@ -99,17 +99,20 @@ def _synthesize_missing_endpoints(collector: _GraphElementCollector) -> None:
     for e in collector.edges:
         for endpoint_key in ("source", "target"):
             eid = e.get(endpoint_key)
-            if eid is None or eid in collector.node_ids:
+            if eid is None:
+                continue
+            eid_str = str(eid)
+            if eid_str in collector.node_ids:
                 continue
             collector.nodes.append(
                 {
-                    "id": eid,
+                    "id": eid_str,
                     "label": "",
                     "properties": {},
                     "type": "node",
                 }
             )
-            collector.node_ids.add(eid)
+            collector.node_ids.add(eid_str)
 
 
 def _get_first_value_for_key_containing(obj: Dict[str, Any], substring: str) -> Any:

@@ -1,6 +1,10 @@
 """Tests for AgType parser."""
 
-from app.services.agtype import AgTypeParser
+from app.services.agtype import (
+    AgTypeParser,
+    _GraphElementCollector,
+    _synthesize_missing_endpoints,
+)
 
 
 class TestAgTypeParser:
@@ -429,3 +433,62 @@ class TestGraphElementExtraction:
         assert result["paths"][0]["type"] == "path"
         assert result["paths"][0]["node_ids"] == ["1", "2"]
         assert result["paths"][0]["edge_ids"] == ["10"]
+
+
+class TestSynthesizeMissingEndpoints:
+    """Regression tests for endpoint-synthesis ID-type consistency (PR #40 viper-review)."""
+
+    def test_does_not_duplicate_when_edge_endpoint_is_int_and_node_was_stringified(self):
+        """`node_ids` stores stringified ids (via `add_node`). If an edge's source/target
+        arrives as a raw int, the synthesis check must still find the matching stringified
+        node id and skip the placeholder.
+        """
+        collector = _GraphElementCollector()
+        collector.add_node({"id": 1, "label": "Person", "properties": {}, "type": "node"})
+        assert collector.node_ids == {"1"}
+
+        collector.edges.append(
+            {
+                "id": "99",
+                "label": "KNOWS",
+                "source": 1,
+                "target": 2,
+                "properties": {},
+                "type": "edge",
+            }
+        )
+
+        _synthesize_missing_endpoints(collector)
+
+        assert len(collector.nodes) == 2  # original node 1 + placeholder for 2
+        assert collector.node_ids == {"1", "2"}
+        placeholder = collector.nodes[1]
+        assert placeholder["id"] == "2"
+        assert placeholder["type"] == "node"
+
+    def test_placeholder_ids_are_stringified(self):
+        """Newly synthesized placeholder nodes use stringified ids so they match the rest
+        of the pipeline (`add_node` + `_parse_id` both produce strings).
+        """
+        collector = _GraphElementCollector()
+        collector.edges.append(
+            {
+                "id": "5",
+                "label": "LINKS",
+                "source": 10,
+                "target": 20,
+                "properties": {},
+                "type": "edge",
+            }
+        )
+
+        _synthesize_missing_endpoints(collector)
+
+        assert {n["id"] for n in collector.nodes} == {"10", "20"}
+        assert collector.node_ids == {"10", "20"}
+
+    def test_noop_when_no_edges(self):
+        collector = _GraphElementCollector()
+        collector.add_node({"id": 1, "label": "X", "properties": {}, "type": "node"})
+        _synthesize_missing_endpoints(collector)
+        assert len(collector.nodes) == 1
