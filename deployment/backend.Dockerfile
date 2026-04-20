@@ -24,6 +24,13 @@ RUN apt-get update \
         libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
+# Keep pip / setuptools / wheel current. The python:3.11-slim base image
+# ships with older metadata (e.g. wheel 0.45.1, jaraco.context 5.3.0 via
+# setuptools) that Trivy flags HIGH (CVE-2026-23949, CVE-2026-24049).
+# Upgrading them here patches those before they can be copied into the
+# runtime image.
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
+
 COPY backend/requirements.txt ./
 
 # --target=/install collects everything into a relocatable tree that the
@@ -41,11 +48,25 @@ WORKDIR /app
 #   * curl so the HEALTHCHECK below doesn't need Python to be on PATH
 #     (it's ~2 MB and pays for itself the first time you `docker exec`
 #     into a wedged container)
+#
+# `apt-get upgrade -y` before installing pulls the latest security
+# patches for anything the base image already ships (e.g. the Debian
+# libssl3t64 / openssl fix for CVE-2026-28390 that Trivy flags HIGH).
+# Without this the build would fail the Trivy gate every time Debian
+# point-releases a CVE patch, even though our explicit deps are pinned
+# correctly.
 RUN apt-get update \
+    && apt-get upgrade -y \
     && apt-get install -y --no-install-recommends \
         libpq5 \
         curl \
     && rm -rf /var/lib/apt/lists/*
+
+# Same rationale as the builder stage: the base image's bundled pip /
+# setuptools / wheel metadata gets picked up by Trivy's python-pkg
+# scanner. Upgrading in-place clears the HIGH findings on wheel and
+# jaraco.context (via setuptools).
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
 # Import the pre-built site-packages tree from the builder. PYTHONPATH
 # points Python at it without needing to touch /usr/local/lib; PATH picks

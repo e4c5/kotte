@@ -24,7 +24,14 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
     copies the backend source, creates a non-root `kotte` user with
     `/usr/sbin/nologin` shell, `USER kotte`, exposes 8000, and ships a
     `HEALTHCHECK CMD curl --fail --silent --show-error
-    http://localhost:8000/api/v1/health`. Validated end-to-end locally
+    http://localhost:8000/api/v1/health`. Both stages run
+    `pip install --upgrade pip setuptools wheel` to clear the HIGH
+    CVEs Trivy flags on the `python:3.11-slim` base's bundled
+    metadata (`wheel` CVE-2026-24049, `jaraco.context`
+    CVE-2026-23949); the runtime stage additionally runs
+    `apt-get upgrade -y` before installing libpq5/curl so the Debian
+    `libssl3t64` / openssl patches (CVE-2026-28390) ship with the
+    image instead of blocking the Trivy HIGH/CRITICAL gate. Validated end-to-end locally
     (image builds, container boots, `/api/v1/health` returns
     `{"status":"healthy", ...}`). Final runtime image ~400 MB — build
     tools stay in the builder stage so CVEs there never reach
