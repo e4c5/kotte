@@ -283,8 +283,16 @@ export const useQueryStore = create<QueryState>()(
             }
             const result = await queryAPI.execute(request)
             
+            // A wholesale result replacement invalidates any in-flight isolate
+            // snapshot — `previousGraphElements` references nodes/edges from
+            // the *previous* result version, so leaving it set would make the
+            // breadcrumb's "restore" splice stale data into the new result.
+            // Scope the snapshot to one concrete result version by clearing it
+            // here (covers re-execute on the same tab, graph switches via
+            // executeQuery, and any future caller that replaces `result`).
             get().updateTab(tabId, {
               result,
+              previousGraphElements: null,
               loading: false,
               requestId: result.request_id,
               query,
@@ -409,6 +417,18 @@ export const useQueryStore = create<QueryState>()(
           }
           const keptNodes = nodes.filter((n) => keepNodeIds.has(n.id))
 
+          // Defensive: a half-merged result can hold an edge whose endpoint is
+          // not in `nodes[]`. `keptNodes` is the intersection with `nodes[]`,
+          // so re-filter `incidentEdges` against the actually-kept set to
+          // avoid emitting dangling edges that the simulation/renderer would
+          // either drop or mis-render.
+          const keptNodeIdSet = new Set(keptNodes.map((n) => n.id))
+          const keptEdges = incidentEdges.filter((e) => {
+            const s = typeof e.source === 'string' ? e.source : e.source.id
+            const t = typeof e.target === 'string' ? e.target : e.target.id
+            return keptNodeIdSet.has(s) && keptNodeIdSet.has(t)
+          })
+
           // If the clicked node has no edges on the current canvas we still
           // isolate (the user gets just that node back). They can step out
           // via the breadcrumb.
@@ -422,12 +442,12 @@ export const useQueryStore = create<QueryState>()(
               graph_elements: {
                 ...currentResult.graph_elements,
                 nodes: keptNodes,
-                edges: incidentEdges,
+                edges: keptEdges,
               } as QueryExecuteResponse['graph_elements'],
               stats: {
                 ...currentResult.stats,
                 nodes_extracted: keptNodes.length,
-                edges_extracted: incidentEdges.length,
+                edges_extracted: keptEdges.length,
               },
             }
           })
@@ -456,7 +476,11 @@ export const useQueryStore = create<QueryState>()(
         clearResult: () => {
           const activeTab = getActiveTab()
           if (activeTab) {
-            get().updateTab(activeTab.id, { result: null, error: null })
+            get().updateTab(activeTab.id, {
+              result: null,
+              error: null,
+              previousGraphElements: null,
+            })
           }
         },
       }

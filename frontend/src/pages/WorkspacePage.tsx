@@ -178,7 +178,12 @@ export default function WorkspacePage() {
   const handleTabClose = (tabId: string, e: React.MouseEvent) => {
     e.stopPropagation()
     if (tabs.length <= 1) {
-      updateTab(tabId, { query: '', result: null, error: null })
+      updateTab(tabId, {
+        query: '',
+        result: null,
+        error: null,
+        previousGraphElements: null,
+      })
       return
     }
     closeTab(tabId)
@@ -216,8 +221,17 @@ export default function WorkspacePage() {
   // Typed against the structural minimum so it accepts both the GraphView and
   // services/graph GraphNode shapes without coupling the page to either.
   const handleDoubleClickNode = async (node: { id: string }) => {
+    // `cameraFocusAnchorIds` is a global graphStore value consumed by the
+    // currently-mounted GraphView. If the user switches tabs while the expand
+    // is in flight, applying the focus would zoom the *other* tab's canvas to
+    // anchors that don't belong to it. Capture the originating tab id and
+    // bail if the active tab moved on by the time the await resolves. We use
+    // `getState()` (not the closed-over `activeTabId`) to read the *current*
+    // value, since a setState may have happened during the await.
+    const requestTabId = activeTabId
     const merged = await handleExpandNode(node.id)
-    if (!merged) return
+    if (!merged || !requestTabId) return
+    if (useQueryStore.getState().activeTabId !== requestTabId) return
     // Always include the clicked node in the focus union so a no-op expand
     // (node already had all its neighbours on canvas) still recentres on it.
     setCameraFocusAnchorIds([node.id, ...merged.addedNodeIds])

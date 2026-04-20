@@ -190,4 +190,75 @@ describe('queryStore — isolateNeighborhood / restoreGraphElements (A11.3)', ()
     expect(tab.previousGraphElements ?? null).toBeNull()
     expect(tab.result?.graph_elements ?? null).toBeNull()
   })
+
+  it('drops edges whose endpoints are not in the kept node set (defensive)', () => {
+    // Half-merged canvas: edge `dangling` references node `ghost` which is
+    // not in `nodes[]`. After isolating `b`, the dangling edge must not
+    // survive into the isolated subgraph (otherwise the renderer would
+    // either silently drop it or mis-render the missing endpoint).
+    const result = makeResult(
+      [node('a'), node('b'), node('c')],
+      [
+        edge('e1', 'a', 'b'),
+        edge('e2', 'b', 'c'),
+        edge('dangling', 'b', 'ghost'),
+      ],
+    )
+    const tabId = seedTab(result)
+
+    useQueryStore.getState().isolateNeighborhood(tabId, 'b')
+    const tab = useQueryStore.getState().tabs.find((t) => t.id === tabId)!
+
+    const keptIds = (tab.result?.graph_elements?.nodes ?? []).map((n) => n.id).sort()
+    const keptEdgeIds = (tab.result?.graph_elements?.edges ?? []).map((e) => e.id).sort()
+
+    expect(keptIds).toEqual(['a', 'b', 'c'])
+    expect(keptEdgeIds).toEqual(['e1', 'e2'])
+    expect(tab.result?.stats?.edges_extracted).toBe(2)
+  })
+})
+
+describe('queryStore — snapshot lifecycle (A11.3 + review fixes)', () => {
+  beforeEach(resetStore)
+  afterEach(resetStore)
+
+  it('clearResult clears previousGraphElements alongside result', () => {
+    // Without this reset, a re-run after an isolate would leave the
+    // breadcrumb pointing at a snapshot of the *previous* result version.
+    const result = makeResult([node('a'), node('b')], [edge('e1', 'a', 'b')])
+    const tabId = seedTab(result)
+    useQueryStore.setState({ activeTabId: tabId })
+
+    useQueryStore.getState().isolateNeighborhood(tabId, 'a')
+    expect(
+      useQueryStore.getState().tabs.find((t) => t.id === tabId)?.previousGraphElements,
+    ).toBeTruthy()
+
+    useQueryStore.getState().clearResult()
+    const tab = useQueryStore.getState().tabs.find((t) => t.id === tabId)!
+
+    expect(tab.previousGraphElements).toBeNull()
+    expect(tab.result).toBeNull()
+  })
+
+  it('manually replacing tab.result via updateTab leaves snapshot logic to the caller', () => {
+    // Sanity: updateTab is the lower-level primitive used by executeQuery.
+    // The fix lives in executeQuery's payload (which we can't easily exercise
+    // without mocking the API layer); this test pins the contract that
+    // clearResult is the canonical reset path on the store side.
+    const result = makeResult([node('a'), node('b')], [edge('e1', 'a', 'b')])
+    const tabId = seedTab(result)
+    useQueryStore.getState().isolateNeighborhood(tabId, 'a')
+
+    // Caller-driven reset (mirrors WorkspacePage.handleClearTab and
+    // executeQuery's payload).
+    useQueryStore.getState().updateTab(tabId, {
+      result: null,
+      previousGraphElements: null,
+    })
+    const tab = useQueryStore.getState().tabs.find((t) => t.id === tabId)!
+
+    expect(tab.previousGraphElements).toBeNull()
+    expect(tab.result).toBeNull()
+  })
 })

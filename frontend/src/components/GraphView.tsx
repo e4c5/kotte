@@ -65,6 +65,16 @@ export default function GraphView({
   const zoomTransformRef = useRef(d3.zoomIdentity)
   const userZoomedRef = useRef(false)
   const applyingAutoTransformRef = useRef(false)
+  // Camera-focus pin survives the store-triggered re-render. Holding the
+  // timer + pinned-node-id at component scope (rather than as a local in
+  // the camera-focus effect) means the effect cleanup that fires when
+  // `clearCameraFocusAnchorIds()` flips the dep can't accidentally cancel
+  // the still-pending 2 s release. Cleanup is centralised in
+  // `releasePin` and the dedicated unmount effect below.
+  const pinRef = useRef<{
+    timer: ReturnType<typeof setTimeout> | null
+    id: string | null
+  }>({ timer: null, id: null })
   const onNodeClickRef = useRef<typeof onNodeClick>(onNodeClick)
   const onNodeDoubleClickRef = useRef<typeof onNodeDoubleClick>(onNodeDoubleClick)
   const onNodeRightClickRef = useRef<typeof onNodeRightClick>(onNodeRightClick)
@@ -367,7 +377,32 @@ export default function GraphView({
     if (!sim || !svg || !zoom) return
 
     const anchorSet = new Set(cameraFocusAnchorIds)
-    let pinTimer: ReturnType<typeof setTimeout> | null = null
+    // The first anchor is, by contract from
+    // `WorkspacePage.handleDoubleClickNode`, the actually-clicked node id
+    // (`[node.id, ...merged.addedNodeIds]`). `anchors` below is the
+    // simulation-ordered subset, so we must look the clicked node up by
+    // id rather than trusting `anchors[0]` — otherwise the temporary pin
+    // can anchor the layout around an arbitrary neighbour.
+    const clickedId = cameraFocusAnchorIds[0]
+
+    // Cancel any in-flight pin from a prior camera-focus pass before we
+    // schedule a new one. Release the previously-pinned node's fx/fy
+    // unless the user has explicitly pinned it via `pinnedNodes`.
+    const releasePin = () => {
+      if (pinRef.current.timer) {
+        clearTimeout(pinRef.current.timer)
+      }
+      const prevId = pinRef.current.id
+      if (prevId && !pinnedNodes.has(prevId)) {
+        const prevNode = sim.nodes().find((n) => n.id === prevId)
+        if (prevNode) {
+          prevNode.fx = null
+          prevNode.fy = null
+        }
+      }
+      pinRef.current = { timer: null, id: null }
+    }
+
     const raf = requestAnimationFrame(() => {
       const allNodes = sim.nodes()
       const anchors = allNodes.filter((n) => anchorSet.has(n.id))
@@ -403,42 +438,85 @@ export default function GraphView({
       // Mark as "user zoom" so the next simulation tick / re-fit doesn't
       // immediately reset us back to the whole-canvas bounds.
       userZoomedRef.current = true
+      // Both `'end'` (normal completion) and `'interrupt'` (user pan/zoom
+      // or another transform during the 400 ms window) must clear the
+      // auto-transform flag and the focus anchors — otherwise an
+      // interrupted transition leaves `applyingAutoTransformRef` stuck
+      // `true` and `cameraFocusAnchorIds` non-empty, breaking subsequent
+      // user-zoom classification.
+      const finishAutoFocus = () => {
+        applyingAutoTransformRef.current = false
+        clearCameraFocusAnchorIds()
+        // An interrupt before the 2 s pin release should also flush the
+        // pin so we don't leave a node fixed indefinitely.
+        releasePin()
+      }
       svg
         .transition()
         .duration(400)
-        .on('end', () => {
-          applyingAutoTransformRef.current = false
-          clearCameraFocusAnchorIds()
-        })
+        .on('end', finishAutoFocus)
+        .on('interrupt', finishAutoFocus)
         .call(zoom.transform, transform)
 
-      // Briefly pin the clicked node (the first anchor) so the force layout
-      // settles around the focus rather than drifting it back to the centre.
-      const clicked = anchors[0]
+      // Briefly pin the clicked node so the force layout settles around
+      // the focus rather than drifting it back to the centre.
+      const clicked = allNodes.find((n) => n.id === clickedId) ?? anchors[0]
       if (clicked && layout === 'force') {
+        // Replace any prior pin first (covers rapid successive expands).
+        releasePin()
         clicked.fx = clicked.x ?? 0
         clicked.fy = clicked.y ?? 0
         sim.alphaTarget(0.1).restart()
-        pinTimer = setTimeout(() => {
+        const clickedIdForRelease = clicked.id
+        const timer = setTimeout(() => {
           // Honour an explicit pin from `pinnedNodes` — don't release a node
           // the user has separately decided should stay put.
-          if (!pinnedNodes.has(clicked.id)) {
+          if (!pinnedNodes.has(clickedIdForRelease)) {
             clicked.fx = null
             clicked.fy = null
           }
           sim.alphaTarget(0)
+          pinRef.current = { timer: null, id: null }
         }, 2000)
+        pinRef.current = { timer, id: clickedIdForRelease }
       }
     })
 
+    // NOTE: the cleanup intentionally does *not* clear the pin timer.
+    // The transition's `on('end')` handler calls `clearCameraFocusAnchorIds`
+    // ~t≈416 ms, which mutates the store and causes React to re-run this
+    // effect — if we cleared the pin timer here, the still-pending 2 s
+    // release would be cancelled and the node would stay fixed forever.
+    // Pin lifetime is owned by `pinRef` and cleaned up by `releasePin`
+    // (called from `finishAutoFocus`, the next focus pass, or unmount).
     return () => {
       cancelAnimationFrame(raf)
-      if (pinTimer) clearTimeout(pinTimer)
     }
     // `filteredNodes` is in deps so the effect re-runs after the main mount
     // effect has rebuilt the simulation with the new data — without it the
     // first focus after an expand reads stale positions.
   }, [cameraFocusAnchorIds, filteredNodes, layout, resolvedSize.width, resolvedSize.height, pinnedNodes, clearCameraFocusAnchorIds])
+
+  // Unmount-only scrub: if the component tears down while a pin is still
+  // active (e.g. tab close mid-focus), release fx/fy so a future remount
+  // doesn't inherit a stuck pin via mutated simulation node references.
+  useEffect(() => {
+    return () => {
+      if (pinRef.current.timer) {
+        clearTimeout(pinRef.current.timer)
+      }
+      const sim = simulationRef.current
+      const id = pinRef.current.id
+      if (sim && id) {
+        const n = sim.nodes().find((n) => n.id === id)
+        if (n) {
+          n.fx = null
+          n.fy = null
+        }
+      }
+      pinRef.current = { timer: null, id: null }
+    }
+  }, [])
 
   const zoomBy = (factor: number) => {
     const svg = svgSelectionRef.current, zoom = zoomBehaviorRef.current
