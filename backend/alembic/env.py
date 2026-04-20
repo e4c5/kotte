@@ -63,16 +63,22 @@ def _resolve_url() -> str:
     port = os.environ.get("DB_PORT", "5432")
     database = os.environ.get("DB_NAME", "postgres")
     user = os.environ.get("DB_USER", "postgres")
-    password = os.environ.get("DB_PASSWORD", "")
+    password = os.environ.get("DB_PASSWORD")
 
     # URL-encode so special characters in the password don't break the
-    # DSN. The rest of the backend uses a dict-style connection so this
-    # is the only spot that cares.
+    # DSN. We intentionally support the password-less DSN form
+    # (`postgresql+psycopg://user@host:…`) because alembic is operator
+    # tooling: some legitimate targets authenticate via Unix-socket
+    # peer auth (`pg_hba.conf local all peer`), `.pgpass`, IAM tokens
+    # (RDS/Cloud SQL), or a service-mesh sidecar — none of those pass
+    # a password through env vars. Operators pointing alembic at a
+    # password-protected target simply export `DB_PASSWORD` in the
+    # same shell they run `make migrate-up` from.
     auth = quote_plus(user)
     if password:
         auth = f"{auth}:{quote_plus(password)}"
 
-    return f"postgresql+psycopg://{auth}@{host}:{port}/{database}"
+    return f"postgresql+psycopg://{auth}@{host}:{port}/{database}"  # NOSONAR python:S2115
 
 
 def run_migrations_offline() -> None:

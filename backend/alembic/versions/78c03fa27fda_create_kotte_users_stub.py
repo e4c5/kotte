@@ -49,8 +49,7 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     """Create `kotte_users` + its supporting citext extension."""
     op.execute("CREATE EXTENSION IF NOT EXISTS citext")
-    op.execute(
-        """
+    op.execute("""
         CREATE TABLE IF NOT EXISTS kotte_users (
             id            BIGSERIAL    PRIMARY KEY,
             username      CITEXT       NOT NULL UNIQUE,
@@ -58,8 +57,7 @@ def upgrade() -> None:
             created_at    TIMESTAMPTZ  NOT NULL DEFAULT now(),
             last_login_at TIMESTAMPTZ  NULL
         )
-        """
-    )
+        """)
 
 
 def downgrade() -> None:
