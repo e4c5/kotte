@@ -45,7 +45,7 @@ const makeResult = (
   stats: { nodes_extracted: nodes.length, edges_extracted: edges.length },
   graph_elements: {
     nodes,
-    edges: edges.map((e) => ({ ...e, source: String(e.source), target: String(e.target) })),
+    edges: edges.map((e) => ({ ...e })),
   } as QueryExecuteResponse['graph_elements'],
 })
 

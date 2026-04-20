@@ -392,7 +392,7 @@ export default function GraphView({
         (resolvedSize.width - 2 * margin) / contentW,
         (resolvedSize.height - 2 * margin) / contentH,
       )
-      const scale = Math.max(0.3, Math.min(2.0, fitScale))
+      const scale = Math.max(0.3, Math.min(2, fitScale))
       const cx = (minX + maxX) / 2
       const cy = (minY + maxY) / 2
       const transform = d3.zoomIdentity
