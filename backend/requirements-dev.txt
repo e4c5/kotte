@@ -7,3 +7,11 @@ black>=23.11.0
 ruff>=0.1.6
 mypy>=1.7.0
 pre-commit>=3.5.0
+
+# Migrations (ROADMAP B7). Kept in dev deps — alembic runs as operator
+# tooling against a user-supplied AGE database; the runtime image
+# doesn't need it. If a deployment wires an entrypoint hook that runs
+# `alembic upgrade head` in-container, install requirements-dev.txt in
+# that image or graduate these to requirements.txt.
+alembic>=1.13.0
+sqlalchemy>=2.0.0

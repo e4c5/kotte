@@ -1,0 +1,15 @@
+Kotte migrations (ROADMAP B7).
+
+Migrations target a user-supplied Apache AGE database. See
+`../../docs/MIGRATIONS.md` for the full operator guide, including:
+
+  * Why alembic is operator tooling (not a runtime hook).
+  * How the connection URL is resolved from DB_* env vars.
+  * The relationship to `scripts/migrate_add_indices.py`
+    (complementary, not redundant).
+  * How to add a new migration (`make migrate-new MSG="..."`).
+
+Everything is raw SQL via `op.execute(...)` — we intentionally don't
+use SQLAlchemy metadata or `--autogenerate` because the app has no ORM
+layer and every table we create must carry the `kotte_` prefix so it
+can't collide with the user's own schema.
