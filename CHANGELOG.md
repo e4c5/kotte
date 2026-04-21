@@ -12,6 +12,29 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ## [Unreleased]
 
 ### Added
+- **Backend integration CI (ROADMAP B1.3)** — `.github/workflows/
+  backend-ci.yml` gains a third job, **Integration tests (Apache
+  AGE)**, that starts an `apache/age:dev_snapshot_PG16` service
+  (Docker Hub does not publish `PG16_latest`; this tag pins PostgreSQL
+  16 + AGE), waits on `pg_isready`, exports `USE_REAL_TEST_DB=true`
+  and points `TEST_DB_*` / `DB_*` at `localhost` (GHA runner without a
+  job container uses published ports, not the service DNS name), runs `alembic
+  upgrade head`, then `pytest -m integration --no-cov`. Documents
+  updated: `docs/ROADMAP.md` (B1.3 shipped), `docs/MIGRATIONS.md`
+  (CI bullet under known limitations), `docs/CONTRIBUTING.md` (how to
+  run `-m integration` locally against Docker).
+
+### Fixed
+- **`DatabaseConnection._configure_age` + psycopg_pool** — the pool's
+  `configure` hook ran `SELECT` / `LOAD 'age'` / `SET search_path` under
+  psycopg's default `autocommit=False`, leaving the server connection
+  `INTRANS`. psycopg_pool discarded those connections and
+  `pool.wait()` never reached `min_size`, surfacing as *pool
+  initialization incomplete after 30 sec* on real databases (including
+  CI once the integration job landed). **Fix:** `await conn.commit()`
+  after the cursor block so every pooled connection returns idle.
+
+### Added
 - **Alembic migration chain (ROADMAP B7)** — Kotte now ships a
   versioned migration story for the target Apache AGE database,
   wrapped in operator-friendly `make` targets and documented end-to-

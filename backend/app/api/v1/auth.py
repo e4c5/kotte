@@ -89,6 +89,17 @@ async def logout(
     user_id = session.get("user_id")
     username = session.get("connection_config", {}).get("username", "unknown")
 
+    db_conn = session.get("db_connection")
+    if db_conn:
+        try:
+            await db_conn.disconnect()
+        except Exception as e:
+            logger.warning(
+                "Error disconnecting database on logout",
+                extra={"error": str(e)},
+                exc_info=True,
+            )
+
     # Delete session
     if session_id:
         session_manager.delete_session(session_id)

@@ -1,7 +1,10 @@
 """Integration tests for database connections."""
 
 import os
+
 import pytest
+from psycopg.errors import UndefinedTable
+
 from app.core.database import DatabaseConnection
 from app.core.errors import APIException
 
@@ -35,12 +38,13 @@ class TestDatabaseConnection:
         )
         try:
             await conn.connect()
-            assert conn._conn is not None
         except (APIException, Exception) as e:
             # Skip if database is not available (expected in CI/development)
             pytest.skip(f"Database not available: {e}")
+        try:
+            assert conn._pool is not None
         finally:
-            if hasattr(conn, "_conn") and conn._conn is not None:
+            if conn._pool is not None:
                 await conn.disconnect()
 
     @pytest.mark.asyncio
@@ -56,20 +60,21 @@ class TestDatabaseConnection:
         )
         try:
             await conn.connect()
-            result = await conn.execute_query("SELECT 1 as test_value")
-            assert len(result) > 0
-            assert result[0]["test_value"] == 1
         except (APIException, Exception) as e:
             # Skip if database is not available
             pytest.skip(f"Database not available: {e}")
+        try:
+            result = await conn.execute_query("SELECT 1 as test_value")
+            assert len(result) > 0
+            assert result[0]["test_value"] == 1
         finally:
-            if hasattr(conn, "_conn") and conn._conn is not None:
+            if conn._pool is not None:
                 await conn.disconnect()
 
     @pytest.mark.asyncio
     @requires_real_db
     async def test_transaction_rollback(self, db_config):
-        """Test transaction rollback."""
+        """After a failed statement inside ``transaction()``, the pool stays usable."""
         conn = DatabaseConnection(
             host=db_config["host"],
             port=db_config["port"],
@@ -79,24 +84,17 @@ class TestDatabaseConnection:
         )
         try:
             await conn.connect()
-            await conn.begin_transaction()
+        except (APIException, Exception) as e:
+            pytest.skip(f"Database not available: {e}")
+        try:
+            with pytest.raises(UndefinedTable):
+                async with conn.transaction() as ac:
+                    await conn.execute_query("SELECT * FROM nonexistent_table", conn=ac)
 
-            # Execute a query that would fail
-            try:
-                await conn.execute_query("SELECT * FROM nonexistent_table")
-            except Exception:
-                pass
-
-            await conn.rollback_transaction()
-
-            # Connection should still be usable
             result = await conn.execute_query("SELECT 1")
             assert len(result) > 0
-        except (APIException, Exception) as e:
-            # Skip if database is not available
-            pytest.skip(f"Database not available: {e}")
         finally:
-            if hasattr(conn, "_conn") and conn._conn is not None:
+            if conn._pool is not None:
                 await conn.disconnect()
 
     @pytest.mark.asyncio
