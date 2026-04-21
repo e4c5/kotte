@@ -77,6 +77,20 @@ jobs:
   integration:
     name: Integration tests (Apache AGE)
     runs-on: ubuntu-latest
+    env:
+      # Without a job-level `container:`, the runner reaches service containers
+      # via localhost + the published port — not the Compose-style service name.
+      USE_REAL_TEST_DB: 'true'
+      TEST_DB_HOST: localhost
+      TEST_DB_PORT: '5432'
+      TEST_DB_NAME: postgres
+      TEST_DB_USER: postgres
+      TEST_DB_PASSWORD: postgres
+      DB_HOST: localhost
+      DB_PORT: '5432'
+      DB_NAME: postgres
+      DB_USER: postgres
+      DB_PASSWORD: postgres
     services:
       # Docker Hub tag ``PG16_latest`` does not exist; ``dev_snapshot_PG16``
       # tracks PostgreSQL 16 + AGE (same family ROADMAP B1.3 intended).
@@ -93,20 +107,6 @@ jobs:
           --health-interval 4s
           --health-timeout 5s
           --health-retries 15
-
-      # Without a job-level `container:`, the runner reaches service containers
-      # via localhost + the published port — not the Compose-style service name.
-      USE_REAL_TEST_DB: 'true'
-      TEST_DB_HOST: localhost
-      TEST_DB_PORT: '5432'
-      TEST_DB_NAME: postgres
-      TEST_DB_USER: postgres
-      TEST_DB_PASSWORD: postgres
-      DB_HOST: localhost
-      DB_PORT: '5432'
-      DB_NAME: postgres
-      DB_USER: postgres
-      DB_PASSWORD: postgres
 
     steps:
       - uses: actions/checkout@v4
