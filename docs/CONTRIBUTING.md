@@ -197,9 +197,14 @@ cd frontend && npm test -- --run
 
 - **Python**: PEP 8, Type Hints, Google-style docstrings. Formatting is
   enforced by `black` (line-length 100, target-version py311 — see
-  `[tool.black]` in `backend/pyproject.toml`) and linted by `ruff`. Both
-  run via the `make install-hooks` pre-commit hook and the backend CI
-  workflow. Run `make format-backend` to reformat manually.
+  `[tool.black]` in `backend/pyproject.toml`) and linted by `ruff`. **`mypy
+  app`** runs in backend CI (Python 3.11) and in `make lint-backend`; avoid
+  comments that start with `# type:` in non-type positions (mypy treats them
+  as type comments). See `[tool.mypy]` in `backend/pyproject.toml` for
+  settings (`warn_return_any` is off until FastAPI boundary typing improves).
+  Hooks + CI: `make install-hooks`, `make lint-backend`, or
+  `.github/workflows/backend-ci.yml`. Run `make format-backend` to reformat
+  manually.
 - **TypeScript**: 2 spaces, single quotes, explicit types, functional components.
 - **Security**: Never use f-strings for queries. Use `%(name)s`. Validate all identifiers.
 

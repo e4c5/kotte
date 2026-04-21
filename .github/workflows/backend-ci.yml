@@ -1,7 +1,7 @@
 # ROADMAP B1 — Backend CI
 #
 # Jobs:
-#   - lint       : ruff + black (mypy deferred — B1.2)
+#   - lint       : ruff + black + mypy (ROADMAP B1.2)
 #   - unit       : pytest excluding integration + performance (no DB)
 #   - integration: pytest -m integration against apache/age service (B1.3)
 
@@ -49,9 +49,8 @@ jobs:
       - name: black --check
         run: black --check .
 
-      # Deferred B1.2 (docs/ROADMAP.md): re-enable after the 3.11 mypy coverage is triaged.
-      # - name: mypy
-      #   run: mypy app
+      - name: mypy
+        run: mypy app
 
   unit:
     name: Unit tests (no DB)

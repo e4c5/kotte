@@ -218,7 +218,7 @@ class MetadataService:
                     except (ValueError, TypeError):
                         continue
 
-            stats = {"min": None, "max": None}
+            stats: dict[str, float | None] = {"min": None, "max": None}
             if numeric_values:
                 stats = {"min": min(numeric_values), "max": max(numeric_values)}
 

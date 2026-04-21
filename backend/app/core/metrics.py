@@ -89,7 +89,8 @@ cache_requests_total = Counter(
 db_pool_size = Gauge(
     "db_pool_size",
     "Number of connections in the pool",
-    ["database", "type"],  # type: total, available, in_use
+    # Second label is pool metric kind: total | available | in_use
+    ["database", "type"],
 )
 
 # Error Metrics

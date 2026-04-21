@@ -61,20 +61,28 @@ async def connect(
 
     # Read the persisted session id; the authenticated `session` dependency has
     # already verified the request belongs to a logged-in user.
-    session_id = http_request.session.get("session_id")
+    session_id_raw = http_request.session.get("session_id")
+    if not isinstance(session_id_raw, str) or not session_id_raw:
+        await db_conn.disconnect()
+        raise APIException(
+            code=ErrorCode.AUTH_INVALID_SESSION,
+            message="Session ID missing after authentication",
+            category=ErrorCategory.AUTHENTICATION,
+            status_code=status.HTTP_401_UNAUTHORIZED,
+        )
+    session_id = session_id_raw
 
     # Update session with connection config and store DB connection
-    if session_id:
-        session_manager.update_session(
-            session_id,
-            {
-                "connection_config": request.connection.model_dump(),
-                "db_connection": db_conn,
-            },
-        )
-        # Ensure cookie session has csrf_token so response cookie includes it (CSRF validation)
-        if "csrf_token" not in http_request.session and session.get("csrf_token"):
-            http_request.session["csrf_token"] = session["csrf_token"]
+    session_manager.update_session(
+        session_id,
+        {
+            "connection_config": request.connection.model_dump(),
+            "db_connection": db_conn,
+        },
+    )
+    # Ensure cookie session has csrf_token so response cookie includes it (CSRF validation)
+    if "csrf_token" not in http_request.session and session.get("csrf_token"):
+        http_request.session["csrf_token"] = session["csrf_token"]
 
     # Set session cookie
     http_request.session["session_id"] = session_id

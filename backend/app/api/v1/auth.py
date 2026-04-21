@@ -127,6 +127,13 @@ async def get_current_user(
 ) -> UserInfo:
     """Get current authenticated user information."""
     user_id = session.get("user_id")
+    if not isinstance(user_id, str) or not user_id:
+        raise APIException(
+            code=ErrorCode.AUTH_INVALID_SESSION,
+            message="Invalid session",
+            category=ErrorCategory.AUTHENTICATION,
+            status_code=status.HTTP_401_UNAUTHORIZED,
+        )
 
     user = user_service.get_user(user_id)
     if not user:
