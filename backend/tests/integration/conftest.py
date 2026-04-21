@@ -230,8 +230,18 @@ async def connected_client(authenticated_client):
 
         yield authenticated_client
     finally:
-        with contextlib.suppress(Exception):
-            await authenticated_client.post("/api/v1/session/disconnect")
+        disconnect_ok = False
+        try:
+            resp = await authenticated_client.post("/api/v1/session/disconnect")
+            disconnect_ok = resp.status_code == 200
+        except Exception:
+            pass
+        if not disconnect_ok:
+            for sess in list(session_manager._sessions.values()):
+                db_conn = sess.get("db_connection")
+                if db_conn is not None:
+                    with contextlib.suppress(Exception):
+                        await db_conn.disconnect()
 
 
 @pytest.fixture(scope="function", autouse=True)

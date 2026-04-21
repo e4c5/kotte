@@ -38,10 +38,11 @@ class TestDatabaseConnection:
         )
         try:
             await conn.connect()
-            assert conn._pool is not None
         except (APIException, Exception) as e:
             # Skip if database is not available (expected in CI/development)
             pytest.skip(f"Database not available: {e}")
+        try:
+            assert conn._pool is not None
         finally:
             if conn._pool is not None:
                 await conn.disconnect()
@@ -59,12 +60,13 @@ class TestDatabaseConnection:
         )
         try:
             await conn.connect()
-            result = await conn.execute_query("SELECT 1 as test_value")
-            assert len(result) > 0
-            assert result[0]["test_value"] == 1
         except (APIException, Exception) as e:
             # Skip if database is not available
             pytest.skip(f"Database not available: {e}")
+        try:
+            result = await conn.execute_query("SELECT 1 as test_value")
+            assert len(result) > 0
+            assert result[0]["test_value"] == 1
         finally:
             if conn._pool is not None:
                 await conn.disconnect()
@@ -82,14 +84,15 @@ class TestDatabaseConnection:
         )
         try:
             await conn.connect()
+        except (APIException, Exception) as e:
+            pytest.skip(f"Database not available: {e}")
+        try:
             with pytest.raises(UndefinedTable):
                 async with conn.transaction() as ac:
                     await conn.execute_query("SELECT * FROM nonexistent_table", conn=ac)
 
             result = await conn.execute_query("SELECT 1")
             assert len(result) > 0
-        except (APIException, Exception) as e:
-            pytest.skip(f"Database not available: {e}")
         finally:
             if conn._pool is not None:
                 await conn.disconnect()
