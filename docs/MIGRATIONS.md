@@ -214,7 +214,8 @@ or run it by hand with `psql -f pending-migration.sql`.
 - **CI:** GitHub Actions ``integration`` job in ``.github/workflows/
   backend-ci.yml`` starts ``apache/age:dev_snapshot_PG16``, runs
   ``alembic upgrade head`` against it, then ``pytest -m integration
-  --no-cov`` with ``USE_REAL_TEST_DB=true`` and ``TEST_DB_HOST=age``.
+  --no-cov`` with ``USE_REAL_TEST_DB=true`` and ``TEST_DB_HOST=localhost``
+  (runner jobs without a job-level container use the published port).
   (Docker Hub has no ``PG16_latest`` tag — we pin ``dev_snapshot_PG16``
   for a reproducible PG16 + AGE stack.)
 

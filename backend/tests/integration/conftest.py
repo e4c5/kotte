@@ -22,8 +22,9 @@ def _integration_db_config() -> dict:
     """Connection params for real-DB paths (``USE_REAL_TEST_DB=true``).
 
     Defaults match the official ``apache/age`` Docker image (``postgres`` /
-    ``postgres`` on port 5432). GitHub Actions maps these to the ``age``
-    service hostname via ``TEST_DB_HOST`` — see ``.github/workflows/
+    ``postgres`` on port 5432). In GitHub Actions the integration job sets
+    ``TEST_DB_HOST=localhost`` because the runner reaches the service via the
+    published port (no job-level ``container:``) — see ``.github/workflows/
     backend-ci.yml``.
     """
     return {

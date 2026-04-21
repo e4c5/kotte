@@ -17,7 +17,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   AGE)**, that starts an `apache/age:dev_snapshot_PG16` service
   (Docker Hub does not publish `PG16_latest`; this tag pins PostgreSQL
   16 + AGE), waits on `pg_isready`, exports `USE_REAL_TEST_DB=true`
-  and points `TEST_DB_*` / `DB_*` at hostname `age`, runs `alembic
+  and points `TEST_DB_*` / `DB_*` at `localhost` (GHA runner without a
+  job container uses published ports, not the service DNS name), runs `alembic
   upgrade head`, then `pytest -m integration --no-cov`. Documents
   updated: `docs/ROADMAP.md` (B1.3 shipped), `docs/MIGRATIONS.md`
   (CI bullet under known limitations), `docs/CONTRIBUTING.md` (how to

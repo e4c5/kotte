@@ -94,14 +94,15 @@ jobs:
           --health-timeout 5s
           --health-retries 15
 
-    env:
+      # Without a job-level `container:`, the runner reaches service containers
+      # via localhost + the published port — not the Compose-style service name.
       USE_REAL_TEST_DB: 'true'
-      TEST_DB_HOST: age
+      TEST_DB_HOST: localhost
       TEST_DB_PORT: '5432'
       TEST_DB_NAME: postgres
       TEST_DB_USER: postgres
       TEST_DB_PASSWORD: postgres
-      DB_HOST: age
+      DB_HOST: localhost
       DB_PORT: '5432'
       DB_NAME: postgres
       DB_USER: postgres
