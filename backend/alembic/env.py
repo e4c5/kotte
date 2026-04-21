@@ -23,9 +23,9 @@ from __future__ import annotations
 
 import os
 from logging.config import fileConfig
-from urllib.parse import quote_plus
 
-from sqlalchemy import engine_from_config, pool
+from sqlalchemy import create_engine, pool
+from sqlalchemy.engine.url import URL
 
 from alembic import context
 
@@ -41,8 +41,13 @@ if config.config_file_name is not None:
 target_metadata = None
 
 
-def _resolve_url() -> str:
-    """Resolve the target database URL per the fallback chain in the docstring."""
+def _resolve_url() -> str | URL:
+    """Resolve the target database URL per the fallback chain in the docstring.
+
+    Returns a `URL` object for the DB_* env-var path (which gets credential
+    escaping and IPv6-host bracketing for free) and plain strings for the
+    explicit override paths, where the operator owns the encoding.
+    """
     x_args = context.get_x_argument(as_dictionary=True)
     if "url" in x_args:
         return x_args["url"]
@@ -60,25 +65,33 @@ def _resolve_url() -> str:
         return ini_url
 
     host = os.environ.get("DB_HOST", "localhost")
-    port = os.environ.get("DB_PORT", "5432")
+    port_raw = os.environ.get("DB_PORT", "5432")
+    try:
+        port = int(port_raw)
+    except ValueError as exc:
+        raise ValueError(f"DB_PORT must be an integer, got {port_raw!r}") from exc
     database = os.environ.get("DB_NAME", "postgres")
     user = os.environ.get("DB_USER", "postgres")
     password = os.environ.get("DB_PASSWORD")
 
-    # URL-encode so special characters in the password don't break the
-    # DSN. We intentionally support the password-less DSN form
-    # (`postgresql+psycopg://user@host:…`) because alembic is operator
-    # tooling: some legitimate targets authenticate via Unix-socket
-    # peer auth (`pg_hba.conf local all peer`), `.pgpass`, IAM tokens
-    # (RDS/Cloud SQL), or a service-mesh sidecar — none of those pass
-    # a password through env vars. Operators pointing alembic at a
-    # password-protected target simply export `DB_PASSWORD` in the
-    # same shell they run `make migrate-up` from.
-    auth = quote_plus(user)
-    if password:
-        auth = f"{auth}:{quote_plus(password)}"
-
-    return f"postgresql+psycopg://{auth}@{host}:{port}/{database}"  # NOSONAR python:S2115
+    # `URL.create` stores credentials verbatim and brackets IPv6 hosts
+    # automatically; passing the `URL` object straight to SQLAlchemy avoids
+    # the `quote_plus`/`render_as_string` round-trip that previously mangled
+    # passwords containing spaces. We intentionally support the password-less
+    # form (`postgresql+psycopg://user@host:…`) because alembic is operator
+    # tooling: some legitimate targets authenticate via Unix-socket peer auth
+    # (`pg_hba.conf local all peer`), `.pgpass`, IAM tokens (RDS/Cloud SQL),
+    # or a service-mesh sidecar — none of those pass a password through env
+    # vars. Operators pointing alembic at a password-protected target simply
+    # export `DB_PASSWORD` in the same shell they run `make migrate-up` from.
+    return URL.create(  # NOSONAR python:S2115
+        drivername="postgresql+psycopg",
+        username=user,
+        password=password or None,
+        host=host,
+        port=port,
+        database=database,
+    )
 
 
 def run_migrations_offline() -> None:
@@ -101,17 +114,11 @@ def run_migrations_offline() -> None:
 
 def run_migrations_online() -> None:
     """Connect to the target and run the migrations."""
-    # Override the ini URL so `engine_from_config` picks up our resolved
-    # value. `pool.NullPool` keeps alembic from holding a connection
-    # open past the migration run — important for one-shot CLI use.
-    ini_section = config.get_section(config.config_ini_section, {}) or {}
-    ini_section["sqlalchemy.url"] = _resolve_url()
-
-    connectable = engine_from_config(
-        ini_section,
-        prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
-    )
+    # `pool.NullPool` keeps alembic from holding a connection open past the
+    # migration run — important for one-shot CLI use. Passing the resolved
+    # URL (str or `URL`) directly to `create_engine` avoids the ini-section
+    # round-trip that used to serialise credentials through a raw string.
+    connectable = create_engine(_resolve_url(), poolclass=pool.NullPool)
 
     with connectable.connect() as connection:
         context.configure(connection=connection, target_metadata=target_metadata)

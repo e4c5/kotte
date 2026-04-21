@@ -9,11 +9,20 @@ them, and how they compose with Kotte's existing setup tooling.
 
 ## TL;DR
 
+From the repo root (one-liner via the Makefile, which handles `cd` and the venv for you):
+
+```bash
+export DB_HOST=… DB_PORT=… DB_NAME=… DB_USER=… DB_PASSWORD=…
+make migrate-up
+```
+
+Or directly via the Alembic CLI (from `backend/` with the venv active):
+
 ```bash
 cd backend
 . venv/bin/activate
 export DB_HOST=… DB_PORT=… DB_NAME=… DB_USER=… DB_PASSWORD=…
-alembic upgrade head      # or: make migrate-up
+alembic upgrade head
 ```
 
 That's it. Alembic runs the full migration chain (currently two
