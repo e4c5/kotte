@@ -1,5 +1,6 @@
 .PHONY: help install-backend install-frontend install-hooks dev-backend dev-frontend test-backend test-frontend lint-backend lint-frontend \
 	format-backend precommit-run \
+	migrate-up migrate-down migrate-current migrate-history migrate-new reindex-labels \
 	compose-up-dev compose-up-prod compose-down-dev compose-down-prod compose-logs-dev compose-logs-prod compose-build-prod
 
 help:
@@ -17,6 +18,14 @@ help:
 	@echo "Pre-commit (ROADMAP B8):"
 	@echo "  install-hooks       - Install the local git pre-commit hook"
 	@echo "  precommit-run       - Run every hook against every tracked file"
+	@echo ""
+	@echo "Migrations (ROADMAP B7 — target DB via DB_HOST/DB_PORT/DB_NAME/DB_USER/DB_PASSWORD):"
+	@echo "  migrate-up          - Apply all pending migrations (alembic upgrade head)"
+	@echo "  migrate-down        - Revert the most recent migration (alembic downgrade -1)"
+	@echo "  migrate-current     - Show the head revision applied to the target DB"
+	@echo "  migrate-history     - Show the migration chain"
+	@echo "  migrate-new         - Scaffold a new migration; pass MSG='short description'"
+	@echo "  reindex-labels      - Walk ag_catalog and create id/start_id/end_id indices on every label"
 	@echo ""
 	@echo "Docker Compose:"
 	@echo "  compose-up-dev      - Start the dev stack (source mounts, --reload, vite HMR)"
@@ -43,6 +52,38 @@ precommit-run:
 
 format-backend:
 	cd backend && . venv/bin/activate && black app tests
+
+# Migrations (ROADMAP B7). Alembic is operator tooling: it targets a
+# user-supplied AGE database via DB_* env vars (the same ones
+# `scripts/migrate_add_indices.py` already uses). Override the URL
+# entirely with ALEMBIC_SQLALCHEMY_URL or `alembic -x url=...`.
+
+migrate-up:
+	cd backend && . venv/bin/activate && alembic upgrade head
+
+migrate-down:
+	cd backend && . venv/bin/activate && alembic downgrade -1
+
+migrate-current:
+	cd backend && . venv/bin/activate && alembic current
+
+migrate-history:
+	cd backend && . venv/bin/activate && alembic history --verbose
+
+# Usage: `make migrate-new MSG="add something"`. Autogenerate is
+# deliberately off — we don't ship SQLAlchemy models, so every
+# migration is hand-written raw SQL via `op.execute(...)`.
+migrate-new:
+	@test -n "$(MSG)" || { echo "Usage: make migrate-new MSG=\"short description\""; exit 1; }
+	cd backend && . venv/bin/activate && alembic revision -m "$(MSG)"
+
+# Complement to `migrate-up`: label indices depend on the current
+# catalog contents (which labels exist in which graphs), so they can't
+# be captured as a static migration. Re-run any time you add/drop
+# labels and want ag_catalog.ag_label's id/start_id/end_id columns
+# reindexed.
+reindex-labels:
+	cd backend && . venv/bin/activate && python -m scripts.migrate_add_indices
 
 dev-backend:
 	cd backend && . venv/bin/activate && uvicorn app.main:app --reload --port 8000

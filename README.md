@@ -57,6 +57,7 @@ Or run manually without Docker: [docs/QUICKSTART.md](docs/QUICKSTART.md).
 - [Configuration](docs/CONFIGURATION.md) — Environment variables and options
 - [Architecture](docs/ARCHITECTURE.md) — Technical design
 - [Contributing](docs/CONTRIBUTING.md) — Development guide
+- [Migrations](docs/MIGRATIONS.md) — Alembic chain for the target AGE database (`make migrate-up`)
 - [Roadmap](docs/ROADMAP.md) — Prioritised engineering follow-ups; see [REVIEW.md](docs/REVIEW.md) for the holistic gap analysis that fed it
 - [Changelog](CHANGELOG.md) — Notable changes per release
 

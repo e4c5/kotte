@@ -1,13 +1,25 @@
 #!/usr/bin/env python3
-"""
-Migration script: Create indices on existing graph labels.
+"""Reindex label tables across every AGE graph in the target database.
+
+This is **not** an alembic migration — it's an operational task that
+reads runtime catalog state (`ag_catalog.ag_graph` +
+`ag_catalog.ag_label`) and creates `id` / `start_id` / `end_id` indices
+on whatever labels exist right now. Because the catalog is dynamic (new
+labels appear as users create them), a static alembic migration can't
+express this; hence the separate script.
+
+Relationship to the alembic migration chain (ROADMAP B7):
+    * `make migrate-up`       — idempotent schema changes (AGE
+                                extension, `kotte_users` stub, …).
+    * `make reindex-labels`   — run this script. Safe to re-run whenever
+                                new labels land; uses `IF NOT EXISTS`.
 
 Usage:
     # Via environment variables (DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD)
     python -m scripts.migrate_add_indices
 
-    # Or run from backend with venv
-    cd backend && . venv/bin/activate && python -m scripts.migrate_add_indices
+    # Or via make (recommended):
+    make reindex-labels
 
 Creates id, start_id, end_id indices on all vertex and edge labels
 in all AGE graphs. Safe to run multiple times (uses IF NOT EXISTS).
