@@ -50,7 +50,13 @@ Test client authenticated as admin user.
 Mock database connection for testing database-dependent endpoints without requiring a real database.
 
 ### `connected_client`
-Test client with authenticated session and mocked database connection.
+Authenticated async client plus a database handle on the session. When
+`USE_REAL_TEST_DB` is unset (default), patches `DatabaseConnection` and
+injects a mock into `session_manager`. When `USE_REAL_TEST_DB=true`,
+calls `POST /api/v1/session/connect` with `TEST_DB_*` settings (defaults
+match `apache/age`: `postgres`/`postgres` on port 5432) and disconnects
+via `POST /api/v1/session/disconnect` in the fixture teardown — CI runs
+this path in `.github/workflows/backend-ci.yml` (integration job).
 
 ## Known Limitations
 
@@ -110,14 +116,20 @@ def test_endpoint_with_mocked_session(client):
 3. **Session Mocking**: Create better session mocking utilities
 4. **Test Data Management**: Add fixtures for test data setup/teardown
 
-## Running with Docker Database
+## Running against a real Apache AGE instance
 
-To use a real PostgreSQL database for integration tests:
-
-1. Uncomment the `docker_compose` fixture in `conftest.py`
-2. Ensure Docker and docker-compose are installed
-3. Run tests with `-m integration` marker
+Tests marked `@pytest.mark.integration` that use `USE_REAL_TEST_DB=true`
+need PostgreSQL with the AGE extension (same as production). From repo
+root, with AGE listening on `localhost:5432`:
 
 ```bash
-pytest tests/integration/ -m integration -v
+cd backend && \
+  USE_REAL_TEST_DB=true \
+  TEST_DB_HOST=127.0.0.1 TEST_DB_PORT=5432 \
+  TEST_DB_NAME=postgres TEST_DB_USER=postgres TEST_DB_PASSWORD=postgres \
+  pytest -m integration --no-cov -v
 ```
+
+Use `apache/age:dev_snapshot_PG16` (or another published tag) — see
+`deployment/docker-compose.dev.yml` for a full stack. Python **3.11+**
+is required for `asyncio.timeout` inside `DatabaseConnection.transaction()`.

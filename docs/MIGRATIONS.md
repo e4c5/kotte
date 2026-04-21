@@ -211,9 +211,12 @@ or run it by hand with `psql -f pending-migration.sql`.
   rights on extensions. Most managed Postgres services grant this to
   the owner role but not to read-only roles — connect as the owner
   when running migrations.
-- **Not yet wired into CI.** The ROADMAP's B1.3 integration job will
-  start an AGE service container with pre-applied migrations; that's
-  tracked separately.
+- **CI:** GitHub Actions ``integration`` job in ``.github/workflows/
+  backend-ci.yml`` starts ``apache/age:dev_snapshot_PG16``, runs
+  ``alembic upgrade head`` against it, then ``pytest -m integration
+  --no-cov`` with ``USE_REAL_TEST_DB=true`` and ``TEST_DB_HOST=age``.
+  (Docker Hub has no ``PG16_latest`` tag — we pin ``dev_snapshot_PG16``
+  for a reproducible PG16 + AGE stack.)
 
 ## See also
 

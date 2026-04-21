@@ -1,5 +1,6 @@
 """Integration test configuration and fixtures."""
 
+import contextlib
 import os
 import pytest
 import pytest_asyncio
@@ -15,6 +16,23 @@ TEST_USER_NAME = "testuser"
 TEST_USER_SECRET = "test-user-secret"
 ADMIN_USER_NAME = "admin"
 ADMIN_USER_SECRET = "admin"
+
+
+def _integration_db_config() -> dict:
+    """Connection params for real-DB paths (``USE_REAL_TEST_DB=true``).
+
+    Defaults match the official ``apache/age`` Docker image (``postgres`` /
+    ``postgres`` on port 5432). GitHub Actions maps these to the ``age``
+    service hostname via ``TEST_DB_HOST`` — see ``.github/workflows/
+    backend-ci.yml``.
+    """
+    return {
+        "host": os.getenv("TEST_DB_HOST", "localhost"),
+        "port": int(os.getenv("TEST_DB_PORT", "5432")),
+        "database": os.getenv("TEST_DB_NAME", "postgres"),
+        "user": os.getenv("TEST_DB_USER", "postgres"),
+        "password": os.getenv("TEST_DB_PASSWORD", "postgres"),
+    }
 
 
 @pytest.fixture(scope="function")
@@ -130,30 +148,11 @@ async def connected_client(authenticated_client):
     Uses a real database connection (or can be configured to use test DB).
     For now, we'll use a mock only if no test database is available.
     """
-    # Try to connect to database
-    # In a real setup, this would connect to a test database
-    # For now, we'll mock it but the infrastructure supports real connections
-
-    from app.core.database import DatabaseConnection
-
     # Check if we should use real DB or mock
     use_real_db = os.getenv("USE_REAL_TEST_DB", "false").lower() == "true"
 
     if use_real_db:
-        # Use real database connection
-        db_config = {
-            "host": os.getenv("TEST_DB_HOST", "localhost"),
-            "port": int(os.getenv("TEST_DB_PORT", "5432")),
-            "database": os.getenv("TEST_DB_NAME", "test_db"),
-            "user": os.getenv("TEST_DB_USER", "test_user"),
-            "password": os.getenv("TEST_DB_PASSWORD", "test_password"),
-        }
-
-        db_conn = DatabaseConnection(**db_config)
-        try:
-            await db_conn.connect()
-        except Exception as e:
-            pytest.skip(f"Could not connect to test database: {e}")
+        db_config = _integration_db_config()
     else:
         # Use mock for now
         mock_conn = MagicMock()
@@ -211,7 +210,10 @@ async def connected_client(authenticated_client):
             yield authenticated_client
             return
 
-    # Real DB path
+    # Real DB path — a single pool lives on the session created by
+    # ``/session/connect``. Do not pre-connect with a throwaway
+    # ``DatabaseConnection`` here: that would open two pools and
+    # ``finally`` would only close the unused one.
     try:
         connect_response = await authenticated_client.post(
             "/api/v1/session/connect",
@@ -223,8 +225,8 @@ async def connected_client(authenticated_client):
 
         yield authenticated_client
     finally:
-        if db_conn:
-            await db_conn.disconnect()
+        with contextlib.suppress(Exception):
+            await authenticated_client.post("/api/v1/session/disconnect")
 
 
 @pytest.fixture(scope="function", autouse=True)
@@ -292,11 +294,5 @@ def cleanup_test_users():
 
 @pytest.fixture
 def test_db_config():
-    """Database configuration for integration tests."""
-    return {
-        "host": "localhost",
-        "port": 5433,
-        "database": "test_db",
-        "user": "test_user",
-        "password": "test_password",
-    }
+    """Database configuration for integration tests (mirrors ``connected_client``)."""
+    return _integration_db_config()

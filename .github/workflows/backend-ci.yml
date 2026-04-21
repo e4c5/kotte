@@ -1,15 +1,9 @@
 # ROADMAP B1 — Backend CI
 #
-# Two jobs run on every push to main and every PR that touches the backend:
-#   - lint  : ruff (clean today; black + mypy are deferred — see the
-#             deferred-items note below)
-#   - unit  : pytest excluding integration + performance markers (no DB needed)
-#
-# Deliberately deferred to follow-up tickets (tracked in docs/ROADMAP.md under
-# B1.2–B1.3) so this workflow stays green from day one rather than gating on
-# pre-existing debt:
-#   * mypy app         — coverage TBD on Python 3.11 (B1.2)
-#   * integration job  — needs the apache/age service container (B1.3)
+# Jobs:
+#   - lint       : ruff + black (mypy deferred — B1.2)
+#   - unit       : pytest excluding integration + performance (no DB)
+#   - integration: pytest -m integration against apache/age service (B1.3)
 
 name: Backend CI
 
@@ -80,7 +74,53 @@ jobs:
       - name: pytest (unit only)
         run: pytest -m "not integration and not performance" --no-cov
 
-  # Deferred B1.3 (docs/ROADMAP.md): integration job using `apache/age:PG16_latest`
-  # as a service container with `USE_REAL_TEST_DB=true`. Held back because the
-  # existing integration suite still has mock-vs-real branching that needs
-  # auditing before we point CI at a real DB.
+  integration:
+    name: Integration tests (Apache AGE)
+    runs-on: ubuntu-latest
+    services:
+      # Docker Hub tag ``PG16_latest`` does not exist; ``dev_snapshot_PG16``
+      # tracks PostgreSQL 16 + AGE (same family ROADMAP B1.3 intended).
+      age:
+        image: apache/age:dev_snapshot_PG16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 4s
+          --health-timeout 5s
+          --health-retries 15
+
+    env:
+      USE_REAL_TEST_DB: 'true'
+      TEST_DB_HOST: age
+      TEST_DB_PORT: '5432'
+      TEST_DB_NAME: postgres
+      TEST_DB_USER: postgres
+      TEST_DB_PASSWORD: postgres
+      DB_HOST: age
+      DB_PORT: '5432'
+      DB_NAME: postgres
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: backend/requirements-dev.txt
+
+      - name: Install backend (incl. alembic for migrate-up)
+        run: pip install -r requirements-dev.txt
+
+      - name: Apply alembic migrations
+        run: alembic upgrade head
+
+      - name: pytest (integration marker)
+        run: pytest -m integration --no-cov

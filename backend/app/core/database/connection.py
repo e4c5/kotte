@@ -74,6 +74,12 @@ class DatabaseConnection:
             # Per Apache AGE docs, for every connection we must load AGE and set search_path.
             await cur.execute("LOAD 'age'")
             await cur.execute('SET search_path = ag_catalog, "$user", public')
+        # Pool ``configure`` callbacks must leave the connection idle — psycopg
+        # defaults to ``autocommit=False``, so the statements above open a
+        # transaction. If we exit ``configure`` while still ``INTRANS``,
+        # psycopg_pool discards the connection and ``pool.wait()`` never reaches
+        # ``min_size`` (symptom: "pool initialization incomplete after … sec").
+        await conn.commit()
 
     async def _report_pool_metrics(self) -> None:
         """Background task to report pool metrics."""

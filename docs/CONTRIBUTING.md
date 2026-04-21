@@ -176,8 +176,16 @@ kotte/
 4. **Validate**: Run full test suites before committing.
 
 ```bash
-# Backend
+# Backend (unit + integration that do not need a live DB; default pytest.ini enables coverage)
 cd backend && pytest
+
+# Backend — integration tests that need Apache AGE (Python 3.11+ recommended; `transaction()` uses ``asyncio.timeout``)
+# Start AGE first, e.g. `docker run -d --name kotte-age -e POSTGRES_PASSWORD=postgres -p 5432:5432 apache/age:dev_snapshot_PG16`
+cd backend && \
+  USE_REAL_TEST_DB=true \
+  TEST_DB_HOST=127.0.0.1 TEST_DB_PORT=5432 \
+  TEST_DB_NAME=postgres TEST_DB_USER=postgres TEST_DB_PASSWORD=postgres \
+  pytest -m integration --no-cov
 
 # Frontend
 cd frontend && npm test -- --run
@@ -204,7 +212,7 @@ cd frontend && npm test -- --run
 We use `pytest` with `pytest-asyncio` and `pytest-cov`.
 
 - **Unit Tests**: Test logic in `app/services` or `app/core/database/utils.py`.
-- **Integration Tests**: Test endpoints in `app/api/v1`. Use the `mock_db_connection` fixture.
+- **Integration Tests**: Live under `backend/tests/integration/`. Most HTTP-stack tests use mocked DB fixtures (`connected_client` with `USE_REAL_TEST_DB` unset). Tests marked `@pytest.mark.integration` that call `USE_REAL_TEST_DB=true` hit a real AGE database — CI runs them in `.github/workflows/backend-ci.yml` (integration job: AGE service + `alembic upgrade head` + `pytest -m integration --no-cov`).
 - **Coverage**: Aim for 80% coverage on new code.
 
 ### Frontend (Vitest)
