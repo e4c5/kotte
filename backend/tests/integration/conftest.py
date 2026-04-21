@@ -17,6 +17,10 @@ TEST_USER_SECRET = "test-user-secret"
 ADMIN_USER_NAME = "admin"
 ADMIN_USER_SECRET = "admin"
 
+# Public default for the upstream ``apache/age`` Docker image — not a prod
+# secret. Always set ``TEST_DB_PASSWORD`` in CI; operators override locally.
+_DEFAULT_INTEGRATION_DB_PASSWORD = "postgres"  # NOSONAR python:S2068
+
 
 def _integration_db_config() -> dict:
     """Connection params for real-DB paths (``USE_REAL_TEST_DB=true``).
@@ -32,7 +36,7 @@ def _integration_db_config() -> dict:
         "port": int(os.getenv("TEST_DB_PORT", "5432")),
         "database": os.getenv("TEST_DB_NAME", "postgres"),
         "user": os.getenv("TEST_DB_USER", "postgres"),
-        "password": os.getenv("TEST_DB_PASSWORD", "postgres"),
+        "password": os.getenv("TEST_DB_PASSWORD", _DEFAULT_INTEGRATION_DB_PASSWORD),
     }
 
 
