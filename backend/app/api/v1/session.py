@@ -63,7 +63,27 @@ async def connect(
     # already verified the request belongs to a logged-in user.
     session_id_raw = http_request.session.get("session_id")
     if not isinstance(session_id_raw, str) or not session_id_raw:
-        await db_conn.disconnect()
+        client_ip = http_request.client.host if http_request.client else "unknown"
+        logger.warning(
+            "SECURITY: Session ID missing after authentication",
+            extra={
+                "event": "auth_invalid_session",
+                "reason": "missing_session_id_after_authentication",
+                "error_code": ErrorCode.AUTH_INVALID_SESSION.name,
+                "client_ip": client_ip,
+                "user_agent": http_request.headers.get("User-Agent"),
+            },
+        )
+        try:
+            await db_conn.disconnect()
+        except Exception as e:
+            logger.warning(
+                "Error disconnecting database after invalid session",
+                extra={"error": str(e)},
+                exc_info=True,
+            )
+        finally:
+            metrics.record_db_connection_attempt("disconnect")
         raise APIException(
             code=ErrorCode.AUTH_INVALID_SESSION,
             message="Session ID missing after authentication",

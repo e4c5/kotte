@@ -123,11 +123,26 @@ async def logout(
 
 @router.get("/me")
 async def get_current_user(
+    http_request: Request,
     session: Annotated[dict, Depends(get_session)],
 ) -> UserInfo:
     """Get current authenticated user information."""
     user_id = session.get("user_id")
     if not isinstance(user_id, str) or not user_id:
+        client_ip = http_request.client.host if http_request.client else "unknown"
+        logger.warning(
+            "SECURITY: Invalid session user_id while resolving current user",
+            extra={
+                "event": "auth_invalid_session",
+                "reason": "missing_or_invalid_user_id",
+                "error_code": ErrorCode.AUTH_INVALID_SESSION.name,
+                "category": ErrorCategory.AUTHENTICATION.name,
+                "user_id_type": type(user_id).__name__,
+                "client_ip": client_ip,
+                "user_agent": http_request.headers.get("User-Agent"),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            },
+        )
         raise APIException(
             code=ErrorCode.AUTH_INVALID_SESSION,
             message="Invalid session",
