@@ -1,4 +1,7 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react'
+import CodeMirror from '@uiw/react-codemirror'
+import type { EditorView } from '@codemirror/view'
+import { getExtensions } from '@neo4j-cypher/codemirror'
 import { useQueryEditorKeyboard } from '../hooks/useQueryEditorKeyboard'
 
 interface QueryEditorProps {
@@ -143,7 +146,7 @@ export default function QueryEditor({
   history = [],
 }: QueryEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const cypherViewRef = useRef<EditorView | null>(null)
   const [expanded, setExpanded] = useState(false)
   const [showParams, setShowParams] = useState(false)
   const [historyIndex, setHistoryIndex] = useState(-1)
@@ -156,11 +159,32 @@ export default function QueryEditor({
   const paramsInvalid = !paramsResult.ok
   const paramsErrorMessage = paramsResult.ok ? null : paramsResult.error
 
+  const cypherExtensions = useMemo(
+    () =>
+      getExtensions(
+        {
+          theme: 'dark',
+          lineNumbers: false,
+          search: false,
+          lineWrapping: true,
+          placeholder: 'Enter Cypher Query... (Shift+Enter to run)',
+        },
+        {
+          onFocusChanged: (focused: boolean) => {
+            if (focused) setExpanded(true)
+          },
+        }
+      ),
+    [setExpanded]
+  )
+
   const isEditorFocused = useCallback(
-    () => textareaRef.current === document.activeElement,
+    () => Boolean(cypherViewRef.current?.hasFocus),
     []
   )
-  const blurEditor = useCallback(() => textareaRef.current?.blur(), [])
+  const blurEditor = useCallback(() => {
+    cypherViewRef.current?.contentDOM.blur()
+  }, [])
 
   const applyHistoryAtIndex = (index: number) => {
     if (index >= 0) {
@@ -232,9 +256,9 @@ export default function QueryEditor({
   const headerRowClasses = expanded
     ? 'flex items-center gap-2 px-4 py-2 border-b border-zinc-700'
     : 'flex items-center gap-2 px-4 h-full'
-  const textareaClasses = expanded
-    ? 'flex-1 min-w-0 bg-transparent text-zinc-100 placeholder-zinc-500 font-mono text-sm resize-none focus:outline-none py-1'
-    : 'flex-1 min-w-0 bg-transparent text-zinc-100 placeholder-zinc-500 font-mono text-sm resize-none focus:outline-none py-0'
+  const cypherMirrorClasses = expanded
+    ? 'flex-1 min-w-0 text-sm [&_.cm-editor]:bg-transparent [&_.cm-editor]:outline-none py-1'
+    : 'flex-1 min-w-0 text-sm [&_.cm-editor]:bg-transparent [&_.cm-editor]:outline-none py-0'
   const paramsTextareaClasses = paramsInvalid
     ? 'w-full px-3 py-2 bg-zinc-900 border rounded text-zinc-100 font-mono text-xs resize-none focus:outline-none focus:ring-2 border-red-500 focus:ring-red-500'
     : 'w-full px-3 py-2 bg-zinc-900 border rounded text-zinc-100 font-mono text-xs resize-none focus:outline-none focus:ring-2 border-zinc-600 focus:ring-blue-500'
@@ -245,16 +269,19 @@ export default function QueryEditor({
         <div className={headerRowClasses}>
           <span className="text-zinc-500" aria-hidden="true">⌕</span>
           <label htmlFor="cypher-query" className="sr-only">Cypher query</label>
-          <textarea
+          <CodeMirror
             id="cypher-query"
-            ref={textareaRef}
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-            onFocus={() => setExpanded(true)}
-            placeholder="Enter Cypher Query... (Shift+Enter to run)"
             aria-label="Cypher query editor"
-            rows={expanded ? 6 : 1}
-            className={textareaClasses}
+            value={value}
+            height={expanded ? '10rem' : '2.25rem'}
+            theme="none"
+            basicSetup={false}
+            extensions={cypherExtensions}
+            onChange={(v) => onChange(v)}
+            onCreateEditor={(view) => {
+              cypherViewRef.current = view
+            }}
+            className={cypherMirrorClasses}
           />
         </div>
 

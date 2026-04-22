@@ -12,6 +12,14 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ## [Unreleased]
 
 ### Added
+- **Cypher query editor (ROADMAP C1)** — `QueryEditor` replaces the plain
+  Cypher `<textarea>` with CodeMirror 6 and Neo4j's
+  `@neo4j-cypher/codemirror` (syntax highlighting, Cypher language support,
+  optional built-in completion). Styles: `cypher-codemirror.css` imported from
+  `main.tsx`. React bridge: `@uiw/react-codemirror`. Ambient module typings
+  in `frontend/src/types/neo4j-cypher-codemirror.d.ts` work around the
+  package's `exports` omitting its `.d.ts`. Keyboard shortcuts still use
+  `view.hasFocus` on the CodeMirror surface.
 - **Mypy in backend CI (ROADMAP B1.2)** — `.github/workflows/backend-ci.yml`
   lint job runs `mypy app` on Python 3.11. Fixed real issues surfaced by the
   run: Prometheus gauge label comment in `app/core/metrics.py` no longer uses

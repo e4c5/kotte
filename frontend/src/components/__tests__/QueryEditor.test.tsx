@@ -92,16 +92,24 @@ describe('QueryEditor — params validity wiring', () => {
   // Most of the editor UI only renders when `expanded` is true (focus on the
   // Cypher textarea). Tests that need the params panel or the action row
   // therefore start by focusing the editor.
-  const focusAndExpand = async () => {
+  /** CodeMirror 6 focuses `.cm-content`, not the labelled wrapper div. */
+  const focusCypherEditorSurface = (container: HTMLElement) => {
+    const surface = container.querySelector('.cm-content') as HTMLElement | null
+    expect(surface).not.toBeNull()
+    surface!.focus()
+  }
+
+  const focusAndExpand = async (container: HTMLElement) => {
     const user = userEvent.setup()
     const editor = screen.getByLabelText('Cypher query editor')
     await user.click(editor)
+    focusCypherEditorSurface(container)
     return user
   }
 
   it('keeps Execute enabled and shows no error caption when params are valid', async () => {
-    renderEditor('{"a":1}')
-    await focusAndExpand()
+    const { container } = renderEditor('{"a":1}')
+    await focusAndExpand(container)
     const execute = screen.getByRole('button', { name: 'Execute query' })
     expect(execute).toBeEnabled()
     expect(execute).toHaveAttribute('aria-disabled', 'false')
@@ -109,8 +117,8 @@ describe('QueryEditor — params validity wiring', () => {
   })
 
   it('disables Execute and exposes a screen-reader hint when params JSON is invalid', async () => {
-    renderEditor('{bad')
-    await focusAndExpand()
+    const { container } = renderEditor('{bad')
+    await focusAndExpand(container)
     const execute = screen.getByRole('button', {
       name: 'Execute query (disabled: parameters JSON is invalid)',
     })
@@ -123,8 +131,8 @@ describe('QueryEditor — params validity wiring', () => {
   })
 
   it('disables Execute and surfaces a shape-error caption when params is a JSON array (not an object)', async () => {
-    renderEditor('[]')
-    const user = await focusAndExpand()
+    const { container } = renderEditor('[]')
+    const user = await focusAndExpand(container)
 
     // Execute reflects the same "invalid" state as a syntax error.
     const execute = screen.getByRole('button', {
@@ -144,8 +152,8 @@ describe('QueryEditor — params validity wiring', () => {
   })
 
   it('renders the inline red error caption only when the params panel is open', async () => {
-    renderEditor('{bad')
-    const user = await focusAndExpand()
+    const { container } = renderEditor('{bad')
+    const user = await focusAndExpand(container)
 
     // Panel starts collapsed → caption is not in the DOM, but the dot is.
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
@@ -167,25 +175,23 @@ describe('QueryEditor — params validity wiring', () => {
   })
 
   it('does NOT render the invalid-dot indicator when params are valid', async () => {
-    renderEditor('{"ok":true}')
-    await focusAndExpand()
+    const { container } = renderEditor('{"ok":true}')
+    await focusAndExpand(container)
     expect(screen.queryByTestId('params-invalid-dot')).not.toBeInTheDocument()
   })
 
   it('blocks Shift+Enter from firing onExecute when params JSON is invalid', async () => {
-    const { onExecute } = renderEditor('{bad')
-    await focusAndExpand()
-    const editor = screen.getByLabelText('Cypher query editor') as HTMLTextAreaElement
-    editor.focus()
+    const { onExecute, container } = renderEditor('{bad')
+    await focusAndExpand(container)
+    focusCypherEditorSurface(container)
     fireEvent.keyDown(globalThis as unknown as Window, { key: 'Enter', shiftKey: true })
     expect(onExecute).not.toHaveBeenCalled()
   })
 
   it('still fires onExecute on Shift+Enter when params JSON is valid', async () => {
-    const { onExecute } = renderEditor('{"a":1}')
-    await focusAndExpand()
-    const editor = screen.getByLabelText('Cypher query editor') as HTMLTextAreaElement
-    editor.focus()
+    const { onExecute, container } = renderEditor('{"a":1}')
+    await focusAndExpand(container)
+    focusCypherEditorSurface(container)
     fireEvent.keyDown(globalThis as unknown as Window, { key: 'Enter', shiftKey: true })
     expect(onExecute).toHaveBeenCalledTimes(1)
   })
@@ -196,10 +202,9 @@ describe('QueryEditor — params validity wiring', () => {
   // the keyboard shortcut bypassed that guard). Mirror the button's
   // `disabled={loading || paramsInvalid}` contract here.
   it('blocks Shift+Enter from re-firing onExecute while a query is already in flight', async () => {
-    const { onExecute } = renderEditor('{"a":1}', { loading: true, onCancel: vi.fn() })
-    await focusAndExpand()
-    const editor = screen.getByLabelText('Cypher query editor') as HTMLTextAreaElement
-    editor.focus()
+    const { onExecute, container } = renderEditor('{"a":1}', { loading: true, onCancel: vi.fn() })
+    await focusAndExpand(container)
+    focusCypherEditorSurface(container)
     fireEvent.keyDown(globalThis as unknown as Window, { key: 'Enter', shiftKey: true })
     expect(onExecute).not.toHaveBeenCalled()
   })
