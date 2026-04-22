@@ -135,8 +135,8 @@ async def get_current_user(
             extra={
                 "event": "auth_invalid_session",
                 "reason": "missing_or_invalid_user_id",
-                "error_code": ErrorCode.AUTH_INVALID_SESSION.name,
-                "category": ErrorCategory.AUTHENTICATION.name,
+                "error_code": ErrorCode.AUTH_INVALID_SESSION,
+                "category": ErrorCategory.AUTHENTICATION,
                 "user_id_type": type(user_id).__name__,
                 "client_ip": client_ip,
                 "user_agent": http_request.headers.get("User-Agent"),

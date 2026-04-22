@@ -69,7 +69,7 @@ async def connect(
             extra={
                 "event": "auth_invalid_session",
                 "reason": "missing_session_id_after_authentication",
-                "error_code": ErrorCode.AUTH_INVALID_SESSION.name,
+                "error_code": ErrorCode.AUTH_INVALID_SESSION,
                 "client_ip": client_ip,
                 "user_agent": http_request.headers.get("User-Agent"),
             },
