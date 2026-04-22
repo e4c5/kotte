@@ -61,20 +61,48 @@ async def connect(
 
     # Read the persisted session id; the authenticated `session` dependency has
     # already verified the request belongs to a logged-in user.
-    session_id = http_request.session.get("session_id")
-
-    # Update session with connection config and store DB connection
-    if session_id:
-        session_manager.update_session(
-            session_id,
-            {
-                "connection_config": request.connection.model_dump(),
-                "db_connection": db_conn,
+    session_id_raw = http_request.session.get("session_id")
+    if not isinstance(session_id_raw, str) or not session_id_raw:
+        client_ip = http_request.client.host if http_request.client else "unknown"
+        logger.warning(
+            "SECURITY: Session ID missing after authentication",
+            extra={
+                "event": "auth_invalid_session",
+                "reason": "missing_session_id_after_authentication",
+                "error_code": ErrorCode.AUTH_INVALID_SESSION,
+                "client_ip": client_ip,
+                "user_agent": http_request.headers.get("User-Agent"),
             },
         )
-        # Ensure cookie session has csrf_token so response cookie includes it (CSRF validation)
-        if "csrf_token" not in http_request.session and session.get("csrf_token"):
-            http_request.session["csrf_token"] = session["csrf_token"]
+        try:
+            await db_conn.disconnect()
+        except Exception as e:
+            logger.warning(
+                "Error disconnecting database after invalid session",
+                extra={"error": str(e)},
+                exc_info=True,
+            )
+        finally:
+            metrics.record_db_connection_attempt("disconnect")
+        raise APIException(
+            code=ErrorCode.AUTH_INVALID_SESSION,
+            message="Session ID missing after authentication",
+            category=ErrorCategory.AUTHENTICATION,
+            status_code=status.HTTP_401_UNAUTHORIZED,
+        )
+    session_id = session_id_raw
+
+    # Update session with connection config and store DB connection
+    session_manager.update_session(
+        session_id,
+        {
+            "connection_config": request.connection.model_dump(),
+            "db_connection": db_conn,
+        },
+    )
+    # Ensure cookie session has csrf_token so response cookie includes it (CSRF validation)
+    if "csrf_token" not in http_request.session and session.get("csrf_token"):
+        http_request.session["csrf_token"] = session["csrf_token"]
 
     # Set session cookie
     http_request.session["session_id"] = session_id

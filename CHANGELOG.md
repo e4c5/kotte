@@ -12,6 +12,19 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ## [Unreleased]
 
 ### Added
+- **Mypy in backend CI (ROADMAP B1.2)** — `.github/workflows/backend-ci.yml`
+  lint job runs `mypy app` on Python 3.11. Fixed real issues surfaced by the
+  run: Prometheus gauge label comment in `app/core/metrics.py` no longer uses
+  a `# type:` prefix (mypy parses that as a type comment); `first_value`
+  accepts dict or tuple rows; AGE pool configure reads `EXISTS` from either
+  row shape; `execute_query` return cast with `dict_row`; session connect and
+  `/auth/me` narrow `session_id` / `user_id` to `str`; graph expand avoids
+  shadowing the path `node_id` param; `metadata` property stats dict is
+  explicitly `dict[str, float | None]`; `APIException` handler registration
+  carries a targeted `type: ignore[arg-type]` (Starlette variance); `_parse_id`
+  return type `Optional[str]`. **`[tool.mypy] warn_return_any`** set to
+  `false` with an inline rationale — re-enable when FastAPI/Starlette
+  boundaries stop surfacing `no-any-return` noise.
 - **Backend integration CI (ROADMAP B1.3)** — `.github/workflows/
   backend-ci.yml` gains a third job, **Integration tests (Apache
   AGE)**, that starts an `apache/age:dev_snapshot_PG16` service

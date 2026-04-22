@@ -2,15 +2,22 @@
 
 import re
 import secrets
-from typing import Any, List, Optional
+from collections.abc import Mapping, Sequence
+from typing import Any, List, Optional, Union
+
+_Rowish = Union[Mapping[str, Any], Sequence[Any], None]
 
 
-def first_value(row: Optional[dict]) -> Optional[Any]:
-    """Get the first value from a dict row (row_factory=dict_row)."""
-    if not row:
+def first_value(row: _Rowish) -> Any | None:
+    """First cell from a result row (``dict_row`` mapping or tuple row)."""
+    if row is None:
         return None
-    values = list(row.values())
-    return values[0] if values else None
+    if isinstance(row, Mapping):
+        values = list(row.values())
+        return values[0] if values else None
+    if isinstance(row, Sequence) and not isinstance(row, (str, bytes)):
+        return row[0] if len(row) > 0 else None
+    return None
 
 
 def dollar_quote_tag(cypher_query: str) -> str:

@@ -11,7 +11,7 @@ help:
 	@echo "  dev-frontend        - Run frontend development server"
 	@echo "  test-backend        - Run backend tests"
 	@echo "  test-frontend       - Run frontend tests once (vitest run, with timeout)"
-	@echo "  lint-backend        - Lint backend code"
+	@echo "  lint-backend        - Lint backend (ruff, black, mypy app; requires Python 3.11+ venv)"
 	@echo "  lint-frontend       - Lint frontend code"
 	@echo "  format-backend      - Run black across backend/app + tests"
 	@echo ""

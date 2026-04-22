@@ -356,27 +356,27 @@ async def expand_node_neighborhood(
                 if isinstance(parsed_value, dict):
                     # Could be a node or a list of relationships
                     if parsed_value.get("type") == "node":
-                        node_id = parsed_value.get("id")
-                        if node_id:
-                            all_nodes[str(node_id)] = parsed_value
+                        elem_node_id = parsed_value.get("id")
+                        if elem_node_id:
+                            all_nodes[str(elem_node_id)] = parsed_value
                     elif parsed_value.get("type") == "edge":
-                        edge_id = parsed_value.get("id")
-                        if edge_id and edge_id not in edge_ids:
+                        elem_edge_id = parsed_value.get("id")
+                        if elem_edge_id and elem_edge_id not in edge_ids:
                             all_edges.append(parsed_value)
-                            edge_ids.add(edge_id)
+                            edge_ids.add(elem_edge_id)
                 elif isinstance(parsed_value, list):
                     # Could be a list of relationships
                     for item in parsed_value:
                         if isinstance(item, dict):
                             if item.get("type") == "edge":
-                                edge_id = item.get("id")
-                                if edge_id and edge_id not in edge_ids:
+                                elem_edge_id = item.get("id")
+                                if elem_edge_id and elem_edge_id not in edge_ids:
                                     all_edges.append(item)
-                                    edge_ids.add(edge_id)
+                                    edge_ids.add(elem_edge_id)
                             elif item.get("type") == "node":
-                                node_id = item.get("id")
-                                if node_id:
-                                    all_nodes[str(node_id)] = item
+                                elem_node_id = item.get("id")
+                                if elem_node_id:
+                                    all_nodes[str(elem_node_id)] = item
 
         # Convert nodes dict to list
         nodes_list = list(all_nodes.values())

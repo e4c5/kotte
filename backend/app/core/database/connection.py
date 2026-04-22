@@ -5,7 +5,7 @@ import hashlib
 import logging
 import time
 from contextlib import asynccontextmanager
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 import psycopg
 from psycopg.rows import dict_row
@@ -64,7 +64,15 @@ class DatabaseConnection:
             # Verify AGE extension
             await cur.execute("SELECT EXISTS(SELECT 1 FROM pg_extension WHERE extname = 'age')")
             result = await cur.fetchone()
-            if not result or not result.get("exists"):
+            if not result:
+                raise APIException(
+                    code=ErrorCode.DB_UNAVAILABLE,
+                    message="Apache AGE extension not found in database",
+                    category=ErrorCategory.UPSTREAM,
+                    status_code=500,
+                )
+            exists = result["exists"] if isinstance(result, dict) else result[0]
+            if not exists:
                 raise APIException(
                     code=ErrorCode.DB_UNAVAILABLE,
                     message="Apache AGE extension not found in database",
@@ -219,7 +227,7 @@ class DatabaseConnection:
                 result = await cur.fetchall()
                 duration = time.time() - start_time
                 metrics.record_db_query(duration)
-                return result
+                return cast(list[dict[str, Any]], result)
             except asyncio.TimeoutError:
                 duration = time.time() - start_time
                 metrics.record_db_query(duration)

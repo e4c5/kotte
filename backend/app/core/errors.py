@@ -297,5 +297,7 @@ def generic_exception_handler(request: Request, exc: Exception) -> JSONResponse:
 
 def setup_error_handlers(app: FastAPI) -> None:
     """Register error handlers with FastAPI app."""
-    app.add_exception_handler(APIException, error_handler)
+    # Starlette's handler type uses Exception; APIException is a subtype — mypy
+    # flags contravariance on the registration even though this is valid.
+    app.add_exception_handler(APIException, error_handler)  # type: ignore[arg-type]
     app.add_exception_handler(Exception, generic_exception_handler)

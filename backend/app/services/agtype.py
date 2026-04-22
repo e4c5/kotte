@@ -4,7 +4,7 @@ import json
 import logging
 import re
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -379,9 +379,9 @@ class AgTypeParser:
         """
         if len(elements) < 2:
             return None
-        segments = []
-        node_ids = []
-        edge_ids = []
+        segments: list[dict[str, Any]] = []
+        node_ids: list[str] = []
+        edge_ids: list[str] = []
         i = 0
         while i + 2 < len(elements):
             n1, e, n2 = elements[i], elements[i + 1], elements[i + 2]
@@ -442,7 +442,7 @@ class AgTypeParser:
         }
 
     @staticmethod
-    def _parse_id(id_value: Any) -> Union[int, str]:
+    def _parse_id(id_value: Any) -> Optional[str]:
         """
         Parse an ID value, preserving 64-bit integers.
 
