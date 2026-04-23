@@ -3,7 +3,7 @@ import * as d3 from 'd3'
 import { useGraphStore } from '../stores/graphStore'
 import { initializeLayout } from '../utils/graphLayouts'
 import { getNodeStyle, getEdgeStyle, getNodeCaption, getEdgeCaption } from '../utils/graphStyles'
-import { linkPath, markerIdForColor, parallelEdgeMeta } from '../utils/graphLinkPaths'
+import { linkPath, markerIdForColor, parallelEdgeMeta, type LinkPathResult } from '../utils/graphLinkPaths'
 import { useGraphExport } from '../hooks/useGraphExport'
 
 export interface GraphNode {
@@ -42,6 +42,14 @@ interface GraphViewProps {
   onNodeRightClick?: (node: GraphNode, event: MouseEvent) => void
   onEdgeClick?: (edge: GraphEdge) => void
   onExportReady?: (exportFn: () => Promise<void>) => void
+}
+
+/** Applies precomputed path `d` from `pathByEdgeId` to a link or hit selection. */
+function applyLinkPathD(
+  sel: d3.Selection<SVGPathElement, GraphEdge, SVGGElement, unknown>,
+  pathByEdgeId: Map<string, LinkPathResult>
+) {
+  sel.attr('d', (d) => pathByEdgeId.get(d.id)?.d ?? '')
 }
 
 export default function GraphView({
@@ -390,16 +398,19 @@ export default function GraphView({
     let didAutoStop = false
     function applyPositions() {
       if (layout === 'force' && hasEdges && !didAutoStop && simulation.alpha() < 0.035) { didAutoStop = true; simulation.stop() }
-      const setLinkD = (sel: d3.Selection<SVGPathElement, GraphEdge, SVGGElement, unknown>) => {
-        sel.attr('d', (d) => linkPath(d, getNode, getNodeR, parallelByEdgeId.get(d.id)).d)
+      const pathByEdgeId = new Map<string, LinkPathResult>()
+      if (hasEdges) {
+        for (const e of filteredEdges) {
+          pathByEdgeId.set(e.id, linkPath(e, getNode, getNodeR, parallelByEdgeId.get(e.id)))
+        }
       }
-      setLinkD(link)
-      setLinkD(linkHit)
+      applyLinkPathD(link, pathByEdgeId)
+      applyLinkPathD(linkHit, pathByEdgeId)
       node.attr('cx', (d) => d.x ?? centerX).attr('cy', (d) => d.y ?? centerY)
       labels.attr('x', (d) => d.x ?? centerX).attr('y', (d) => d.y ?? centerY)
       edgeLabels
-        .attr('x', (d) => linkPath(d, getNode, getNodeR, parallelByEdgeId.get(d.id)).lx)
-        .attr('y', (d) => linkPath(d, getNode, getNodeR, parallelByEdgeId.get(d.id)).ly)
+        .attr('x', (d) => pathByEdgeId.get(d.id)?.lx ?? centerX)
+        .attr('y', (d) => pathByEdgeId.get(d.id)?.ly ?? centerY)
     }
     simulation.on('tick', applyPositions)
     applyPositions()
