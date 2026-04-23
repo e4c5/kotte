@@ -20,6 +20,13 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   in `frontend/src/types/neo4j-cypher-codemirror.d.ts` work around the
   package's `exports` omitting its `.d.ts`. Keyboard shortcuts still use
   `view.hasFocus` on the CodeMirror surface.
+- **C1 graph-catalog completion** — `graphMetadata` lives in `useGraphStore`
+  (filled by `MetadataSidebar` when the selected graph’s metadata loads; not
+  persisted). `QueryEditor` maps it to `EditorSupportSchema` and calls
+  `setSchema` on the Neo4j editor-support instance (`applyCypherEditorSchema`,
+  `graphMetadataToEditorSchema`). Vite + `tsconfig` alias
+  `neo4j-cypher-cm-state-selectors` reaches `getStateEditorSupport` because the
+  npm package omits that path from `exports`.
 - **Mypy in backend CI (ROADMAP B1.2)** — `.github/workflows/backend-ci.yml`
   lint job runs `mypy app` on Python 3.11. Fixed real issues surfaced by the
   run: Prometheus gauge label comment in `app/core/metrics.py` no longer uses

@@ -5,6 +5,12 @@
     "lib": ["ES2020", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "skipLibCheck": true,
+    "baseUrl": ".",
+    "paths": {
+      "neo4j-cypher-cm-state-selectors": [
+        "node_modules/@neo4j-cypher/codemirror/es/cypher-state-selectors.js"
+      ]
+    },
 
     /* Bundler mode */
     "moduleResolution": "bundler",

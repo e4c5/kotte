@@ -3,6 +3,9 @@ import CodeMirror from '@uiw/react-codemirror'
 import type { EditorView } from '@codemirror/view'
 import { getExtensions } from '@neo4j-cypher/codemirror'
 import { useQueryEditorKeyboard } from '../hooks/useQueryEditorKeyboard'
+import { useGraphStore } from '../stores/graphStore'
+import { applyCypherEditorSchema } from '../utils/applyCypherEditorSchema'
+import { graphMetadataToEditorSchema } from '../utils/cypherSchema'
 
 interface QueryEditorProps {
   value: string
@@ -159,6 +162,12 @@ export default function QueryEditor({
   const paramsInvalid = !paramsResult.ok
   const paramsErrorMessage = paramsResult.ok ? null : paramsResult.error
 
+  const graphMetadata = useGraphStore((s) => s.graphMetadata)
+  const cypherEditorSchema = useMemo(
+    () => graphMetadataToEditorSchema(graphMetadata),
+    [graphMetadata]
+  )
+
   const cypherExtensions = useMemo(
     () =>
       getExtensions(
@@ -185,6 +194,12 @@ export default function QueryEditor({
   const blurEditor = useCallback(() => {
     cypherViewRef.current?.contentDOM.blur()
   }, [])
+
+  useEffect(() => {
+    const view = cypherViewRef.current
+    if (!view) return
+    applyCypherEditorSchema(view, cypherEditorSchema)
+  }, [cypherEditorSchema])
 
   const applyHistoryAtIndex = (index: number) => {
     if (index >= 0) {
@@ -280,6 +295,7 @@ export default function QueryEditor({
             onChange={(v) => onChange(v)}
             onCreateEditor={(view) => {
               cypherViewRef.current = view
+              applyCypherEditorSchema(view, cypherEditorSchema)
             }}
             className={cypherMirrorClasses}
           />

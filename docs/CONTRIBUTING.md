@@ -119,7 +119,9 @@ MASTER_ENCRYPTION_KEY=your-master-key-here
 
 The frontend is a React application built with Vite and TypeScript. The
 workspace Cypher field is a **CodeMirror 6** editor using Neo4j's
-`@neo4j-cypher/codemirror` package (not a raw `<textarea>`).
+`@neo4j-cypher/codemirror` package (not a raw `<textarea>`). Autocomplete for
+labels, relationship types, and property keys uses the graph metadata loaded
+for the schema sidebar (`useGraphStore().graphMetadata`).
 
 #### 1. Install Dependencies
 
