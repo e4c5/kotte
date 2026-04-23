@@ -52,7 +52,9 @@ export default function MetadataSidebar({
 
   useEffect(() => {
     if (currentGraph) {
-      void loadMetadata(currentGraph)
+      loadMetadata(currentGraph).catch(() => {
+        // Rejection is logged inside loadMetadata; avoid unhandled-rejection
+      })
     } else {
       setGraphMetadata(null)
     }
