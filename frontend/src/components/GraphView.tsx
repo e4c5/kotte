@@ -3,6 +3,7 @@ import * as d3 from 'd3'
 import { useGraphStore } from '../stores/graphStore'
 import { initializeLayout } from '../utils/graphLayouts'
 import { getNodeStyle, getEdgeStyle, getNodeCaption, getEdgeCaption } from '../utils/graphStyles'
+import { linkPath, markerIdForColor, parallelEdgeMeta } from '../utils/graphLinkPaths'
 import { useGraphExport } from '../hooks/useGraphExport'
 
 export interface GraphNode {
@@ -189,6 +190,32 @@ export default function GraphView({
 
     const svg = d3.select(svgEl)
     svg.selectAll('*').remove()
+
+    const edgeStrokeColor = (e: GraphEdge) =>
+      pathEdgeIds.has(String(e.id))
+        ? '#0066cc'
+        : getEdgeStyle(e, edgeStyles, edgeWidthScale, edgeWidthMapping.property).color
+
+    const edgeColors = new Set<string>()
+    filteredEdges.forEach((e) => edgeColors.add(edgeStrokeColor(e)))
+    const defs = svg.append('defs')
+    edgeColors.forEach((color) => {
+      const mid = markerIdForColor(color)
+      defs
+        .append('marker')
+        .attr('id', mid)
+        .attr('viewBox', '0 0 10 10')
+        .attr('refX', 9)
+        .attr('refY', 5)
+        .attr('markerWidth', 8)
+        .attr('markerHeight', 8)
+        .attr('orient', 'auto')
+        .attr('markerUnits', 'userSpaceOnUse')
+        .append('path')
+        .attr('d', 'M0,0 L10,5 L0,10 z')
+        .attr('fill', color)
+    })
+
     const container = svg.append('g')
     const zoom = d3.zoom<SVGSVGElement, unknown>().scaleExtent([0.05, 20]).on('zoom', (event) => {
       zoomTransformRef.current = event.transform
@@ -241,13 +268,42 @@ export default function GraphView({
       return 2
     }
 
-    const link = container.append('g').attr('class', 'links').selectAll('line').data(filteredEdges).enter().append('line')
-      .attr('stroke', (d) => pathEdgeIds.has(String(d.id)) ? '#0066cc' : getEdgeStyle(d, edgeStyles, edgeWidthScale, edgeWidthMapping.property).color)
-      .attr('stroke-opacity', (d) => pathEdgeIds.has(String(d.id)) ? 1 : 0.6)
-      .attr('stroke-width', (d) => pathEdgeIds.has(String(d.id)) ? Math.max(3, getEdgeStyle(d, edgeStyles, edgeWidthScale, edgeWidthMapping.property).size) : getEdgeStyle(d, edgeStyles, edgeWidthScale, edgeWidthMapping.property).size)
+    const parallelByEdgeId = parallelEdgeMeta(filteredEdges)
+    const getNodeR = (n: GraphNode) => getNodeStyle(n, nodeStyles).size
+
+    const linkGroup = container.append('g').attr('class', 'links')
+
+    const linkHit = linkGroup
+      .selectAll<SVGPathElement, GraphEdge>('path.link-hit')
+      .data(filteredEdges)
+      .enter()
+      .append('path')
+      .attr('class', 'link-hit')
+      .attr('fill', 'none')
+      .attr('stroke', 'transparent')
+      .attr('stroke-width', 16)
+      .attr('pointer-events', 'stroke')
+
+    const link = linkGroup
+      .selectAll<SVGPathElement, GraphEdge>('path.link-line')
+      .data(filteredEdges)
+      .enter()
+      .append('path')
+      .attr('class', 'link-line')
+      .attr('fill', 'none')
+      .attr('stroke', (d) => edgeStrokeColor(d))
+      .attr('stroke-opacity', (d) => (pathEdgeIds.has(String(d.id)) ? 1 : 0.6))
+      .attr('stroke-width', (d) =>
+        pathEdgeIds.has(String(d.id))
+          ? Math.max(3, getEdgeStyle(d, edgeStyles, edgeWidthScale, edgeWidthMapping.property).size)
+          : getEdgeStyle(d, edgeStyles, edgeWidthScale, edgeWidthMapping.property).size
+      )
+      .attr('marker-end', (d) => `url(#${markerIdForColor(edgeStrokeColor(d))})`)
+      .style('pointer-events', 'none')
 
     if (onEdgeClickRef.current) {
-      link.style('cursor', 'pointer')
+      linkHit
+        .style('cursor', 'pointer')
         .attr('role', 'button')
         .attr('tabindex', 0)
         .attr('aria-label', (d) => `Edge: ${d.label}, ID: ${d.id}`)
@@ -334,12 +390,16 @@ export default function GraphView({
     let didAutoStop = false
     function applyPositions() {
       if (layout === 'force' && hasEdges && !didAutoStop && simulation.alpha() < 0.035) { didAutoStop = true; simulation.stop() }
-      link.attr('x1', (d) => getNode(d.source)?.x ?? centerX).attr('y1', (d) => getNode(d.source)?.y ?? centerY)
-        .attr('x2', (d) => getNode(d.target)?.x ?? centerX).attr('y2', (d) => getNode(d.target)?.y ?? centerY)
+      const setLinkD = (sel: d3.Selection<SVGPathElement, GraphEdge, SVGGElement, unknown>) => {
+        sel.attr('d', (d) => linkPath(d, getNode, getNodeR, parallelByEdgeId.get(d.id)).d)
+      }
+      setLinkD(link)
+      setLinkD(linkHit)
       node.attr('cx', (d) => d.x ?? centerX).attr('cy', (d) => d.y ?? centerY)
       labels.attr('x', (d) => d.x ?? centerX).attr('y', (d) => d.y ?? centerY)
-      edgeLabels.attr('x', (d) => { const s = getNode(d.source), t = getNode(d.target); return ((s?.x ?? centerX) + (t?.x ?? centerX)) / 2 })
-        .attr('y', (d) => { const s = getNode(d.source), t = getNode(d.target); return ((s?.y ?? centerY) + (t?.y ?? centerY)) / 2 })
+      edgeLabels
+        .attr('x', (d) => linkPath(d, getNode, getNodeR, parallelByEdgeId.get(d.id)).lx)
+        .attr('y', (d) => linkPath(d, getNode, getNodeR, parallelByEdgeId.get(d.id)).ly)
     }
     simulation.on('tick', applyPositions)
     applyPositions()
@@ -536,7 +596,7 @@ export default function GraphView({
     <div className="w-full h-full bg-zinc-950 relative">
       {import.meta.env.DEV && (
         <div className="absolute left-2 top-2 z-10 pointer-events-none rounded bg-emerald-500/20 border border-emerald-400/40 px-2 py-1 text-[10px] text-emerald-300 font-mono">
-          GraphView marker: 2026-02-23-v3 | prop:{width}x{height} | view:{resolvedSize.width}x{resolvedSize.height} | fit:{debugFitScale?.toFixed(2) ?? 'n/a'}
+          GraphView marker: 2026-04-21-c2-v4 | prop:{width}x{height} | view:{resolvedSize.width}x{resolvedSize.height} | fit:{debugFitScale?.toFixed(2) ?? 'n/a'}
         </div>
       )}
       <div className="absolute right-3 bottom-3 z-20 flex items-center gap-1 rounded border border-zinc-700 bg-zinc-900/85 p-1">
