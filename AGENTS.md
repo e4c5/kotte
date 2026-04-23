@@ -5,7 +5,7 @@
 ## Stack
 
 - **Backend:** Python 3.11+, FastAPI, Pydantic v2, psycopg (async) with connection pooling, uvicorn
-- **Frontend:** React 18, TypeScript, Vite, Tailwind CSS, Zustand, React Router, D3.js (graph viz), Zod
+- **Frontend:** React 18, TypeScript, Vite, Tailwind CSS, Zustand, React Router, D3.js (graph viz), CodeMirror 6 (`@uiw/react-codemirror`, `@neo4j-cypher/codemirror`), Zod
 - **DB:** PostgreSQL 14+ with Apache AGE; Cypher via `cypher(graph_name, $$...$$)` and `agtype`
 
 ## Repo layout

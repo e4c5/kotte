@@ -117,7 +117,9 @@ MASTER_ENCRYPTION_KEY=your-master-key-here
 
 ### Frontend Setup
 
-The frontend is a React application built with Vite and TypeScript.
+The frontend is a React application built with Vite and TypeScript. The
+workspace Cypher field is a **CodeMirror 6** editor using Neo4j's
+`@neo4j-cypher/codemirror` package (not a raw `<textarea>`).
 
 #### 1. Install Dependencies
 

@@ -5,7 +5,7 @@ interface UseQueryEditorKeyboardOptions {
   history: string[]
   /** Current cursor position in the history stack (-1 = present input). */
   historyIndex: number
-  /** True when the Cypher textarea owns focus. */
+  /** True when the Cypher editor surface owns focus. */
   isEditorFocused: () => boolean
   /** True when the JSON parameters textarea cannot be parsed. */
   paramsInvalid: boolean
@@ -23,7 +23,7 @@ interface UseQueryEditorKeyboardOptions {
   setExpanded: (expanded: boolean) => void
   /** Move the cursor through the history stack. */
   stepHistory: (direction: 'up' | 'down') => void
-  /** Imperative ref to the textarea; used for blur on Escape. */
+  /** Blur the Cypher editor; used on Escape. */
   blurEditor: () => void
 }
 

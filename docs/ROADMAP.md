@@ -402,9 +402,8 @@ What moves Kotte from "feature complete v0.1" to something a user would prefer o
 
 ### C1. CodeMirror 6 Cypher editor
 
-- Add `@codemirror/state`, `@codemirror/view`, `@codemirror/language`, `@lezer/highlight`. Use `lang-cypher` (community grammar) or build a minimal Lezer grammar.
-- Replace the `<textarea>` in `QueryEditor.tsx`. Wire history/run keybindings.
-- Schema-aware autocomplete: feed it the labels & properties from `useGraphStore().metadata`. Hook into CodeMirror's `autocompletion()`.
+- **Shipped:** `@neo4j-cypher/codemirror` + `@uiw/react-codemirror` + `codemirror` 6; Neo4j stylesheet; `QueryEditor.tsx` uses CodeMirror instead of a `<textarea>`. History / Shift+Enter / Escape keybindings stay wired via `useQueryEditorKeyboard` and `EditorView#hasFocus`.
+- **Still open:** Schema-aware autocomplete from `useGraphStore().metadata` (labels, rel types, properties) layered on top of the built-in Cypher completion.
 
 ### C2. Visualization upgrades
 
@@ -549,7 +548,7 @@ Toggle `- [ ]` → `- [x]` as items ship, and add a short **Status** line under 
 
 ### Milestone C — Make it a graph product
 
-- [ ] **C1** — CodeMirror 6 Cypher editor
+- [x] **C1** — CodeMirror 6 Cypher editor (Neo4j mode + highlighting; graph-schema completion still open — see C1 section)
 - [ ] **C2** — Visualization upgrades (arrows, curves, self-loops, canvas, minimap, lasso)
 - [ ] **C3** — Streaming end-to-end
 - [ ] **C4** — Schema sidebar 2.0
