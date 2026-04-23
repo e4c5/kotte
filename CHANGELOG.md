@@ -12,6 +12,11 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ## [Unreleased]
 
 ### Added
+- **Graph link rendering (ROADMAP C2.1–C2.3)** — `GraphView` draws edges as SVG
+  `<path>`s with `marker-end` arrowheads (`userSpaceOnUse`), quadratic curves with
+  parallel-edge offsets per directed pair, and self-loops above the node. Wide
+  transparent `link-hit` strokes preserve click/keyboard targets. Geometry lives
+  in `frontend/src/utils/graphLinkPaths.ts` with unit tests.
 - **Cypher query editor (ROADMAP C1)** — `QueryEditor` replaces the plain
   Cypher `<textarea>` with CodeMirror 6 and Neo4j's
   `@neo4j-cypher/codemirror` (syntax highlighting, Cypher language support,

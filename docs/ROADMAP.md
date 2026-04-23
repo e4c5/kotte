@@ -407,12 +407,67 @@ What moves Kotte from "feature complete v0.1" to something a user would prefer o
 
 ### C2. Visualization upgrades
 
-- Arrowheads via `<defs><marker>`; refer marker by edge color via `markerUnits="userSpaceOnUse"`.
-- Curved edges and parallel-edge offsetting (compute index among edges sharing endpoints, draw quadratic Bézier with offset).
-- Self-loop rendering (draw a small arc above the node).
-- Add a Canvas/PixiJS renderer (`GraphCanvas.tsx`), mount it instead of `<svg>` when `nodes.length > 1500`. Keep the same `GraphViewProps` so callers don't change.
-- Minimap component reading the same simulation positions (transformed by `d3-zoom`).
-- Lasso multi-select using `d3-brush` with a modifier key.
+**Goal:** Make the force-directed graph readable at a glance (direction, density, self-edges) and scale past “SVG comfort” without rewriting `ResultTab` / store contracts.
+
+**Current baseline (2026):** `GraphView.tsx` uses d3-force and draws links as SVG `<line>` elements (`container.selectAll('line')` under a `.links` group). Nodes are circles; zoom lives on the SVG container. Edge color/width comes from `getEdgeStyle` + path highlights. No arrowheads, no curves, no alternate renderer.
+
+#### Recommended delivery order
+
+Work top-to-bottom; each phase is shippable on its own.
+
+| Phase | Scope | Rationale |
+|-------|--------|-----------|
+| **C2.1** | Arrowheads + marker strategy | **Shipped (2026-04):** `<defs>` + `markerUnits="userSpaceOnUse"`; one marker per distinct edge stroke color (`markerIdForColor`); `marker-end` on link paths. |
+| **C2.2** | Curved links + parallel-edge offset | **Shipped (2026-04):** `graphLinkPaths.ts` — quadratic Bézier, control-point offset by parallel index among directed `(source,target)` groups; endpoints shortened by node radii. |
+| **C2.3** | Self-loops | **Shipped (2026-04):** same module — symmetric loop above node; stacked offsets when multiple self-edges share a node. |
+| **C2.4** | Canvas / Pixi fallback | Gate on `nodes.length` (and optionally `edges.length`) — align with `settingsStore` `maxNodesForGraph` story so the threshold is user-tunable later. Same `GraphViewProps`; internally `GraphView` chooses SVG vs `GraphCanvas`. |
+| **C2.5** | Minimap | Read node positions from the same simulation (or shared ref); render a coarse overview; `d3-zoom` transform sync (brush or drag on minimap). |
+| **C2.6** | Lasso multi-select | `d3-brush` (or polygon lasso) with modifier key; selection feeds `useGraphStore` or local selection callback — **decide in implementation** whether lasso adds to `selectedNode` / pin set or only highlights; document behaviour in `ARCHITECTURE` or `GraphControls`. |
+
+#### C2.1 — Arrowheads (technical)
+
+- Add a single `<defs>` block on the SVG (or one per mount in `GraphView`’s effect) with `<marker>` elements. Prefer **`markerUnits="userSpaceOnUse"`** so stroke width and zoom behave predictably; set `refX` / `refY` so the tip meets the **target node rim** (account for node radius ~ stroke).
+- **Color:** Either one neutral marker + `marker-end` cannot vary per edge easily — typically use **one marker per distinct edge color** (id e.g. `arrow-${hash(color)}`) or use SVG **`context-stroke`** / currentColor tricks if browser support is acceptable. Pragmatic approach: quantize edge colors to a small palette + path/highlight overrides, or generate markers for the finite set of styles returned by `getEdgeStyle`.
+- **Hit-testing:** Widen invisible stroke on paths for `onEdgeClick` (already a pattern for thick edges).
+
+#### C2.2 — Curves + parallel edges (technical)
+
+- Replace straight segments with a **quadratic Bézier** (one control point perpendicular to the chord mid-point). For **parallel edges** between the same ordered pair `(sourceId, targetId)`:
+  - Group edges by key `min(s,t)+'|'+max(s,t)` for undirected offset sign, or keep directed `(sourceId, targetId)` if arrows must stay asymmetric.
+  - Assign each edge an **index** `i` in `[0, k-1]`; offset control point by `(i - (k-1)/2) * separation` (constant in user-space px, scaled if needed).
+- **Simulation:** Keep using `forceLink` with center distance; curves are presentation-only (update `d` on tick).
+
+#### C2.3 — Self-loops (technical)
+
+- When resolved `source === target`, draw an arc from the node surface, out and back (e.g. control point offset by `(0, -radius-offset)`). Ensure arrowhead orientation matches traversal direction if the data model implies one.
+
+#### C2.4 — Canvas / Pixi (technical)
+
+- **Contract:** `GraphCanvas.tsx` (name as needed) receives the same props as `GraphView`; no changes to `ResultTab` beyond optional size props already passed.
+- **State:** Share layout positions: either run the same d3 simulation and pass positions to canvas, or extract a `useGraphLayout` hook used by both (harder but cleaner).
+- **Interactivity:** Reimplement pick (node/edge), zoom/pan (d3-zoom on overlay or Pixi viewport), and context menu coordinates — budget extra time; this is the largest phase.
+- **Threshold:** Start with a constant (e.g. 1500 nodes) + console-free degradation; wire to settings in a follow-up if C2.4 runs long.
+
+#### C2.5 — Minimap (technical)
+
+- Secondary SVG or canvas; clone node positions at low frequency (on simulation `end` or throttled `tick`). Show viewport rectangle from inverse of current zoom transform. Click/drag on minimap → `zoom.transform`.
+
+#### C2.6 — Lasso (technical)
+
+- Gate on **modifier + drag** (e.g. Shift) so pan/zoom stays default. Brush end → compute nodes inside polygon → call store or props. Avoid conflicting with node drag if added later.
+
+#### Acceptance (whole C2)
+
+- Directed queries: edges show **clear direction** (C2.1) without heads obscuring labels.
+- Multi-edge between two nodes: **visually separable** (C2.2).
+- Self-relationships: **visible** (C2.3).
+- With N above threshold: UI remains **usable** (pan/zoom/select) via canvas path (C2.4).
+- Optional: minimap and lasso behave without breaking existing **pin, hide, expand, export** flows.
+
+#### Non-goals for C2 (defer)
+
+- 3D graph, temporal animation, or full graph analytics layout suite.
+- Backend changes (C2 is frontend visualization only unless streaming positions from server is requested later).
 
 ### C3. Streaming end-to-end
 
@@ -549,7 +604,7 @@ Toggle `- [ ]` → `- [x]` as items ship, and add a short **Status** line under 
 ### Milestone C — Make it a graph product
 
 - [x] **C1** — CodeMirror 6 Cypher editor (Neo4j mode + graph-catalog schema completion — see C1 section)
-- [ ] **C2** — Visualization upgrades (arrows, curves, self-loops, canvas, minimap, lasso)
+- [ ] **C2** — Visualization upgrades — **C2.1–C2.3 shipped** (directed arrows, curved multi-edges, self-loops in `GraphView` + `graphLinkPaths.ts`); **C2.4–C2.6** pending (canvas/Pixi, minimap, lasso); see §C2 above
 - [ ] **C3** — Streaming end-to-end
 - [ ] **C4** — Schema sidebar 2.0
 - [ ] **C5** — Saved queries / templates UI
