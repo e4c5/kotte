@@ -396,9 +396,10 @@ export default function GraphView({
     const getNode = (endpoint: string | GraphNode) => typeof endpoint === 'string' ? nodeById.get(endpoint) : endpoint
 
     let didAutoStop = false
+    const pathByEdgeId = new Map<string, LinkPathResult>()
     function applyPositions() {
       if (layout === 'force' && hasEdges && !didAutoStop && simulation.alpha() < 0.035) { didAutoStop = true; simulation.stop() }
-      const pathByEdgeId = new Map<string, LinkPathResult>()
+      pathByEdgeId.clear()
       if (hasEdges) {
         for (const e of filteredEdges) {
           pathByEdgeId.set(e.id, linkPath(e, getNode, getNodeR, parallelByEdgeId.get(e.id)))
