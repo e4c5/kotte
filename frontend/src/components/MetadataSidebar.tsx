@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { graphAPI, type GraphInfo } from '../services/graph'
 import { useGraphStore } from '../stores/graphStore'
 import { getNodeLabelColor } from '../utils/nodeColors'
@@ -22,6 +22,7 @@ export default function MetadataSidebar({
   const [graphs, setGraphs] = useState<GraphInfo[]>([])
   const metadata = useGraphStore((s) => s.graphMetadata)
   const setGraphMetadata = useGraphStore((s) => s.setGraphMetadata)
+  const metadataRequestSeq = useRef(0)
   const [loading, setLoading] = useState(false)
   const [nodeLabelsOpen, setNodeLabelsOpen] = useState(true)
   const [edgeLabelsOpen, setEdgeLabelsOpen] = useState(true)
@@ -35,16 +36,25 @@ export default function MetadataSidebar({
 
   const loadMetadata = useCallback(
     async (graphName: string) => {
+      const requestId = ++metadataRequestSeq.current
       setLoading(true)
       setGraphMetadata(null)
       try {
         const meta = await graphAPI.getMetadata(graphName)
+        if (metadataRequestSeq.current !== requestId) {
+          return
+        }
         setGraphMetadata(meta)
       } catch (error) {
+        if (metadataRequestSeq.current !== requestId) {
+          return
+        }
         console.error('Failed to load metadata:', error)
         setGraphMetadata(null)
       } finally {
-        setLoading(false)
+        if (metadataRequestSeq.current === requestId) {
+          setLoading(false)
+        }
       }
     },
     [setGraphMetadata]
@@ -56,6 +66,8 @@ export default function MetadataSidebar({
         // Rejection is logged inside loadMetadata; avoid unhandled-rejection
       })
     } else {
+      metadataRequestSeq.current += 1
+      setLoading(false)
       setGraphMetadata(null)
     }
   }, [currentGraph, loadMetadata, setGraphMetadata])
