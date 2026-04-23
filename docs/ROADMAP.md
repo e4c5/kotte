@@ -403,7 +403,7 @@ What moves Kotte from "feature complete v0.1" to something a user would prefer o
 ### C1. CodeMirror 6 Cypher editor
 
 - **Shipped:** `@neo4j-cypher/codemirror` + `@uiw/react-codemirror` + `codemirror` 6; Neo4j stylesheet; `QueryEditor.tsx` uses CodeMirror instead of a `<textarea>`. History / Shift+Enter / Escape keybindings stay wired via `useQueryEditorKeyboard` and `EditorView#hasFocus`.
-- **Still open:** Schema-aware autocomplete from `useGraphStore().metadata` (labels, rel types, properties) layered on top of the built-in Cypher completion.
+- **Shipped (schema completion):** `MetadataSidebar` loads `/graphs/.../metadata` into `useGraphStore().graphMetadata` (not persisted). `graphMetadataToEditorSchema()` maps node labels, edge labels, and unioned property keys into `EditorSupportSchema`; `applyCypherEditorSchema()` calls `getStateEditorSupport(view.state)?.setSchema(...)` (Vite + TS aliases: `neo4j-cypher-cm-state-selectors`, because the package omits that path from `exports`). Suggestions update when the user switches graphs or metadata refreshes.
 
 ### C2. Visualization upgrades
 
@@ -548,7 +548,7 @@ Toggle `- [ ]` → `- [x]` as items ship, and add a short **Status** line under 
 
 ### Milestone C — Make it a graph product
 
-- [x] **C1** — CodeMirror 6 Cypher editor (Neo4j mode + highlighting; graph-schema completion still open — see C1 section)
+- [x] **C1** — CodeMirror 6 Cypher editor (Neo4j mode + graph-catalog schema completion — see C1 section)
 - [ ] **C2** — Visualization upgrades (arrows, curves, self-loops, canvas, minimap, lasso)
 - [ ] **C3** — Streaming end-to-end
 - [ ] **C4** — Schema sidebar 2.0

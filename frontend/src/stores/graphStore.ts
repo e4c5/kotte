@@ -4,6 +4,7 @@
 
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import type { GraphMetadata } from '../services/graph'
 
 export type LayoutType =
   | 'force'
@@ -87,6 +88,10 @@ interface GraphState {
   cameraFocusAnchorIds: string[]
   setCameraFocusAnchorIds: (ids: string[]) => void
   clearCameraFocusAnchorIds: () => void
+
+  /** Latest `/graphs/.../metadata` for the sidebar’s current graph (not persisted). */
+  graphMetadata: GraphMetadata | null
+  setGraphMetadata: (metadata: GraphMetadata | null) => void
 }
 
 const defaultNodeStyle: LabelStyle = {
@@ -126,8 +131,11 @@ export const useGraphStore = create<GraphState>()(
       pinnedNodes: new Set(),
       hiddenNodes: new Set(),
       cameraFocusAnchorIds: [],
+      graphMetadata: null,
 
       setLayout: (layout) => set({ layout }),
+
+      setGraphMetadata: (metadata) => set({ graphMetadata: metadata }),
 
       setEdgeWidthMapping: (mapping) =>
         set((state) => ({

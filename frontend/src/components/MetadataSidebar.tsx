@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
-import { graphAPI, type GraphInfo, type GraphMetadata } from '../services/graph'
+import { useCallback, useEffect, useState } from 'react'
+import { graphAPI, type GraphInfo } from '../services/graph'
+import { useGraphStore } from '../stores/graphStore'
 import { getNodeLabelColor } from '../utils/nodeColors'
 
 interface MetadataSidebarProps {
@@ -19,7 +20,8 @@ export default function MetadataSidebar({
   onCollapsedChange,
 }: MetadataSidebarProps) {
   const [graphs, setGraphs] = useState<GraphInfo[]>([])
-  const [metadata, setMetadata] = useState<GraphMetadata | null>(null)
+  const metadata = useGraphStore((s) => s.graphMetadata)
+  const setGraphMetadata = useGraphStore((s) => s.setGraphMetadata)
   const [loading, setLoading] = useState(false)
   const [nodeLabelsOpen, setNodeLabelsOpen] = useState(true)
   const [edgeLabelsOpen, setEdgeLabelsOpen] = useState(true)
@@ -31,13 +33,30 @@ export default function MetadataSidebar({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  const loadMetadata = useCallback(
+    async (graphName: string) => {
+      setLoading(true)
+      setGraphMetadata(null)
+      try {
+        const meta = await graphAPI.getMetadata(graphName)
+        setGraphMetadata(meta)
+      } catch (error) {
+        console.error('Failed to load metadata:', error)
+        setGraphMetadata(null)
+      } finally {
+        setLoading(false)
+      }
+    },
+    [setGraphMetadata]
+  )
+
   useEffect(() => {
     if (currentGraph) {
-      loadMetadata(currentGraph)
+      void loadMetadata(currentGraph)
     } else {
-      setMetadata(null)
+      setGraphMetadata(null)
     }
-  }, [currentGraph])
+  }, [currentGraph, loadMetadata, setGraphMetadata])
 
   const loadGraphs = async () => {
     try {
@@ -48,18 +67,6 @@ export default function MetadataSidebar({
       }
     } catch (error) {
       console.error('Failed to load graphs:', error)
-    }
-  }
-
-  const loadMetadata = async (graphName: string) => {
-    setLoading(true)
-    try {
-      const meta = await graphAPI.getMetadata(graphName)
-      setMetadata(meta)
-    } catch (error) {
-      console.error('Failed to load metadata:', error)
-    } finally {
-      setLoading(false)
     }
   }
 
