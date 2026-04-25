@@ -10,10 +10,25 @@ from app.core.config import settings
 from app.services.query_tracker import query_tracker
 
 
-def _stream_mock_db(exec_side_effect):
+def _make_stream_gen(*batches):
+    """Return a callable that yields the given batches as an async generator.
+
+    Used to mock ``db_conn.stream_cypher``, which is a regular method that
+    returns an async generator (not a coroutine).
+    """
+
+    async def _gen(*_args, **_kwargs):
+        for batch in batches:
+            yield batch
+
+    return _gen
+
+
+def _stream_mock_db(*batches):
+    """Build a mock DatabaseConnection that streams the provided row batches."""
     mock_db = MagicMock()
     mock_db.execute_scalar = AsyncMock(return_value=1)
-    mock_db.execute_cypher = AsyncMock(side_effect=exec_side_effect)
+    mock_db.stream_cypher = MagicMock(side_effect=_make_stream_gen(*batches))
     mock_cm = MagicMock()
     mock_cm.__aenter__ = AsyncMock(return_value=object())
     mock_cm.__aexit__ = AsyncMock(return_value=None)
@@ -25,7 +40,7 @@ def _stream_mock_db(exec_side_effect):
 async def _collect_stream_chunks(
     *,
     request_id: str,
-    exec_side_effect,
+    batches: list,
     max_rows: int,
     chunk_size: int,
 ):
@@ -34,9 +49,9 @@ async def _collect_stream_chunks(
     Centralises the ``MagicMock`` wiring + ``settings.query_max_result_rows``
     patch + async iteration that every cap-related test would otherwise repeat.
     Returns the parsed NDJSON chunks alongside the mock so callers can also
-    inspect ``execute_cypher.await_args_list`` (e.g. to assert probe calls).
+    inspect ``stream_cypher.call_args_list``.
     """
-    mock_db = _stream_mock_db(exec_side_effect)
+    mock_db = _stream_mock_db(*batches)
     query_tracker.unregister_query(request_id)
 
     chunks: list[dict] = []
@@ -59,9 +74,7 @@ async def test_stream_query_unregisters_tracker_on_completion():
     """Tracked streaming query should always be unregistered when stream completes."""
     request_id = "stream-test-request"
 
-    mock_db = MagicMock()
-    mock_db.execute_scalar = AsyncMock(return_value=1)
-    mock_db.execute_cypher = AsyncMock(return_value=[])
+    mock_db = _stream_mock_db()  # no batches → empty result
 
     query_tracker.unregister_query(request_id)
     query_tracker.register_query(
@@ -83,24 +96,25 @@ async def test_stream_query_unregisters_tracker_on_completion():
     ):
         chunks.append(chunk)
 
-    assert len(chunks) == 1
+    # Empty cursor → no data chunks
+    assert len(chunks) == 0
     assert query_tracker.get_query_info(request_id) is None
 
 
 @pytest.mark.asyncio
 async def test_stream_query_with_existing_limit_is_chunked_in_memory():
-    """Queries that already contain LIMIT should still stream as multiple chunks."""
+    """Queries with LIMIT still produce multiple NDJSON chunks (server-side cursor chunking)."""
     request_id = "stream-existing-limit"
 
-    mock_db = MagicMock()
-    mock_db.execute_scalar = AsyncMock(return_value=1)
-    mock_db.execute_cypher = AsyncMock(
-        return_value=[
-            {"result": {"id": 1, "label": "Person", "properties": {}}},
-            {"result": {"id": 2, "label": "Person", "properties": {}}},
-            {"result": {"id": 3, "label": "Person", "properties": {}}},
-        ]
-    )
+    # Server-side cursor fetches chunk_size=2 at a time: two batches for 3 rows.
+    batch1 = [
+        {"result": {"id": 1, "label": "Person", "properties": {}}},
+        {"result": {"id": 2, "label": "Person", "properties": {}}},
+    ]
+    batch2 = [
+        {"result": {"id": 3, "label": "Person", "properties": {}}},
+    ]
+    mock_db = _stream_mock_db(batch1, batch2)
 
     chunks = []
     async for chunk in stream_query_results(
@@ -118,16 +132,14 @@ async def test_stream_query_with_existing_limit_is_chunked_in_memory():
     assert len(data_chunks) == 2
     assert data_chunks[0]["chunk_size"] == 2
     assert data_chunks[1]["chunk_size"] == 1
-    mock_db.execute_cypher.assert_called_once()
+    mock_db.stream_cypher.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_stream_query_empty_params_dict_reaches_execute_cypher():
-    """Explicit {} must be passed to execute_cypher (3-arg cypher), not coerced to None."""
+async def test_stream_query_empty_params_dict_reaches_stream_cypher():
+    """Explicit {} must be forwarded to stream_cypher (3-arg cypher), not coerced to None."""
     request_id = "stream-empty-params"
-    mock_db = MagicMock()
-    mock_db.execute_scalar = AsyncMock(return_value=1)
-    mock_db.execute_cypher = AsyncMock(return_value=[])
+    mock_db = _stream_mock_db()  # no batches
 
     query_tracker.unregister_query(request_id)
     query_tracker.register_query(
@@ -150,33 +162,22 @@ async def test_stream_query_empty_params_dict_reaches_execute_cypher():
         ndjson_lines += 1
 
     assert ndjson_lines == 0
-    assert mock_db.execute_cypher.call_args.kwargs["params"] == {}
+    assert mock_db.stream_cypher.call_args.kwargs["params"] == {}
 
 
 @pytest.mark.asyncio
 async def test_stream_query_respects_max_rows_and_emits_error_line():
     """Chunks never exceed remaining budget; cap reached yields QUERY_VALIDATION_ERROR line.
 
-    The streaming loop probes for one extra row after hitting the cap so it can
-    distinguish "user got everything and it happened to equal max_rows" from
-    "we truncated". This test exercises the truncation branch: the probe must
-    see at least one row beyond the cap for the error chunk to fire.
+    When the first batch contains more rows than the cap allows, the excess is
+    detected within that batch (no extra DB round-trip needed).
     """
-
-    def exec_side_effect(_graph, cypher_query, params=None, **_kwargs):
-        if "$__skip" not in cypher_query or "$__limit" not in cypher_query:
-            return []
-        skip = params.get("__skip")
-        limit = params.get("__limit")
-        if skip == 0 and limit == 5:
-            return [{"x": i} for i in range(5)]
-        if skip == 5 and limit == 1:
-            return [{"x": 5}]
-        return []
+    # One batch with more rows than max_rows=5.
+    batch = [{"x": i} for i in range(6)]
 
     chunks, _mock_db = await _collect_stream_chunks(
         request_id="stream-max-rows-cap",
-        exec_side_effect=exec_side_effect,
+        batches=[batch],
         max_rows=5,
         chunk_size=100,
     )
@@ -190,64 +191,45 @@ async def test_stream_query_respects_max_rows_and_emits_error_line():
 
 @pytest.mark.asyncio
 async def test_stream_query_no_cap_warning_when_results_exactly_match_max_rows():
-    """If the user happens to have exactly max_rows of data and nothing more,
-    the probe should come back empty and NO cap-warning chunk must be emitted.
-    Anything else would tell the UI 'we truncated your data' when we did not.
+    """If the user has exactly max_rows of data and the cursor is then exhausted,
+    no cap-warning chunk must be emitted — no false positive.
+
+    With server-side cursors the loop advances to the next batch after filling
+    max_rows; if that next batch is empty (cursor exhausted), the remaining==0
+    guard is never reached and no error is yielded.
     """
-
-    def exec_side_effect(_graph, cypher_query, params=None, **_kwargs):
-        if "$__skip" not in cypher_query or "$__limit" not in cypher_query:
-            return []
-        skip = params.get("__skip")
-        limit = params.get("__limit")
-        if skip == 0 and limit == 5:
-            return [{"x": i} for i in range(5)]
-        return []
-
+    # Exactly max_rows=5 rows split across two cursor batches (chunk_size=3).
+    # The cursor returns empty on the third fetchmany → no truncation.
     chunks, mock_db = await _collect_stream_chunks(
         request_id="stream-max-rows-exact",
-        exec_side_effect=exec_side_effect,
+        batches=[[{"x": i} for i in range(3)], [{"x": i} for i in range(3, 5)]],
         max_rows=5,
-        chunk_size=100,
+        chunk_size=3,
     )
 
     data_rows = sum(c.get("chunk_size", 0) for c in chunks if "rows" in c)
     assert data_rows == 5
     errs = [c for c in chunks if "error" in c]
     assert errs == [], f"expected no cap warning, got {errs}"
-    probe_calls = [
-        call
-        for call in mock_db.execute_cypher.await_args_list
-        if call.kwargs.get("params", {}).get("__limit") == 1
-    ]
-    assert len(probe_calls) == 1, "exactly one 1-row probe should have happened"
 
 
 @pytest.mark.asyncio
 async def test_stream_query_multi_chunk_then_cap_error():
-    """Several full pages then a partial fetch up to max_rows, then error NDJSON.
+    """Several full batches filling max_rows followed by another non-empty batch → error.
 
-    Like the cap test above, the probe must see at least one row beyond the
-    cap for the error chunk to fire. We mock that probe explicitly here.
+    Batches 1 and 2 each have 40 rows (max_rows=100, chunk_size=40).  Batch 3
+    fills the remaining 20 but the cursor still has more rows (batch 4 is non-
+    empty), so the remaining==0 guard fires on the 4th iteration and emits the
+    QUERY_VALIDATION_ERROR line.
     """
-
-    def exec_side_effect(_graph, cypher_query, params=None, **_kwargs):
-        if "$__skip" not in cypher_query or "$__limit" not in cypher_query:
-            return []
-
-        skip = params.get("__skip")
-        limit = params.get("__limit")
-        if (skip, limit) in [(0, 40), (40, 40)]:
-            return [{"i": i} for i in range(40)]
-        if (skip, limit) == (80, 20):
-            return [{"i": i} for i in range(20)]
-        if (skip, limit) == (100, 1):
-            return [{"i": 100}]
-        return []
-
     chunks, _mock_db = await _collect_stream_chunks(
         request_id="stream-max-rows-multi",
-        exec_side_effect=exec_side_effect,
+        batches=[
+            [{"i": i} for i in range(40)],
+            [{"i": i} for i in range(40, 80)],
+            [{"i": i} for i in range(80, 100)],
+            [{"i": 100}],  # one more row beyond the cap
+        ],
         max_rows=100,
         chunk_size=40,
     )

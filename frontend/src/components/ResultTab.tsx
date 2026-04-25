@@ -3,6 +3,7 @@ import GraphView, { type GraphNode, type GraphEdge, type PathHighlights } from '
 import TableView from './TableView'
 import GraphControls from './GraphControls'
 import NodeContextMenu from './NodeContextMenu'
+import ExpandOptionsPopover, { type ExpandOptions } from './ExpandOptionsPopover'
 import type { QueryTab } from '../stores/queryStore'
 import { useGraphStore } from '../stores/graphStore'
 
@@ -18,7 +19,7 @@ interface ResultTabProps {
   vizDisabledReason?: string | null
   onOpenSettings?: () => void
   onViewModeChange: (mode: 'graph' | 'table') => void
-  onNodeExpand: (nodeId: string) => Promise<void>
+  onNodeExpand: (nodeId: string, options?: ExpandOptions) => Promise<{ truncated: boolean; total_neighbours: number } | null>
   onNodeDelete: (nodeId: string) => Promise<void>
   onNodeSelect?: (node: GraphNode) => void
   onNodeDoubleClick?: (node: GraphNode) => void
@@ -51,6 +52,9 @@ export default function ResultTab({
 }: ResultTabProps) {
   const [showControls, setShowControls] = useState(false)
   const [contextMenu, setContextMenu] = useState<{x: number, y: number, nodeId: string} | null>(null)
+  const [expandPopover, setExpandPopover] = useState<{x: number, y: number, nodeId: string} | null>(null)
+  type TruncationNotice = { nodeId: string; returned: number; total: number; options: ExpandOptions }
+  const [truncationNotice, setTruncationNotice] = useState<TruncationNotice | null>(null)
   // ROADMAP A3: Pin/Hide actions exposed via NodeContextMenu. The store
   // already had `togglePinNode`/`toggleHideNode` and the simulation already
   // honoured `pinnedNodes`; the menu was the missing UI surface.
@@ -58,6 +62,11 @@ export default function ResultTab({
   const hiddenNodes = useGraphStore((s) => s.hiddenNodes)
   const togglePinNode = useGraphStore((s) => s.togglePinNode)
   const toggleHideNode = useGraphStore((s) => s.toggleHideNode)
+  const graphMetadata = useGraphStore((s) => s.graphMetadata)
+  const metadataEdgeLabels = useMemo(
+    () => graphMetadata?.edge_labels.map((e) => e.label) ?? [],
+    [graphMetadata]
+  )
   const [exportGraph, setExportGraph] = useState<(() => Promise<void>) | null>(null)
   const [graphSize, setGraphSize] = useState({ width: 800, height: 600 })
   const graphContainerRef = useRef<HTMLDivElement>(null)
@@ -144,13 +153,22 @@ export default function ResultTab({
     }
   }
 
-  const handleNodeExpand = async () => {
-    if (!contextMenu) return
-    try {
-      await onNodeExpand(contextMenu.nodeId)
-    } finally {
-      closeContextMenu()
+  const handleNodeExpandWithOptions = async (nodeId: string, options: ExpandOptions) => {
+    setExpandPopover(null)
+    setTruncationNotice(null)
+    const result = await onNodeExpand(nodeId, options)
+    if (result?.truncated) {
+      setTruncationNotice({
+        nodeId,
+        returned: options.limit,
+        total: result.total_neighbours,
+        options,
+      })
     }
+  }
+
+  const handleOpenExpandPopover = (nodeId: string, x: number, y: number) => {
+    setExpandPopover({ nodeId, x, y })
   }
 
   const handleNodeDelete = async () => {
@@ -189,7 +207,7 @@ export default function ResultTab({
     if (tab.error || tab.loading) {
       return (
         <div className="h-full flex items-center justify-center text-zinc-500">
-          {tab.loading ? 'Executing query...' : 'Query failed. See the error message above.'}
+          {tab.loading ? 'Streaming results…' : 'Query failed. See the error message above.'}
         </div>
       )
     }
@@ -247,7 +265,7 @@ export default function ResultTab({
             tab.viewMode === 'table' ? 'bg-zinc-700 text-blue-400' : 'text-zinc-400 hover:bg-zinc-700/50'
           }`}
         >
-          Table View ({result.row_count} rows)
+          Table View ({result.row_count} rows{tab.loading ? '…' : ''})
         </button>
         {tab.viewMode === 'graph' && hasGraphData && (
           <>
@@ -339,7 +357,7 @@ export default function ResultTab({
                   x={contextMenu.x}
                   y={contextMenu.y}
                   nodeId={contextMenu.nodeId}
-                  onExpand={handleNodeExpand}
+                  onExpandOptions={handleOpenExpandPopover}
                   onDelete={handleNodeDelete}
                   onPin={handleNodePin}
                   onHide={handleNodeHide}
@@ -350,6 +368,77 @@ export default function ResultTab({
                   isHidden={hiddenNodes.has(contextMenu.nodeId)}
                   onClose={closeContextMenu}
                 />
+              )}
+              {expandPopover && (
+                <ExpandOptionsPopover
+                  x={expandPopover.x}
+                  y={expandPopover.y}
+                  nodeId={expandPopover.nodeId}
+                  availableEdgeLabels={metadataEdgeLabels}
+                  onExpand={handleNodeExpandWithOptions}
+                  onClose={() => setExpandPopover(null)}
+                />
+              )}
+              {truncationNotice && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    bottom: 12,
+                    left: 12,
+                    backgroundColor: 'rgba(15,23,42,0.88)',
+                    color: '#e2e8f0',
+                    borderRadius: 6,
+                    padding: '6px 12px',
+                    fontSize: '12px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    zIndex: 900,
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.25)',
+                  }}
+                  role="status"
+                  aria-live="polite"
+                >
+                  <span>
+                    Showing {truncationNotice.returned.toLocaleString()} of{' '}
+                    {truncationNotice.total.toLocaleString()} neighbours
+                  </span>
+                  <button
+                    onClick={() =>
+                      setExpandPopover({
+                        nodeId: truncationNotice.nodeId,
+                        x: window.innerWidth / 2 - 140,
+                        y: window.innerHeight / 2 - 200,
+                      })
+                    }
+                    style={{
+                      background: 'none',
+                      border: '1px solid #475569',
+                      borderRadius: 4,
+                      color: '#94a3b8',
+                      cursor: 'pointer',
+                      fontSize: '11px',
+                      padding: '2px 7px',
+                    }}
+                  >
+                    Refine ↗
+                  </button>
+                  <button
+                    onClick={() => setTruncationNotice(null)}
+                    aria-label="Dismiss truncation notice"
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: '#64748b',
+                      cursor: 'pointer',
+                      fontSize: '14px',
+                      padding: '0 2px',
+                      lineHeight: 1,
+                    }}
+                  >
+                    ×
+                  </button>
+                </div>
               )}
               {showControls && (
                 <GraphControls
@@ -365,6 +454,7 @@ export default function ResultTab({
               rows={result.rows}
               pageSize={tablePageSize}
               queriedGraph={tab.graph}
+              streaming={tab.loading}
             />
           )}
         </div>

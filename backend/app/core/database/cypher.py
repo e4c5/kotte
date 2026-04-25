@@ -7,7 +7,7 @@ for the AGE ``AS (...)`` clause, not from arbitrary user-controlled identifiers.
 
 import hashlib
 import logging
-from typing import Optional
+from typing import AsyncGenerator, Optional
 
 import psycopg
 
@@ -93,3 +93,70 @@ class CypherExecutor:
                 exc_info=True,
             )
             raise
+
+    async def stream_cypher(
+        self,
+        graph_name: str,
+        cypher_query: str,
+        chunk_size: int,
+        cursor_name: str,
+        conn: psycopg.AsyncConnection,
+        params: Optional[dict] = None,
+    ) -> AsyncGenerator[list[dict], None]:
+        """Stream Cypher results via a psycopg server-side cursor.
+
+        Yields successive `list[dict]` batches of up to `chunk_size` rows each
+        without materialising the full result in Python memory.  The caller is
+        responsible for providing an open connection (`conn`) and for
+        consuming (or closing) the generator before `conn` is returned to the
+        pool.
+
+        Server-side cursors require a transaction to be open; psycopg's default
+        autocommit=False satisfies this automatically.
+        """
+        validated_graph_name = validate_graph_name(graph_name)
+        cypher_normalized = cypher_query.rstrip()
+        if cypher_normalized.endswith(";"):
+            cypher_normalized = cypher_normalized[:-1].rstrip()
+
+        has_params = params is not None
+        return_cols = cypher_return_columns(cypher_query)
+        as_clause_str = ", ".join(f'"{c}" agtype' for c in return_cols)
+
+        if has_params:
+            runnable_sql = (
+                f"SELECT * FROM ag_catalog.cypher("
+                f"%(graph_name)s::text, %(cypher_query)s::text, %(params)s::agtype"
+                f") AS ({as_clause_str})"
+            )
+            run_params: dict = {
+                "graph_name": validated_graph_name,
+                "cypher_query": cypher_normalized,
+                "params": params,
+            }
+        else:
+            runnable_sql = (
+                f"SELECT * FROM ag_catalog.cypher("
+                f"%(graph_name)s::text, %(cypher_query)s::text"
+                f") AS ({as_clause_str})"
+            )
+            run_params = {
+                "graph_name": validated_graph_name,
+                "cypher_query": cypher_normalized,
+            }
+
+        query_hash = hashlib.sha256(cypher_normalized.encode()).hexdigest()[:8]
+        logger.info(
+            "stream_cypher: graph=%s, query_hash=%s, chunk_size=%d",
+            validated_graph_name,
+            query_hash,
+            chunk_size,
+        )
+
+        async with conn.cursor(name=cursor_name) as cur:
+            await cur.execute(runnable_sql, run_params)
+            while True:
+                rows = await cur.fetchmany(chunk_size)
+                if not rows:
+                    break
+                yield rows

@@ -8,7 +8,7 @@ import httpx
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from app.core.errors import APIException, ErrorCode
+from app.core.errors import ErrorCode
 from app.core.middleware import (
     MetricsMiddleware,
     RateLimitMiddleware,
@@ -179,13 +179,17 @@ class TestRateLimitPerUser:
         yield call
 
     @pytest.mark.asyncio
-    async def test_per_user_rate_limit_raises_429_after_n_calls(self, per_user_dispatch):
-        """rate_limit_per_user + 1 calls → final call raises APIException(429).
+    async def test_per_user_rate_limit_returns_429_after_n_calls(self, per_user_dispatch):
+        """rate_limit_per_user + 1 calls → final call returns a 429 JSON response.
 
         Without the fix the middleware reads ``user_id`` from the cookie
         session (which never holds it), keeps ``user_id = None``, and
         therefore never enters the per-user branch -- all 3 calls succeed
         and the cap is silently unreachable.
+
+        The middleware now returns JSONResponse(429) directly rather than
+        raising APIException, because BaseHTTPMiddleware converts raised
+        exceptions to 500s before FastAPI's error handlers can intercept them.
         """
         from app.core.auth import session_manager
 
@@ -196,10 +200,14 @@ class TestRateLimitPerUser:
         assert r1.status_code == 200
         r2 = await per_user_dispatch(_make_request(session=session))
         assert r2.status_code == 200
-        with pytest.raises(APIException) as exc_info:
-            await per_user_dispatch(_make_request(session=session))
-        assert exc_info.value.status_code == 429
-        assert exc_info.value.code == ErrorCode.RATE_LIMITED
+        r3 = await per_user_dispatch(_make_request(session=session))
+        assert r3.status_code == 429
+        body = r3.body
+        import json
+
+        payload = json.loads(body)
+        assert payload["error"]["code"] == ErrorCode.RATE_LIMITED
+        assert payload["error"]["retryable"] is True
 
     @pytest.mark.asyncio
     async def test_per_user_buckets_are_independent(self, per_user_dispatch):
@@ -213,17 +221,15 @@ class TestRateLimitPerUser:
             assert (
                 await per_user_dispatch(_make_request(session={"session_id": sid_a}))
             ).status_code == 200
-        with pytest.raises(APIException) as exc_a:
-            await per_user_dispatch(_make_request(session={"session_id": sid_a}))
-        assert exc_a.value.status_code == 429
+        r_a = await per_user_dispatch(_make_request(session={"session_id": sid_a}))
+        assert r_a.status_code == 429
 
         for _ in range(2):
             assert (
                 await per_user_dispatch(_make_request(session={"session_id": sid_b}))
             ).status_code == 200
-        with pytest.raises(APIException) as exc_b:
-            await per_user_dispatch(_make_request(session={"session_id": sid_b}))
-        assert exc_b.value.status_code == 429
+        r_b = await per_user_dispatch(_make_request(session={"session_id": sid_b}))
+        assert r_b.status_code == 429
 
     @pytest.mark.asyncio
     async def test_unknown_session_id_does_not_enforce_per_user_quota(self, per_user_dispatch):

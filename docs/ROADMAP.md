@@ -409,7 +409,7 @@ What moves Kotte from "feature complete v0.1" to something a user would prefer o
 
 **Goal:** Make the force-directed graph readable at a glance (direction, density, self-edges) and scale past “SVG comfort” without rewriting `ResultTab` / store contracts.
 
-**Current baseline (2026):** `GraphView.tsx` uses d3-force and draws links as SVG `<line>` elements (`container.selectAll('line')` under a `.links` group). Nodes are circles; zoom lives on the SVG container. Edge color/width comes from `getEdgeStyle` + path highlights. No arrowheads, no curves, no alternate renderer.
+**Current baseline (2026-04):** `GraphView.tsx` uses d3-force, SVG `<path>` links (`graphLinkPaths.ts`: rim-trimmed quadratics, parallel offsets, self-loops), `marker-end` arrowheads, and a transparent `link-hit` stroke for picking. Zoom is d3-zoom on the root `<svg>`. **C2.4** adds a second render path when counts exceed a threshold so the DOM does not hold tens of thousands of SVG nodes.
 
 #### Recommended delivery order
 
@@ -420,7 +420,7 @@ Work top-to-bottom; each phase is shippable on its own.
 | **C2.1** | Arrowheads + marker strategy | **Shipped (2026-04):** `<defs>` + `markerUnits="userSpaceOnUse"`; one marker per distinct edge stroke color (`markerIdForColor`); `marker-end` on link paths. |
 | **C2.2** | Curved links + parallel-edge offset | **Shipped (2026-04):** `graphLinkPaths.ts` — quadratic Bézier, control-point offset by parallel index among directed `(source,target)` groups; endpoints shortened by node radii. |
 | **C2.3** | Self-loops | **Shipped (2026-04):** same module — symmetric loop above node; stacked offsets when multiple self-edges share a node. |
-| **C2.4** | Canvas / Pixi fallback | Gate on `nodes.length` (and optionally `edges.length`) — align with `settingsStore` `maxNodesForGraph` story so the threshold is user-tunable later. Same `GraphViewProps`; internally `GraphView` chooses SVG vs `GraphCanvas`. |
+| **C2.4** | Canvas / Pixi fallback | See **§C2.4** below — phased scaffolding, shared simulation, canvas draw loop, input parity, export; threshold + hysteresis; optional `dynamic import()` to limit bundle impact. |
 | **C2.5** | Minimap | Read node positions from the same simulation (or shared ref); render a coarse overview; `d3-zoom` transform sync (brush or drag on minimap). |
 | **C2.6** | Lasso multi-select | `d3-brush` (or polygon lasso) with modifier key; selection feeds `useGraphStore` or local selection callback — **decide in implementation** whether lasso adds to `selectedNode` / pin set or only highlights; document behaviour in `ARCHITECTURE` or `GraphControls`. |
 
@@ -441,12 +441,63 @@ Work top-to-bottom; each phase is shippable on its own.
 
 - When resolved `source === target`, draw an arc from the node surface, out and back (e.g. control point offset by `(0, -radius-offset)`). Ensure arrowhead orientation matches traversal direction if the data model implies one.
 
-#### C2.4 — Canvas / Pixi (technical)
+#### C2.4 — Canvas / Pixi fallback (technical plan)
 
-- **Contract:** `GraphCanvas.tsx` (name as needed) receives the same props as `GraphView`; no changes to `ResultTab` beyond optional size props already passed.
-- **State:** Share layout positions: either run the same d3 simulation and pass positions to canvas, or extract a `useGraphLayout` hook used by both (harder but cleaner).
-- **Interactivity:** Reimplement pick (node/edge), zoom/pan (d3-zoom on overlay or Pixi viewport), and context menu coordinates — budget extra time; this is the largest phase.
-- **Threshold:** Start with a constant (e.g. 1500 nodes) + console-free degradation; wire to settings in a follow-up if C2.4 runs long.
+**Problem:** SVG forces one DOM node per visual primitive. Past roughly **1.5k–3k** edges (hardware-dependent), layout and pan/zoom stutter even if `maxNodesForGraph` in `settingsStore` allows a larger cap (today up to 100k in settings UI). C2.4 keeps **one React boundary** (`GraphView` / `GraphViewProps`) while swapping the **drawing surface**.
+
+##### Renderer choice (decision record)
+
+| Option | Pros | Cons |
+|--------|------|------|
+| **Canvas 2D** | No new major dependency; `stroke`/`fill`, `Path2D` where supported; matches existing “imperative loop” style in `GraphView`. | Text labels need manual `fillText` or off-screen cache; hi-DPI = `devicePixelRatio` bookkeeping. |
+| **PixiJS** | Fast batched sprites, good for 10k+ nodes; ecosystem (viewport plugins). | +bundle weight; second API to learn; WebGL fallbacks. |
+
+**Recommendation:** Start with **Canvas 2D** inside a dedicated `GraphCanvas.tsx` (or `GraphViewCanvas.tsx`). Revisit Pixi only if profiling shows GPU-bound fill rate or if we need particle-level effects. Document the choice in `docs/ARCHITECTURE.md` when the PR lands.
+
+##### Threshold and hysteresis
+
+- **Primary gate:** `filteredNodes.length >= T` **or** `filteredEdges.length >= T_edge` (edges often dominate cost). Initial constants e.g. `T = 1500`, `T_edge = 4000` — tune after profiling.
+- **Settings integration:** Do **not** equate `T` with `maxNodesForGraph` from `settingsStore`: the latter is “hard cap / flip to table” territory; canvas threshold should be **lower** so users who raised the cap still get a **responsive** graph when under the cap.
+- **Hysteresis:** When `n` hovers around `T`, avoid flipping SVG ↔ canvas every filter tick: e.g. switch to canvas at `T`, switch back to SVG only when `n < T - δ` (δ ~ 10–15% of `T`).
+- **UI hint (optional):** Subtle badge or `title` on the graph chrome: “Canvas mode (performance)” when active — helps support and debugging.
+
+##### Shared layout (single source of truth for x/y)
+
+- **Preferred:** Extract a small module or hook **`useForceLayout`** (name TBD) that:
+  - Accepts the same filtered node/edge inputs + layout mode + pin/focus behaviour as today’s `GraphView` effect.
+  - Runs `d3.forceSimulation` + `forceLink` and exposes **`nodesRef` / positions readable on tick** and **`simulationRef`** for stop/restart.
+- **SVG path:** Current `GraphView` effect consumes positions for D3 selections.
+- **Canvas path:** A `requestAnimationFrame` or simulation `tick` listener **invalidates** a frame flag; one draw pass reads latest `x,y` from the same node objects (mutated in place by d3, as today).
+- **Do not** fork two simulations — one graph, two views.
+
+##### C2.4 sub-phases (merge as one PR or slice across 2 PRs)
+
+| Sub-phase | Deliverable |
+|-----------|-------------|
+| **C2.4a** | `GraphView` branch: `useCanvas = shouldUseCanvas(n, e, T, hysteresis)`; mount either existing SVG effect **or** canvas subtree; **no** feature regressions when `useCanvas` is false. |
+| **C2.4b** | `GraphCanvas`: full-viewport canvas, DPR scaling, clear + draw nodes (circles) and edges. Reuse **`linkPath`** + `parallelEdgeMeta` — build `Path2D` from the returned `d` where supported, else parse or fallback to manual quadratic (duplicate minimal drawer only if needed). Draw arrowheads with **canvas triangles** at path end (tangent from last segment) or precomputed tip from `linkPath` (extend module if necessary). |
+| **C2.4c** | Input parity: **pan/zoom** (reuse `d3-zoom` on a transparent overlay or map wheel/drag to transform matrix); **node click / dblclick / contextmenu** with client → world coords; **edge pick** (iterate edges, distance-to-segment test in world space, or coarse grid index); respect `selectedNode`, `pathHighlights`, pin styling from store. |
+| **C2.4d** | **Export:** `useGraphExport` today targets SVG — add `canvas.toBlob` / `toDataURL` path when in canvas mode; keep `onExportReady` contract. **Camera focus** (`cameraFocusAnchorIds`): same zoom-to-bounds math as SVG, applied to canvas transform. |
+
+##### Performance notes
+
+- **Draw order:** Edges under nodes; optional **level-of-detail**: skip edge labels or thin strokes when zoomed out.
+- **Throttling:** Cap simulation `tick` → paint at **60fps** max; coalesce multiple ticks per frame.
+- **Memory:** Reuse arrays/Maps for edge geometry; avoid allocating new `Path2D` every frame — rebuild when topology or styles change, not every tick.
+- **Bundle:** Optional **`import()`** of `GraphCanvas` so the main chunk does not pay for canvas-only helpers until first crossing of `T`.
+
+##### Testing and risk
+
+- **Unit tests:** Geometry helpers (world transform, hit-test distance) in isolation; keep existing `graphLinkPaths` tests green.
+- **Component tests:** Stub canvas `getContext` if needed; assert branch selection (SVG vs canvas) from props + threshold.
+- **Risks:** Right-click menu positioning, accessibility (canvas has no DOM nodes — ensure **focusable off-screen stub** or toolbar actions remain usable per WCAG strategy you adopt), **Safari** `Path2D` + SVG path string support — keep a fallback stroke implementation.
+
+##### Acceptance (C2.4)
+
+- With node count **above** threshold, graph **pans/zooms** and **select / double-click / right-click / edge click** still invoke the same callbacks as SVG mode.
+- With count **below** threshold, behaviour is **unchanged** from current SVG (C2.1–C2.3).
+- **Export** produces a raster when in canvas mode; SVG export remains when in SVG mode.
+- No increase in **forced table-only** behaviour: `maxNodesForGraph` / `vizDisabledReason` logic in `WorkspacePage` / `ResultTab` stays authoritative for “too big to visualize at all”.
 
 #### C2.5 — Minimap (technical)
 

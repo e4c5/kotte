@@ -3,11 +3,11 @@
 import asyncio
 import hashlib
 import logging
-import re
 import time
 import uuid
 from typing import Annotated
 
+import psycopg.errors
 from fastapi import APIRouter, Depends
 
 from app.core.auth import get_session
@@ -117,19 +117,13 @@ async def execute_query(
             status_code=404,
         )
 
-    # Safe mode: reject mutating queries if enabled
-    if settings.query_safe_mode:
-        cypher_upper = request.cypher.upper()
-        mutating_pattern = re.compile(r"\b(CREATE|DELETE|SET|REMOVE|MERGE|DETACH)\b")
-        if mutating_pattern.search(cypher_upper):
-            raise APIException(
-                code=ErrorCode.QUERY_VALIDATION_ERROR,
-                message="Mutating queries are not allowed in safe mode",
-                category=ErrorCategory.VALIDATION,
-                status_code=422,
-            )
-
     # Log what the user submitted verbatim (for debugging query execution)
+    if request.mutation_confirmed:
+        logger.info(
+            "Query execute: mutation_confirmed=True for user %s (graph=%s)",
+            user_id,
+            validated_graph_name,
+        )
     logger.info(
         "Query execute: graph=%s, cypher_len=%s, params=%s",
         validated_graph_name,
@@ -143,6 +137,11 @@ async def execute_query(
     query_start_time = time.time()
     try:
         async with db_conn.connection() as exec_conn:
+            # Safe mode: enforce read-only at the DB level so PG rejects mutations
+            # regardless of what the Cypher text contains.
+            if settings.query_safe_mode:
+                await exec_conn.execute("SET TRANSACTION READ ONLY")
+
             try:
                 backend_pid = await db_conn.get_backend_pid(conn=exec_conn)
                 if backend_pid:
@@ -278,6 +277,14 @@ async def execute_query(
             visualization_warning=visualization_warning,
         )
 
+    except psycopg.errors.ReadOnlySqlTransaction:
+        query_tracker.unregister_query(request_id)
+        raise APIException(
+            code=ErrorCode.QUERY_VALIDATION_ERROR,
+            message="Mutating queries are not allowed in safe mode",
+            category=ErrorCategory.VALIDATION,
+            status_code=422,
+        )
     except asyncio.TimeoutError:
         # Query timeout
         query_tracker.unregister_query(request_id)

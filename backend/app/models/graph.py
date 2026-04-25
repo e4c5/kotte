@@ -1,6 +1,6 @@
 """Graph-related models."""
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -70,6 +70,13 @@ class NodeExpandRequest(BaseModel):
 
     depth: int = Field(default=1, ge=1, le=5, description="Expansion depth (1-5)")
     limit: int = Field(default=100, ge=1, le=1000, description="Maximum nodes to return (1-1000)")
+    edge_labels: Optional[List[str]] = Field(
+        default=None,
+        description="Restrict expansion to these relationship types. None = all types.",
+    )
+    direction: Literal["in", "out", "both"] = Field(
+        default="both", description="Traversal direction relative to the source node."
+    )
 
 
 class NodeExpandResponse(BaseModel):
@@ -79,6 +86,14 @@ class NodeExpandResponse(BaseModel):
     edges: List[Dict[str, Any]] = Field(..., description="Expanded edges")
     node_count: int = Field(..., description="Number of nodes returned")
     edge_count: int = Field(..., description="Number of edges returned")
+    truncated: bool = Field(
+        default=False,
+        description="True when the result was capped at the requested limit; there may be more neighbours.",
+    )
+    total_neighbours: int = Field(
+        default=0,
+        description="Total distinct neighbours matching the request filters (cheap count, not limited).",
+    )
 
 
 class NodeDeleteRequest(BaseModel):

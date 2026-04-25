@@ -69,7 +69,16 @@ interface QueryState {
     graph: string,
     query: string,
     params?: Record<string, unknown>,
-    forVisualization?: boolean
+    forVisualization?: boolean,
+    mutationConfirmed?: boolean
+  ) => Promise<void>
+  /** Stream a query, accumulating rows into the tab's result incrementally. */
+  streamQuery: (
+    tabId: string,
+    graph: string,
+    query: string,
+    params?: Record<string, unknown>,
+    mutationConfirmed?: boolean
   ) => Promise<void>
   cancelQuery: (tabId: string) => Promise<void>
 
@@ -110,6 +119,9 @@ interface QueryState {
 const generateTabName = (index: number): string => {
   return `Query ${index}`
 }
+
+// AbortControllers are not serialisable so they live outside zustand/persist.
+const _streamAbortControllers = new Map<string, AbortController>()
 
 export const useQueryStore = create<QueryState>()(
   persist(
@@ -270,7 +282,8 @@ export const useQueryStore = create<QueryState>()(
           graph: string,
           query: string,
           params?: Record<string, unknown>,
-          forVisualization: boolean = false
+          forVisualization: boolean = false,
+          mutationConfirmed: boolean = false
         ) => {
           get().updateTab(tabId, { loading: true, error: null, requestId: null, graph })
 
@@ -280,6 +293,7 @@ export const useQueryStore = create<QueryState>()(
               cypher: query,
               params: params || {},
               for_visualization: forVisualization,
+              mutation_confirmed: mutationConfirmed,
             }
             const result = await queryAPI.execute(request)
 
@@ -312,7 +326,81 @@ export const useQueryStore = create<QueryState>()(
           }
         },
 
+        streamQuery: async (
+          tabId: string,
+          graph: string,
+          query: string,
+          params?: Record<string, unknown>,
+          _mutationConfirmed: boolean = false
+        ) => {
+          // Abort any in-flight stream for this tab before starting a new one.
+          _streamAbortControllers.get(tabId)?.abort()
+          const controller = new AbortController()
+          _streamAbortControllers.set(tabId, controller)
+
+          get().updateTab(tabId, {
+            loading: true,
+            error: null,
+            requestId: null,
+            graph,
+            result: null,
+            previousGraphElements: null,
+          })
+
+          let accumulatedRows: unknown[] = []
+          let columns: string[] = []
+
+          try {
+            for await (const chunk of queryAPI.stream(
+              { graph, cypher: query, params: params || {} },
+              controller.signal
+            )) {
+              if (controller.signal.aborted) break
+
+              if (columns.length === 0 && chunk.columns.length > 0) {
+                columns = chunk.columns
+              }
+              accumulatedRows = accumulatedRows.concat(chunk.rows)
+
+              // Update the tab with accumulated rows so TableView re-renders incrementally.
+              get().updateTab(tabId, {
+                result: {
+                  columns,
+                  rows: accumulatedRows as QueryExecuteResponse['rows'],
+                  row_count: accumulatedRows.length,
+                  request_id: '',
+                },
+                loading: chunk.has_more,
+                lastActivity: Date.now(),
+              })
+            }
+
+            if (!controller.signal.aborted) {
+              get().updateTab(tabId, { loading: false, requestId: null })
+              get().addToHistory(query)
+            }
+          } catch (error) {
+            if (controller.signal.aborted) {
+              get().updateTab(tabId, { loading: false, requestId: null })
+              return
+            }
+            const message = error instanceof Error ? error.message : 'Streaming failed'
+            get().updateTab(tabId, { error: message, loading: false, requestId: null })
+          } finally {
+            _streamAbortControllers.delete(tabId)
+          }
+        },
+
         cancelQuery: async (tabId: string) => {
+          // Abort any in-progress stream first (no round-trip needed).
+          const ctrl = _streamAbortControllers.get(tabId)
+          if (ctrl) {
+            ctrl.abort()
+            _streamAbortControllers.delete(tabId)
+            get().updateTab(tabId, { loading: false, requestId: null })
+            return
+          }
+
           const tab = get().tabs.find(t => t.id === tabId)
           if (!tab || !tab.requestId) {
             return

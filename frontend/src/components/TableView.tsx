@@ -96,8 +96,14 @@ export default function TableView({
   return (
     <div className="flex flex-col h-full">
       <div className="flex justify-between items-center px-4 py-3 border-b border-zinc-700 bg-zinc-900/80 text-zinc-300 text-sm">
-        <div>
+        <div className="flex items-center gap-2">
           Showing {paginatedRows.length} of {rows.length} rows
+          {streaming && (
+            <span className="inline-flex items-center gap-1 text-xs text-blue-400 animate-pulse">
+              <span className="w-1.5 h-1.5 rounded-full bg-blue-400 inline-block" />
+              streaming
+            </span>
+          )}
         </div>
         <div className="flex gap-2">
           <button

@@ -16,6 +16,10 @@ class QueryExecuteRequest(BaseModel):
         default=False,
         description="If true, LIMIT is added to Cypher when absent to cap result size",
     )
+    mutation_confirmed: bool = Field(
+        default=False,
+        description="Set by the UI after the user explicitly confirms a mutating query",
+    )
 
 
 class QueryResultRow(BaseModel):

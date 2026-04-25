@@ -4,12 +4,28 @@
 
 import apiClient, { ensureCsrfToken } from './api'
 
+export interface QueryTemplateParamSchema {
+  type: 'integer' | 'string' | 'number'
+  default?: unknown
+  description?: string
+}
+
+export interface QueryTemplate {
+  id: string
+  name: string
+  description: string
+  cypher: string
+  params: Record<string, unknown>
+  param_schema: Record<string, QueryTemplateParamSchema>
+}
+
 export interface QueryExecuteRequest {
   graph: string
   cypher: string
   params?: Record<string, unknown>
   options?: Record<string, unknown>
   for_visualization?: boolean
+  mutation_confirmed?: boolean
 }
 
 export interface QueryResultRow {
@@ -71,6 +87,11 @@ export interface QueryStreamChunk {
 }
 
 export const queryAPI = {
+  listTemplates: async (): Promise<QueryTemplate[]> => {
+    const response = await apiClient.get<QueryTemplate[]>('/queries/templates')
+    return response.data
+  },
+
   execute: async (request: QueryExecuteRequest): Promise<QueryExecuteResponse> => {
     const response = await apiClient.post<QueryExecuteResponse>(
       '/queries/execute',
@@ -88,7 +109,8 @@ export const queryAPI = {
   },
 
   stream: async function* (
-    request: QueryStreamRequest
+    request: QueryStreamRequest,
+    signal?: AbortSignal
   ): AsyncGenerator<QueryStreamChunk, void, unknown> {
     const csrfToken = (await ensureCsrfToken()) || sessionStorage.getItem('csrf_token') || ''
     const response = await fetch('/api/v1/queries/stream', {
@@ -99,6 +121,7 @@ export const queryAPI = {
       },
       credentials: 'include',
       body: JSON.stringify(request),
+      signal,
     })
 
     if (!response.ok) {
@@ -116,12 +139,13 @@ export const queryAPI = {
 
     try {
       while (true) {
+        if (signal?.aborted) break
         const { done, value } = await reader.read()
         if (done) break
 
         buffer += decoder.decode(value, { stream: true })
         const lines = buffer.split('\n')
-        buffer = lines.pop() || '' // Keep incomplete line in buffer
+        buffer = lines.pop() || ''
 
         for (const line of lines) {
           if (line.trim()) {
@@ -136,7 +160,7 @@ export const queryAPI = {
       }
 
       // Process remaining buffer
-      if (buffer.trim()) {
+      if (buffer.trim() && !signal?.aborted) {
         try {
           const chunk = JSON.parse(buffer) as QueryStreamChunk
           yield chunk

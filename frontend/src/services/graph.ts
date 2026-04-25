@@ -50,6 +50,10 @@ export interface MetaGraphResponse {
 export interface NodeExpandRequest {
   depth?: number
   limit?: number
+  /** Restrict expansion to these relationship types. Omit to traverse all types. */
+  edge_labels?: string[]
+  /** Traversal direction relative to the source node. Default: 'both'. */
+  direction?: 'in' | 'out' | 'both'
 }
 
 export interface GraphNode {
@@ -73,6 +77,10 @@ export interface NodeExpandResponse {
   edges: GraphEdge[]
   node_count: number
   edge_count: number
+  /** True when the result was capped at the limit; more neighbours may exist. */
+  truncated: boolean
+  /** Total distinct neighbours matching the request filters (not limited). */
+  total_neighbours: number
 }
 
 export interface NodeDeleteRequest {

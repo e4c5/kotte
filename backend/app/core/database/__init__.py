@@ -1,7 +1,7 @@
 """Database connection management (Facade)."""
 
 import logging
-from typing import Optional
+from typing import AsyncGenerator, Optional
 
 import psycopg
 
@@ -70,4 +70,18 @@ class DatabaseConnection(BaseConnection):
         """Execute a Cypher query via Apache AGE."""
         return await self._cypher_executor.execute_cypher(
             graph_name, cypher_query, params, time_limit_seconds, conn=conn
+        )
+
+    def stream_cypher(
+        self,
+        graph_name: str,
+        cypher_query: str,
+        chunk_size: int,
+        cursor_name: str,
+        conn: psycopg.AsyncConnection,
+        params: Optional[dict] = None,
+    ) -> AsyncGenerator[list[dict], None]:
+        """Return an async generator that streams Cypher results via a server-side cursor."""
+        return self._cypher_executor.stream_cypher(
+            graph_name, cypher_query, chunk_size, cursor_name, conn, params
         )

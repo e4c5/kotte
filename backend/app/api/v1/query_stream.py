@@ -5,6 +5,7 @@ import logging
 import uuid
 from typing import Annotated, AsyncGenerator, Optional
 
+import psycopg.errors
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 
@@ -64,14 +65,6 @@ def _stream_cap_error_chunk(max_rows: int) -> str:
     return json.dumps(error_chunk) + "\n"
 
 
-def _strip_trailing_semicolon(cypher_query: str) -> str:
-    """Return Cypher text without trailing semicolon."""
-    cypher_base = cypher_query.rstrip()
-    if cypher_base.endswith(";"):
-        return cypher_base[:-1].rstrip()
-    return cypher_base
-
-
 async def stream_query_results(
     graph_name: str,
     cypher_query: str,
@@ -109,6 +102,10 @@ async def stream_query_results(
             )
 
         async with db_conn.connection() as exec_conn:
+            # Safe mode: DB-level enforcement — mutations raise ReadOnlySqlTransaction (25006).
+            if settings.query_safe_mode:
+                await exec_conn.execute("SET TRANSACTION READ ONLY")
+
             try:
                 backend_pid = await db_conn.get_backend_pid(conn=exec_conn)
                 if backend_pid:
@@ -116,121 +113,61 @@ async def stream_query_results(
             except Exception as e:
                 logger.warning("Failed to get backend PID for stream tracking: %s", e)
 
-            # Pass params through unchanged: None → 2-arg cypher(); {} or non-empty → 3-arg
-            # (CypherExecutor uses `params is not None`, not truthiness.)
-
-            # Build SQL query with LIMIT and OFFSET for pagination
-            # Note: We need to wrap the original query in a subquery to add LIMIT/OFFSET
-            # This is a simplified approach - for complex queries, we might need to parse the Cypher
-            # and inject LIMIT/OFFSET at the Cypher level
-            # For now, we'll use a cursor-based approach by modifying the Cypher query
-            # to add LIMIT and SKIP clauses
-
-            # Check if query already has LIMIT/SKIP
-            cypher_upper = cypher_query.upper()
-            has_limit = "LIMIT" in cypher_upper
-            has_skip = "SKIP" in cypher_upper or "OFFSET" in cypher_upper
-
-            # We'll stream by fetching chunks with LIMIT/SKIP and enforce a max result cap.
-            current_offset = offset
-            all_columns = None
+            # Use a psycopg server-side cursor to stream results without materialising
+            # the full result set in Python memory.  Queries that already contain their
+            # own LIMIT/SKIP are still streamed the same way — the server-side cursor
+            # stops naturally when the Cypher engine stops producing rows.
+            all_columns: Optional[list[str]] = None
             max_rows = settings.query_max_result_rows
             emitted_rows = 0
+            current_offset = offset
 
-            if has_limit or has_skip:
-                # Query already controls result window; execute once and stream in-memory chunks.
-                # The full LIMIT/SKIP window is materialized before chunking (large LIMIT values
-                # can still use significant RAM). Prefer unpaginated Cypher plus this endpoint's
-                # SKIP/LIMIT loop for very large scans.
-                # Ignore request offset here to avoid double-applying SKIP/OFFSET.
-                stream_offset = 0
-                raw_rows = await db_conn.execute_cypher(
-                    validated_graph_name,
-                    cypher_query,
-                    params=params,
-                    time_limit_seconds=settings.query_timeout,
-                    conn=exec_conn,
-                )
+            # cursor names must be unique within a connection; tie to request_id.
+            cursor_name = f"kotte_stream_{request_id.replace('-', '_')}"
 
-                parsed_rows, all_columns = _parse_raw_rows(raw_rows)
-                capped_rows = parsed_rows[stream_offset : stream_offset + max_rows]
-                for start in range(0, len(capped_rows), chunk_size):
-                    chunk_rows = capped_rows[start : start + chunk_size]
-                    has_more = start + chunk_size < len(capped_rows)
-                    yield _chunk_to_ndjson(all_columns, chunk_rows, stream_offset + start, has_more)
-
-                if len(parsed_rows) - stream_offset > max_rows:
-                    yield _stream_cap_error_chunk(max_rows)
-                return
-
-            while True:
+            async for raw_batch in db_conn.stream_cypher(
+                validated_graph_name,
+                cypher_query,
+                chunk_size,
+                cursor_name,
+                exec_conn,
+                params=params,
+            ):
                 remaining = max_rows - emitted_rows
                 if remaining <= 0:
+                    yield _stream_cap_error_chunk(max_rows)
                     return
 
-                # Add SKIP and LIMIT to the query using parameters
-                cypher_base = _strip_trailing_semicolon(cypher_query)
-                fetch_limit = min(chunk_size, remaining)
-                modified_cypher = f"{cypher_base} SKIP $__skip LIMIT $__limit"
-
-                # Update params with skip/limit
-                exec_params = dict(params) if params is not None else {}
-                exec_params["__skip"] = current_offset
-                exec_params["__limit"] = fetch_limit
-
-                # Execute via literal SQL (execute_cypher)
-                raw_rows = await db_conn.execute_cypher(
-                    validated_graph_name,
-                    modified_cypher,
-                    params=exec_params,
-                    time_limit_seconds=settings.query_timeout,
-                    conn=exec_conn,
-                )
-
-                # Parse agtype results
-                parsed_rows, chunk_columns = _parse_raw_rows(raw_rows)
-
-                # Set columns from first chunk
+                parsed_rows, chunk_columns = _parse_raw_rows(raw_batch)
                 if all_columns is None:
                     all_columns = chunk_columns
 
-                # Convert to QueryResultRow format
-                n = len(parsed_rows)
-                chunk_emitted_after = emitted_rows + n
-                has_more = (n == fetch_limit) and (chunk_emitted_after < max_rows)
+                capped = parsed_rows[:remaining]
+                emitted_rows += len(capped)
+                # has_more=True only if this chunk was full AND we haven't hit the cap.
+                has_more = (len(parsed_rows) == chunk_size) and (emitted_rows < max_rows)
+                yield _chunk_to_ndjson(all_columns, capped, current_offset, has_more)
+                current_offset += len(capped)
 
-                # Yield chunk as JSON line
-                yield _chunk_to_ndjson(all_columns, parsed_rows, current_offset, has_more)
-                emitted_rows += n
-
-                if emitted_rows >= max_rows:
-                    if n == fetch_limit:  # Might be more rows, probe 1 row
-                        probe_params = dict(exec_params)
-                        probe_params["__skip"] = current_offset + n
-                        probe_params["__limit"] = 1
-                        more_rows = await db_conn.execute_cypher(
-                            validated_graph_name,
-                            modified_cypher,
-                            params=probe_params,
-                            time_limit_seconds=settings.query_timeout,
-                            conn=exec_conn,
-                        )
-                        if more_rows:
-                            yield _stream_cap_error_chunk(max_rows)
+                # If the batch contained rows beyond the cap we know truncation happened
+                # without needing to fetch the next batch.  For the edge case where a
+                # full batch exactly fills the cap we rely on the next loop iteration:
+                # if the cursor has more rows, remaining==0 triggers the error there;
+                # if the cursor is exhausted the loop ends cleanly with no false positive.
+                if len(parsed_rows) > len(capped):
+                    yield _stream_cap_error_chunk(max_rows)
                     return
-
-                if n < fetch_limit:
-                    break
-
-                current_offset += fetch_limit
-
-                # Safety fallback
-                if current_offset >= 1_000_000:
-                    logger.warning(f"Streaming stopped at {current_offset} rows (safety limit)")
-                    break
 
     except APIException:
         raise
+    except psycopg.errors.ReadOnlySqlTransaction:
+        error_chunk = {
+            "error": {
+                "code": ErrorCode.QUERY_VALIDATION_ERROR,
+                "message": "Mutating queries are not allowed in safe mode",
+            }
+        }
+        yield json.dumps(error_chunk) + "\n"
     except Exception as e:
         logger.exception("Error streaming query results", extra={"error": str(e)})
         api_exc = translate_db_error(
