@@ -12,6 +12,7 @@ import { getNodeStyle, getEdgeStyle, getNodeCaption, getEdgeCaption } from '../u
 import { linkPath, parallelEdgeMeta, type LinkPathResult } from '../utils/graphLinkPaths'
 import type { GraphNode, GraphEdge, PathHighlights } from './GraphView'
 import GraphMinimap from './GraphMinimap'
+import LassoActionBar from './LassoActionBar'
 
 // ── geometry helpers ──────────────────────────────────────────────────────────
 
@@ -82,7 +83,14 @@ interface DragState {
   node: GraphNode
   didMove: boolean
 }
-type PointerState = IdleState | PanState | DragState
+interface LassoState {
+  type: 'lasso'
+  x0: number
+  y0: number
+  x1: number
+  y1: number
+}
+type PointerState = IdleState | PanState | DragState | LassoState
 
 const ZOOM_MIN = 0.05
 const ZOOM_MAX = 20
@@ -145,9 +153,15 @@ export default function GraphCanvas({
     selectedNode,
     pinnedNodes,
     hiddenNodes,
+    lassoNodes,
     cameraFocusAnchorIds,
     clearCameraFocusAnchorIds,
   } = useGraphStore()
+
+  // Trigger redraw whenever lasso selection changes.
+  useEffect(() => {
+    dirtyRef.current = true
+  }, [lassoNodes])
 
   // Mirror the same filter logic from GraphView.
   const filteredNodes = useMemo(() => {
@@ -440,6 +454,37 @@ export default function GraphCanvas({
       }
 
       ctx.globalAlpha = 1
+
+      // Lasso rings — dashed outline around each lasso-selected node (world space)
+      const lasso = useGraphStore.getState().lassoNodes
+      if (lasso.size > 0) {
+        ctx.setLineDash([4, 3])
+        ctx.lineWidth = 2
+        ctx.strokeStyle = '#60a5fa'
+        for (const node of filteredNodes) {
+          if (!lasso.has(node.id)) continue
+          const style = getNodeStyle(node, nodeStyles)
+          ctx.beginPath()
+          ctx.arc(node.x ?? vw / 2, node.y ?? vh / 2, style.size + 5, 0, Math.PI * 2)
+          ctx.stroke()
+        }
+        ctx.setLineDash([])
+      }
+
+      // Lasso drag rect — drawn in screen space after resetting transform
+      if (pointerState.type === 'lasso') {
+        const { x0, y0, x1, y1 } = pointerState
+        const rx = Math.min(x0, x1), ry = Math.min(y0, y1)
+        const rw = Math.abs(x1 - x0), rh = Math.abs(y1 - y0)
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+        ctx.fillStyle = 'rgba(96,165,250,0.08)'
+        ctx.fillRect(rx, ry, rw, rh)
+        ctx.strokeStyle = '#60a5fa'
+        ctx.lineWidth = 1
+        ctx.setLineDash([4, 2])
+        ctx.strokeRect(rx, ry, rw, rh)
+        ctx.setLineDash([])
+      }
     }
 
     drawRef.current = draw
@@ -513,7 +558,10 @@ export default function GraphCanvas({
       el.setPointerCapture(e.pointerId)
       const [wx, wy] = toWorld(e.offsetX, e.offsetY)
       const hn = hitNode(wx, wy)
-      if (hn) {
+      if (e.shiftKey && !hn) {
+        pointerState = { type: 'lasso', x0: e.offsetX, y0: e.offsetY, x1: e.offsetX, y1: e.offsetY }
+        el.style.cursor = 'crosshair'
+      } else if (hn) {
         pointerState = { type: 'drag', node: hn, didMove: false }
         el.style.cursor = 'grabbing'
         if (layout === 'force') {
@@ -529,7 +577,10 @@ export default function GraphCanvas({
     }
 
     function onPointerMove(e: PointerEvent) {
-      if (pointerState.type === 'pan') {
+      if (pointerState.type === 'lasso') {
+        pointerState = { ...pointerState, x1: e.offsetX, y1: e.offsetY }
+        dirtyRef.current = true
+      } else if (pointerState.type === 'pan') {
         const dx = e.offsetX - pointerState.startX
         const dy = e.offsetY - pointerState.startY
         transformRef.current = { ...transformRef.current, x: pointerState.startTx + dx, y: pointerState.startTy + dy }
@@ -552,7 +603,22 @@ export default function GraphCanvas({
     function onPointerUp(e: PointerEvent) {
       if (e.button !== 0) return
       el.style.cursor = 'grab'
-      if (pointerState.type === 'drag') {
+      if (pointerState.type === 'lasso') {
+        const { x0, y0, x1, y1 } = pointerState
+        const { x: tx, y: ty, k } = transformRef.current
+        const sx0 = Math.min(x0, x1), sy0 = Math.min(y0, y1)
+        const sx1 = Math.max(x0, x1), sy1 = Math.max(y0, y1)
+        const wx0 = (sx0 - tx) / k, wy0 = (sy0 - ty) / k
+        const wx1 = (sx1 - tx) / k, wy1 = (sy1 - ty) / k
+        const hitSet = new Set<string>()
+        for (const n of nodesArr) {
+          const nx = n.x ?? 0, ny = n.y ?? 0
+          if (nx >= wx0 && nx <= wx1 && ny >= wy0 && ny <= wy1) hitSet.add(n.id)
+        }
+        useGraphStore.getState().setLassoNodes(hitSet)
+        pointerState = { type: 'idle' }
+        dirtyRef.current = true
+      } else if (pointerState.type === 'drag') {
         const { node, didMove } = pointerState
         if (!didMove) {
           const now = Date.now()
@@ -578,6 +644,7 @@ export default function GraphCanvas({
           const [wx, wy] = toWorld(e.offsetX, e.offsetY)
           const he = hitEdge(wx, wy)
           if (he) onEdgeClickRef.current?.(he)
+          else useGraphStore.getState().clearLassoNodes()
         }
       }
       pointerState = { type: 'idle' }
@@ -590,11 +657,16 @@ export default function GraphCanvas({
       if (hn) onNodeRightClickRef.current?.(hn, e)
     }
 
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') useGraphStore.getState().clearLassoNodes()
+    }
+
     el.addEventListener('wheel', onWheel, { passive: false })
     el.addEventListener('pointerdown', onPointerDown)
     el.addEventListener('pointermove', onPointerMove)
     el.addEventListener('pointerup', onPointerUp)
     el.addEventListener('contextmenu', onContextMenu)
+    window.addEventListener('keydown', onKeyDown)
 
     return () => {
       sim.stop()
@@ -609,6 +681,7 @@ export default function GraphCanvas({
       el.removeEventListener('pointermove', onPointerMove)
       el.removeEventListener('pointerup', onPointerUp)
       el.removeEventListener('contextmenu', onContextMenu)
+      window.removeEventListener('keydown', onKeyDown)
       drawRef.current = null
     }
   }, [
@@ -719,6 +792,7 @@ export default function GraphCanvas({
   return (
     <div className="w-full h-full bg-zinc-950 relative">
       <canvas ref={canvasRef} className="block" style={{ cursor: 'grab' }} />
+      <LassoActionBar filteredNodes={filteredNodes} onNodeDoubleClick={onNodeDoubleClick} />
       <GraphMinimap
         nodes={filteredNodes}
         viewportWidth={resolvedSize.width}

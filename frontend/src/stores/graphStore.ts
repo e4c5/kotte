@@ -78,6 +78,9 @@ interface GraphState {
   togglePinNode: (nodeId: string) => void
   hiddenNodes: Set<string>
   toggleHideNode: (nodeId: string) => void
+  lassoNodes: Set<string>
+  setLassoNodes: (ids: Set<string>) => void
+  clearLassoNodes: () => void
 
   // Camera focus (ROADMAP A11 phase 2). Populated by `WorkspacePage` after
   // an additive double-click expand merges new neighbours into the canvas;
@@ -130,6 +133,7 @@ export const useGraphStore = create<GraphState>()(
       selectedEdge: null,
       pinnedNodes: new Set(),
       hiddenNodes: new Set(),
+      lassoNodes: new Set(),
       cameraFocusAnchorIds: [],
       graphMetadata: null,
 
@@ -262,6 +266,11 @@ export const useGraphStore = create<GraphState>()(
           }
           return { hiddenNodes: newSet }
         }),
+
+      setLassoNodes: (ids) => set({ lassoNodes: ids }),
+
+      clearLassoNodes: () =>
+        set((state) => (state.lassoNodes.size === 0 ? state : { lassoNodes: new Set() })),
 
       setCameraFocusAnchorIds: (ids) =>
         set({ cameraFocusAnchorIds: Array.from(new Set(ids)) }),
