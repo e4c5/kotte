@@ -422,7 +422,7 @@ Work top-to-bottom; each phase is shippable on its own.
 | **C2.3** | Self-loops | **Shipped (2026-04):** same module — symmetric loop above node; stacked offsets when multiple self-edges share a node. |
 | **C2.4** | Canvas / Pixi fallback | **Shipped (2026-04-26):** `GraphCanvas.tsx` — Canvas 2D with d3-force, `Path2D` edges, arrowheads, pan/zoom, drag, click/dblclick/contextmenu, edge hit-test, camera focus, PNG export. Threshold `ENTER=1500 EXIT=1350` total elements; hysteresis in `GraphView`. |
 | **C2.5** | Minimap | **Shipped (2026-04-25):** `GraphMinimap.tsx` — DPR-aware secondary canvas (160×120), ~10 fps RAF loop, node dots colored by label via `getNodeLabelColor`, viewport rect from inverse of current transform, click to center / drag to pan. Wired into both SVG (`GraphView`) and Canvas (`GraphCanvas`) renderers via `getTransform`/`setTransform` callbacks. |
-| **C2.6** | Lasso multi-select | `Shift+drag` rectangular lasso on canvas background → `lassoNodes: Set<string>` in `graphStore`; dashed-ring highlight in both SVG and Canvas renderers; bulk-action bar (Pin all / Hide all / Expand all / Clear). No d3-brush dependency — manual AABB hit-test. |
+| **C2.6** | Lasso multi-select | **Shipped (2026-04-26):** `Shift+drag` rectangular lasso on canvas background → `lassoNodes: Set<string>` in `graphStore`; dashed-ring highlight in both SVG and Canvas renderers; `LassoActionBar.tsx` bulk-action strip (Pin all / Hide all / Expand all / Clear). No d3-brush — manual AABB hit-test. |
 
 #### C2.1 — Arrowheads (technical)
 
@@ -507,57 +507,9 @@ Work top-to-bottom; each phase is shippable on its own.
 
 **Status (2026-04-25):** shipped. `GraphMinimap.tsx` — 160×120 DPR-aware `<canvas>` positioned `absolute left-3 bottom-3`; world bbox computed from live d3-mutated node positions each frame; `scaleM` + centred offsets map world → minimap; node dots 2px radius colored by `getNodeLabelColor`; viewport rect derived as `(0−tx)/k … (vw−tx)/k`; ~10 fps RAFloop (ts delta > 100 ms). Pointer: drag → delta in world space applied to `setTransform`; click (< 5 px) → `toWorld` → center viewport. `GraphView` (SVG mode) wires `getTransform` from `zoomTransformRef.current` and `setTransform` via `zoom.transform` on `svgSelectionRef`; `GraphCanvas` wires both through `transformRef` + `dirtyRef`.
 
-#### C2.6 — Lasso multi-select (technical plan)
+#### C2.6 — Lasso multi-select (technical)
 
-**Goal:** let users drag-select a group of nodes; the selection feeds bulk actions (pin-all, hide-all, expand-all) via the existing context-menu / toolbar.
-
-##### Selection model (decision record)
-
-Store a `lassoNodes: Set<string>` in `graphStore` (separate from `selectedNode`, which remains single-node for the detail panel). The lasso adds to this set; clicking the canvas background clears it. The set drives:
-- A distinct visual highlight (dashed ring) on each lassoed node in both SVG and Canvas renderers.
-- A bulk-action bar that appears at the top of the graph when `lassoNodes.size > 0`: "Pin all · Hide all · Expand all · Clear selection".
-
-Lasso does **not** replace `selectedNode`; a single click while lasso nodes are visible keeps both active simultaneously.
-
-##### Trigger
-
-`Shift + drag` on the canvas background (not on a node). This preserves the default pan gesture (bare drag) and node drag (drag on a node). In both renderers, the `onPointerDown` path checks `e.shiftKey && !hitNode(wx, wy)` to enter lasso mode.
-
-##### SVG renderer (`GraphView.tsx`)
-
-- On `Shift+pointerdown` on the SVG background: begin a `<rect class="lasso-rect">` overlay element in the container `<g>` (or a fixed SVG overlay layer at `z-index` above nodes).
-- On `pointermove`: update `x/y/width/height` of the rect; compute hit nodes each frame using an AABB pre-check against the rect bounds (world space).
-- On `pointerup`: finalise the set, call `store.setLassoNodes(hitSet)`; remove the rect.
-- Highlight: add a second `<circle>` or `stroke-dasharray` ring around each lassoed node (driven by `lassoNodes` via the standard d3 `data` join, updated in `applyPositions`).
-
-##### Canvas renderer (`GraphCanvas.tsx`)
-
-- `pointerState` union gains a new `lasso` variant: `{ type: 'lasso', x0, y0, x1, y1 }` (screen coords, updated on `pointermove`).
-- `draw()` renders the lasso rect as a dashed stroke overlay after nodes (world-space rect converted to screen coords via the current transform).
-- Lasso nodes computed in `draw()` from world-space AABB; highlighted with a dashed ring (two `arc` passes: fill, then `setLineDash([4,3])` stroke).
-- On `pointerup`: call `store.setLassoNodes(hitSet)`.
-
-##### Store additions (`graphStore.ts`)
-
-```ts
-lassoNodes: Set<string>          // currently lasso-selected node ids
-setLassoNodes: (ids: Set<string>) => void
-clearLassoNodes: () => void
-```
-
-`setLassoNodes` **replaces** (not appends) the set on each lasso completion; Shift+click on a second lasso region starts fresh. `clearLassoNodes` called on background click or Escape keydown.
-
-##### Bulk-action bar (`GraphView.tsx` / new `LassoActionBar.tsx`)
-
-- Absolute-positioned strip at the top of the graph container (`z-20`), visible only when `lassoNodes.size > 0`.
-- Actions: **Pin all** → `store.togglePinNode` for each id; **Hide all** → `store.toggleHideNode` for each; **Expand all** → fires `onNodeDoubleClick` callback for each (reuses the existing expansion flow); **Clear** → `store.clearLassoNodes()`.
-- Expand all skips nodes already having edges in `filteredEdges` (to avoid redundant expansions).
-
-##### Non-goals / defer
-
-- Polygon (freehand) lasso — rectangle is sufficient and far simpler.
-- Shift+click to add individual nodes to the lasso set (can be added later on top of this).
-- Canvas mode hit-test uses AABB only (no per-pixel test needed for rectangular lasso).
+**Status (2026-04-26):** shipped. `lassoNodes: Set<string>` added to `graphStore` with `setLassoNodes` (replaces the set each drag) and `clearLassoNodes` (background click or Escape). Zoom `.filter()` in `GraphView` excludes `shift+pointerdown` so bare pan is unaffected. SVG renderer: `Shift+drag` appends a dashed `<rect>` to a screen-space `<g class="lasso-overlay">`; on `pointerup` an AABB world-coord hit-test populates the set; `updateLassoRings()` (stored in `updateLassoRingsRef`) does a d3 `join` on a `<g class="lasso-rings">` inside the container to add/remove dashed-stroke `<circle>` rings; a separate `useEffect([lassoNodes])` calls it for external clears; `applyPositions` keeps ring cx/cy in sync during simulation ticks. Canvas renderer: `LassoState { type, x0, y0, x1, y1 }` added to `PointerState` union; `draw()` renders the live rect in screen space and dashed rings in world space using `setLineDash([4,3])`; `useEffect([lassoNodes]) → dirtyRef.current = true` forces redraw on external change. `LassoActionBar.tsx` (new): absolute strip at top-center, visible when `lassoNodes.size > 0`; actions: **Pin all** (`togglePinNode`), **Hide all** (`toggleHideNode` + clear), **Expand all** (`onNodeDoubleClick` per node), **✕** (clear). Rendered in both `GraphView` and `GraphCanvas` return trees.
 
 #### Acceptance (whole C2)
 
@@ -565,7 +517,7 @@ clearLassoNodes: () => void
 - Multi-edge between two nodes: **visually separable** (C2.2).
 - Self-relationships: **visible** (C2.3).
 - With N above threshold: UI remains **usable** (pan/zoom/select) via canvas path (C2.4).
-- Optional: minimap and lasso behave without breaking existing **pin, hide, expand, export** flows.
+- Minimap and lasso behave without breaking existing **pin, hide, expand, export** flows. ✓ (C2.5–C2.6 shipped)
 
 #### Non-goals for C2 (defer)
 
@@ -712,7 +664,7 @@ Toggle `- [ ]` → `- [x]` as items ship, and add a short **Status** line under 
 ### Milestone C — Make it a graph product
 
 - [x] **C1** — CodeMirror 6 Cypher editor (Neo4j mode + graph-catalog schema completion — see C1 section)
-- [ ] **C2** — Visualization upgrades — **C2.1–C2.5 shipped** (arrows, curves, self-loops, Canvas 2D fallback, minimap); **C2.6** pending (lasso); see §C2 above
+- [x] **C2** — Visualization upgrades — **C2.1–C2.6 all shipped** (arrows, curves, self-loops, Canvas 2D fallback, minimap, lasso multi-select); see §C2 above
 - [x] **C3** — Streaming end-to-end (server-side cursor NDJSON; store accumulation; streaming indicator; cap + safe-mode guards — 2026-04-25)
 - [x] **C4** — Schema sidebar 2.0 (collapsible label rows, property type inference + indexed badges, Sample/Match actions, LibraryPanel — 2026-04-26)
 - [x] **C5** — Saved queries / templates UI (LibraryPanel + `queryAPI.listTemplates` + params pre-fill — 2026-04-25)
