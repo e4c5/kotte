@@ -57,9 +57,22 @@ function NodeLabelRow({ label, onQueryTemplate }: NodeLabelRowProps) {
               {label.properties.map((p) => (
                 <span
                   key={p}
-                  className="px-1.5 py-0.5 rounded bg-zinc-700 text-zinc-300 font-mono"
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-zinc-700 text-zinc-300 font-mono"
                 >
                   {p}
+                  {label.property_types?.[p] && (
+                    <span className="text-zinc-500 font-sans text-[10px]">
+                      {label.property_types[p]}
+                    </span>
+                  )}
+                  {label.indexed_properties?.includes(p) && (
+                    <span
+                      className="text-[9px] px-0.5 rounded bg-amber-900/60 text-amber-400 font-sans leading-none"
+                      title="Indexed"
+                    >
+                      idx
+                    </span>
+                  )}
                 </span>
               ))}
             </div>
@@ -132,9 +145,22 @@ function EdgeLabelRow({ label, onQueryTemplate }: EdgeLabelRowProps) {
               {label.properties.map((p) => (
                 <span
                   key={p}
-                  className="px-1.5 py-0.5 rounded bg-zinc-700 text-zinc-300 font-mono"
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-zinc-700 text-zinc-300 font-mono"
                 >
                   {p}
+                  {label.property_types?.[p] && (
+                    <span className="text-zinc-500 font-sans text-[10px]">
+                      {label.property_types[p]}
+                    </span>
+                  )}
+                  {label.indexed_properties?.includes(p) && (
+                    <span
+                      className="text-[9px] px-0.5 rounded bg-amber-900/60 text-amber-400 font-sans leading-none"
+                      title="Indexed"
+                    >
+                      idx
+                    </span>
+                  )}
                 </span>
               ))}
             </div>

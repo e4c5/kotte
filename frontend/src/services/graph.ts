@@ -13,6 +13,8 @@ export interface NodeLabel {
   label: string
   count: number
   properties: string[]
+  property_types?: Record<string, string>
+  indexed_properties?: string[]
 }
 
 export interface PropertyStatistics {
@@ -25,6 +27,8 @@ export interface EdgeLabel {
   label: string
   count: number
   properties: string[]
+  property_types?: Record<string, string>
+  indexed_properties?: string[]
   property_statistics?: PropertyStatistics[]
 }
 

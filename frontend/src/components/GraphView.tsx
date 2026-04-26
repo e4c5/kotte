@@ -5,6 +5,13 @@ import { initializeLayout } from '../utils/graphLayouts'
 import { getNodeStyle, getEdgeStyle, getNodeCaption, getEdgeCaption } from '../utils/graphStyles'
 import { linkPath, markerIdForColor, parallelEdgeMeta, type LinkPathResult } from '../utils/graphLinkPaths'
 import { useGraphExport } from '../hooks/useGraphExport'
+import GraphCanvas from './GraphCanvas'
+
+// Switch to Canvas 2D renderer above this threshold (total nodes + edges).
+// Lower than maxNodesForGraph so users with a raised cap still get a
+// responsive canvas before the hard result limit kicks in.
+const CANVAS_THRESHOLD_ENTER = 1500
+const CANVAS_THRESHOLD_EXIT = 1350
 
 export interface GraphNode {
   id: string
@@ -90,6 +97,7 @@ export default function GraphView({
   const onEdgeClickRef = useRef<typeof onEdgeClick>(onEdgeClick)
   const [debugFitScale, setDebugFitScale] = useState<number | null>(null)
   const [resolvedSize, setResolvedSize] = useState({ width, height })
+  const [canvasMode, setCanvasMode] = useState(false)
   const {
     layout,
     nodeStyles,
@@ -154,6 +162,14 @@ export default function GraphView({
       return visibleNodeIds.has(sourceId) && visibleNodeIds.has(targetId)
     })
   }, [edges, filters, hiddenNodes, filteredNodes])
+
+  // Canvas-mode hysteresis: switch to canvas above ENTER threshold, back to SVG only when
+  // count drops below EXIT threshold. Avoids oscillation when count hovers around the boundary.
+  useEffect(() => {
+    const total = filteredNodes.length + filteredEdges.length
+    if (!canvasMode && total >= CANVAS_THRESHOLD_ENTER) setCanvasMode(true)
+    if (canvasMode && total < CANVAS_THRESHOLD_EXIT) setCanvasMode(false)
+  }, [filteredNodes.length, filteredEdges.length, canvasMode])
 
   useEffect(() => {
     userZoomedRef.current = false
@@ -602,6 +618,31 @@ export default function GraphView({
     if (!el) return
     const current = d3.zoomTransform(el), nextScale = Math.max(0.05, Math.min(20, current.k * factor))
     svg.call(zoom.scaleTo, nextScale, [resolvedSize.width / 2, resolvedSize.height / 2])
+  }
+
+  if (canvasMode) {
+    return (
+      <div className="w-full h-full bg-zinc-950 relative">
+        <div
+          className="absolute left-2 top-2 z-10 pointer-events-none rounded border border-zinc-600/60 bg-zinc-800/70 px-2 py-0.5 text-[10px] text-zinc-400 font-mono"
+          title="Canvas renderer active for performance"
+        >
+          Canvas mode
+        </div>
+        <GraphCanvas
+          nodes={nodes}
+          edges={edges}
+          width={width}
+          height={height}
+          pathHighlights={pathHighlights}
+          onNodeClick={onNodeClick}
+          onNodeDoubleClick={onNodeDoubleClick}
+          onNodeRightClick={onNodeRightClick}
+          onEdgeClick={onEdgeClick}
+          onExportReady={onExportReady}
+        />
+      </div>
+    )
   }
 
   return (

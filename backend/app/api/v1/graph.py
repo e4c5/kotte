@@ -108,10 +108,24 @@ async def get_graph_metadata(
                 count = await MetadataService.get_exact_counts(
                     db_conn, validated_graph_name, validated_label_name, "v"
                 )
-            properties = await MetadataService.discover_properties(
-                db_conn, validated_graph_name, validated_label_name, "v"
+            properties, property_types, indexed_properties = await asyncio.gather(
+                MetadataService.discover_properties(
+                    db_conn, validated_graph_name, validated_label_name, "v"
+                ),
+                MetadataService.infer_property_types(
+                    db_conn, validated_graph_name, validated_label_name, "v"
+                ),
+                MetadataService.get_indexed_properties(
+                    db_conn, validated_graph_name, validated_label_name
+                ),
             )
-            return NodeLabel(label=label_name, count=int(count), properties=properties)
+            return NodeLabel(
+                label=label_name,
+                count=int(count),
+                properties=properties,
+                property_types=property_types,
+                indexed_properties=indexed_properties,
+            )
 
         node_labels: list[NodeLabel] = list(
             await asyncio.gather(*[build_node_label(row) for row in node_label_rows])
@@ -141,8 +155,16 @@ async def get_graph_metadata(
                     db_conn, validated_graph_name, validated_label_name, "e"
                 )
 
-            properties = await MetadataService.discover_properties(
-                db_conn, validated_graph_name, validated_label_name, "e"
+            properties, property_types, indexed_properties = await asyncio.gather(
+                MetadataService.discover_properties(
+                    db_conn, validated_graph_name, validated_label_name, "e"
+                ),
+                MetadataService.infer_property_types(
+                    db_conn, validated_graph_name, validated_label_name, "e"
+                ),
+                MetadataService.get_indexed_properties(
+                    db_conn, validated_graph_name, validated_label_name
+                ),
             )
 
             numeric_stats = await MetadataService.get_numeric_property_statistics_for_label(
@@ -164,6 +186,8 @@ async def get_graph_metadata(
                 label=label_name,
                 count=int(count),
                 properties=properties,
+                property_types=property_types,
+                indexed_properties=indexed_properties,
                 property_statistics=property_stats,
             )
 

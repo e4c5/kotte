@@ -522,18 +522,19 @@ Work top-to-bottom; each phase is shippable on its own.
 
 ### C3. Streaming end-to-end
 
-- `ResultTab` decides between `executeQuery` and `streamQuery` based on a row threshold (e.g. `> 5000` rows expected, or always for `viewMode='table'`).
-- `TableView` already accepts `streaming`/`onLoadMore`; wire them.
-- `frontend/src/services/query.ts`: add `AbortSignal` to `stream()`. Hook to a Cancel button.
-- Backend `query_stream.py:144-229`: replace the materialise-then-chunk path with a real `psycopg` server-side cursor (`async with conn.cursor(name='kotte_stream')`), iterating chunks of N.
+**Status (2026-04-25, bundled with C4–C7 in one session):** shipped. Backend `query_stream.py` replaced the materialise-then-chunk path with a real psycopg server-side cursor (`stream_cypher` facade on `DatabaseConnection`); each batch is yielded as an NDJSON line. Cap logic uses within-batch overflow detection (`len(parsed_rows) > len(capped)`) to avoid false positives at the exact-max boundary. `SET TRANSACTION READ ONLY` guard added for `query_safe_mode`. Frontend: `queryStore` gained `streamQuery` accumulating chunks into the tab result incrementally; `_streamAbortControllers` map (outside zustand persist) is aborted on cancel; `WorkspacePage` routes table-view tabs through `streamQuery` and graph-view tabs through `executeQuery`; `TableView` shows a pulsing "streaming" indicator while `tab.loading` is true. Six backend tests in `test_query_stream.py` were rewritten to mock the `stream_cypher` async-generator with `_make_stream_gen` / `_stream_mock_db` helpers.
 
 ### C4. Schema sidebar 2.0
 
 - In `MetadataSidebar.tsx`, expand each label into a collapsible panel showing properties (already in the `GraphMetadata` type, just unrendered), property types from sampling, an "indexed" badge from `pg_indexes`, and "Sample 5 rows" + "Generate match query" actions.
 
+**Status (2026-04-25, partial):** collapsible label rows shipped — `NodeLabelRow` and `EdgeLabelRow` sub-components each have a toggled panel with property name chips, count, colored dot/arrow, and "Sample 5" + "Match all" action buttons that pre-fill the editor. **Remaining:** property type inference (sample nodes → infer `string / integer / float / boolean / list / map` from parsed agtype values; cache under `types:{graph}:{label}:{kind}`); indexed-property badge (query `pg_indexes` for `properties->>'key'` expression indexes per label; expose as `indexed_properties: List[str]` on `NodeLabel`/`EdgeLabel`; render key badge in sidebar chip). Plan: add `property_types: Dict[str, str]` and `indexed_properties: List[str]` fields to backend models (backward-compat alongside existing `properties: List[str]`), two new `MetadataService` methods run concurrently via `asyncio.gather` in the metadata endpoint, update TS interfaces and chip rendering in `MetadataSidebar.tsx`.
+
 ### C5. Saved queries / templates UI
 
 - `services/query_templates.py` already exposes templates; add a left-rail Library panel with categories. Click → fill editor with the template; render a parameter form from `param_schema`.
+
+**Status (2026-04-25):** shipped. `LibraryPanel` sub-component in `MetadataSidebar.tsx` fetches templates on mount via `queryAPI.listTemplates()` (new `GET /queries/templates` call added to `services/query.ts`). Each template row is collapsible: collapsed shows name + description; expanded shows the cypher with "Use template" button. Clicking pre-fills the editor and, if the template has `params`, serialises them as JSON into the params field. `WorkspacePage.handleQueryTemplate(query, params?)` calls `setParams(params)` when provided.
 
 ### C6. Read-only mode that's safe
 
@@ -541,6 +542,8 @@ Work top-to-bottom; each phase is shippable on its own.
   - **Server-side enforcement**: open the cypher() call in a `BEGIN; SET TRANSACTION READ ONLY; ...` block, and let PG reject mutations. Catch the `read_only_sql_transaction` SQLSTATE (25006) and translate to `QUERY_VALIDATION_ERROR`.
   - **Or** integrate a Cypher parser library and walk the AST for write clauses.
 - Add a `mutation_confirmed` boolean to the request schema for the explicit-mutation path; UI shows a confirmation modal listing affected labels before sending.
+
+**Status (2026-04-25):** shipped. Server-side enforcement chosen for both the regular execute path (`query.py`) and the stream path (`query_stream.py`): first statement in each `db_conn.connection()` context is `SET TRANSACTION READ ONLY` when `settings.query_safe_mode` is true; `psycopg.errors.ReadOnlySqlTransaction` (SQLSTATE 25006) caught and surfaced as `QUERY_VALIDATION_ERROR` (422 for execute, NDJSON error chunk for stream). Regex block removed from `query.py`. Frontend: `MUTATION_RE = /\b(CREATE|DELETE|SET|REMOVE|MERGE|DETACH)\b/i` detects mutations before execute; confirmation modal (amber "Yes, proceed") sets `mutationConfirmed` flag. `mutation_confirmed: bool` field added to `QueryExecuteRequest` model; logged at INFO when true. Tests: `test_execute_query_safe_mode_rejects_mutation_via_read_only_transaction` in `test_query_execute.py`.
 
 ### C7. Expand options popover + truncation indicator
 
@@ -558,6 +561,8 @@ Builds on **A11**. Today expansion is hard-coded to "all relationship types, bot
 - **Frontend (nice-to-have)** — when the metadata sidebar already knows a node's degree (from the meta-graph endpoint), draw a small numeric badge on each node showing how many neighbours are still hidden. Requires a small `count_hidden_neighbours` helper that diffs `total_neighbours` against currently-visible incident edges.
 
 **Acceptance:** Right-click → expand popover lets the user pick edge type and direction. Hitting a 100-row cap renders a "100 of N" badge that re-opens the popover. The default depth-1 path still works unchanged when no options are passed.
+
+**Status (2026-04-25):** shipped. Backend: `NodeExpandRequest` extended with `edge_labels: Optional[List[str]]` and `direction: Literal['in','out','both']`; `NodeExpandResponse` extended with `truncated: bool` and `total_neighbours: int` (cheap `count(DISTINCT m)` query). Frontend: `ExpandOptionsPopover.tsx` (new component) — direction toggle (Both/Outgoing/Incoming), depth buttons (1/2), limit input, edge-label checkboxes; screen-edge collision detection. `NodeContextMenu` gained `onExpandOptions?: (nodeId, x, y) => void` prop. `ResultTab` wires the popover and renders a truncation badge when `truncated` is true. `TableView` shows a "streaming" pulse indicator.
 
 ---
 
@@ -656,11 +661,11 @@ Toggle `- [ ]` → `- [x]` as items ship, and add a short **Status** line under 
 
 - [x] **C1** — CodeMirror 6 Cypher editor (Neo4j mode + graph-catalog schema completion — see C1 section)
 - [ ] **C2** — Visualization upgrades — **C2.1–C2.3 shipped** (directed arrows, curved multi-edges, self-loops in `GraphView` + `graphLinkPaths.ts`); **C2.4–C2.6** pending (canvas/Pixi, minimap, lasso); see §C2 above
-- [ ] **C3** — Streaming end-to-end
-- [ ] **C4** — Schema sidebar 2.0
-- [ ] **C5** — Saved queries / templates UI
-- [ ] **C6** — Read-only mode that's safe
-- [ ] **C7** — Expand options popover + truncation indicator (depends on **A11**)
+- [x] **C3** — Streaming end-to-end (server-side cursor NDJSON; store accumulation; streaming indicator; cap + safe-mode guards — 2026-04-25)
+- [ ] **C4** — Schema sidebar 2.0 — **collapsible label rows + Sample/Match actions shipped (2026-04-25)**; property type inference + indexed badge pending (see §C4)
+- [x] **C5** — Saved queries / templates UI (LibraryPanel + `queryAPI.listTemplates` + params pre-fill — 2026-04-25)
+- [x] **C6** — Read-only mode that's safe (`SET TRANSACTION READ ONLY`; mutation confirmation modal; `mutation_confirmed` field — 2026-04-25)
+- [x] **C7** — Expand options popover + truncation indicator (`ExpandOptionsPopover`, direction/depth/limit/edge-label controls, truncation badge — 2026-04-25)
 
 ### Milestone D — Multi-user, multi-tenant, observable
 

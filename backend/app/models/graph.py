@@ -18,6 +18,14 @@ class NodeLabel(BaseModel):
     label: str
     count: int
     properties: List[str] = Field(default_factory=list)
+    property_types: Dict[str, str] = Field(
+        default_factory=dict,
+        description="Inferred property type per key: string/integer/float/boolean/list/map/unknown",
+    )
+    indexed_properties: List[str] = Field(
+        default_factory=list,
+        description="Property keys that have a pg_indexes expression index",
+    )
 
 
 class PropertyStatistics(BaseModel):
@@ -34,6 +42,14 @@ class EdgeLabel(BaseModel):
     label: str
     count: int
     properties: List[str] = Field(default_factory=list)
+    property_types: Dict[str, str] = Field(
+        default_factory=dict,
+        description="Inferred property type per key: string/integer/float/boolean/list/map/unknown",
+    )
+    indexed_properties: List[str] = Field(
+        default_factory=list,
+        description="Property keys that have a pg_indexes expression index",
+    )
     property_statistics: List[PropertyStatistics] = Field(
         default_factory=list,
         description="Min/max for numeric edge properties when sample data yields values",
