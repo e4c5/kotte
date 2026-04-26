@@ -1,4 +1,4 @@
-import { useEffect, useRef, useMemo, useState } from 'react'
+import { useEffect, useRef, useMemo, useState, useCallback } from 'react'
 import * as d3 from 'd3'
 import { useGraphStore } from '../stores/graphStore'
 import { initializeLayout } from '../utils/graphLayouts'
@@ -6,6 +6,7 @@ import { getNodeStyle, getEdgeStyle, getNodeCaption, getEdgeCaption } from '../u
 import { linkPath, markerIdForColor, parallelEdgeMeta, type LinkPathResult } from '../utils/graphLinkPaths'
 import { useGraphExport } from '../hooks/useGraphExport'
 import GraphCanvas from './GraphCanvas'
+import GraphMinimap from './GraphMinimap'
 
 // Switch to Canvas 2D renderer above this threshold (total nodes + edges).
 // Lower than maxNodesForGraph so users with a raised cap still get a
@@ -620,6 +621,24 @@ export default function GraphView({
     svg.call(zoom.scaleTo, nextScale, [resolvedSize.width / 2, resolvedSize.height / 2])
   }
 
+  const getTransform = useCallback(
+    () => ({
+      x: zoomTransformRef.current.x,
+      y: zoomTransformRef.current.y,
+      k: zoomTransformRef.current.k,
+    }),
+    [],
+  )
+
+  const setTransform = useCallback((t: { x: number; y: number; k: number }) => {
+    const svg = svgSelectionRef.current
+    const zoom = zoomBehaviorRef.current
+    if (!svg || !zoom) return
+    applyingAutoTransformRef.current = true
+    svg.call(zoom.transform, d3.zoomIdentity.translate(t.x, t.y).scale(t.k))
+    applyingAutoTransformRef.current = false
+  }, [])
+
   if (canvasMode) {
     return (
       <div className="w-full h-full bg-zinc-950 relative">
@@ -652,6 +671,13 @@ export default function GraphView({
           GraphView marker: 2026-04-21-c2-v4 | prop:{width}x{height} | view:{resolvedSize.width}x{resolvedSize.height} | fit:{debugFitScale?.toFixed(2) ?? 'n/a'}
         </div>
       )}
+      <GraphMinimap
+        nodes={filteredNodes}
+        viewportWidth={resolvedSize.width}
+        viewportHeight={resolvedSize.height}
+        getTransform={getTransform}
+        setTransform={setTransform}
+      />
       <div className="absolute right-3 bottom-3 z-20 flex items-center gap-1 rounded border border-zinc-700 bg-zinc-900/85 p-1">
         <button type="button" onClick={() => zoomBy(1.2)} className="h-8 w-8 rounded bg-zinc-800 text-zinc-200 hover:bg-zinc-700" aria-label="Zoom in" title="Zoom in">+</button>
         <button type="button" onClick={() => zoomBy(0.8)} className="h-8 w-8 rounded bg-zinc-800 text-zinc-200 hover:bg-zinc-700" aria-label="Zoom out" title="Zoom out">-</button>

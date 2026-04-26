@@ -11,6 +11,7 @@ import { initializeLayout } from '../utils/graphLayouts'
 import { getNodeStyle, getEdgeStyle, getNodeCaption, getEdgeCaption } from '../utils/graphStyles'
 import { linkPath, parallelEdgeMeta, type LinkPathResult } from '../utils/graphLinkPaths'
 import type { GraphNode, GraphEdge, PathHighlights } from './GraphView'
+import GraphMinimap from './GraphMinimap'
 
 // ── geometry helpers ──────────────────────────────────────────────────────────
 
@@ -678,6 +679,13 @@ export default function GraphCanvas({
     return () => cancelAnimationFrame(raf)
   }, [cameraFocusAnchorIds, filteredNodes, resolvedSize.width, resolvedSize.height, clearCameraFocusAnchorIds])
 
+  // ── minimap callbacks ─────────────────────────────────────────────────────────
+  const getTransform = useCallback(() => transformRef.current, [])
+  const setTransform = useCallback((t: { x: number; y: number; k: number }) => {
+    transformRef.current = t
+    dirtyRef.current = true
+  }, [])
+
   // ── zoom controls ─────────────────────────────────────────────────────────────
   const zoomBy = useCallback(
     (factor: number) => {
@@ -711,6 +719,13 @@ export default function GraphCanvas({
   return (
     <div className="w-full h-full bg-zinc-950 relative">
       <canvas ref={canvasRef} className="block" style={{ cursor: 'grab' }} />
+      <GraphMinimap
+        nodes={filteredNodes}
+        viewportWidth={resolvedSize.width}
+        viewportHeight={resolvedSize.height}
+        getTransform={getTransform}
+        setTransform={setTransform}
+      />
       <div className="absolute right-3 bottom-3 z-20 flex items-center gap-1 rounded border border-zinc-700 bg-zinc-900/85 p-1">
         <button
           type="button"

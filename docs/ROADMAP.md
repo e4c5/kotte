@@ -420,8 +420,8 @@ Work top-to-bottom; each phase is shippable on its own.
 | **C2.1** | Arrowheads + marker strategy | **Shipped (2026-04):** `<defs>` + `markerUnits="userSpaceOnUse"`; one marker per distinct edge stroke color (`markerIdForColor`); `marker-end` on link paths. |
 | **C2.2** | Curved links + parallel-edge offset | **Shipped (2026-04):** `graphLinkPaths.ts` — quadratic Bézier, control-point offset by parallel index among directed `(source,target)` groups; endpoints shortened by node radii. |
 | **C2.3** | Self-loops | **Shipped (2026-04):** same module — symmetric loop above node; stacked offsets when multiple self-edges share a node. |
-| **C2.4** | Canvas / Pixi fallback | See **§C2.4** below — phased scaffolding, shared simulation, canvas draw loop, input parity, export; threshold + hysteresis; optional `dynamic import()` to limit bundle impact. |
-| **C2.5** | Minimap | Read node positions from the same simulation (or shared ref); render a coarse overview; `d3-zoom` transform sync (brush or drag on minimap). |
+| **C2.4** | Canvas / Pixi fallback | **Shipped (2026-04-26):** `GraphCanvas.tsx` — Canvas 2D with d3-force, `Path2D` edges, arrowheads, pan/zoom, drag, click/dblclick/contextmenu, edge hit-test, camera focus, PNG export. Threshold `ENTER=1500 EXIT=1350` total elements; hysteresis in `GraphView`. |
+| **C2.5** | Minimap | **Shipped (2026-04-25):** `GraphMinimap.tsx` — DPR-aware secondary canvas (160×120), ~10 fps RAF loop, node dots colored by label via `getNodeLabelColor`, viewport rect from inverse of current transform, click to center / drag to pan. Wired into both SVG (`GraphView`) and Canvas (`GraphCanvas`) renderers via `getTransform`/`setTransform` callbacks. |
 | **C2.6** | Lasso multi-select | `d3-brush` (or polygon lasso) with modifier key; selection feeds `useGraphStore` or local selection callback — **decide in implementation** whether lasso adds to `selectedNode` / pin set or only highlights; document behaviour in `ARCHITECTURE` or `GraphControls`. |
 
 #### C2.1 — Arrowheads (technical)
@@ -499,9 +499,13 @@ Work top-to-bottom; each phase is shippable on its own.
 - **Export** produces a raster when in canvas mode; SVG export remains when in SVG mode.
 - No increase in **forced table-only** behaviour: `maxNodesForGraph` / `vizDisabledReason` logic in `WorkspacePage` / `ResultTab` stays authoritative for “too big to visualize at all”.
 
+**Status (2026-04-26):** shipped. `GraphCanvas.tsx` (new) — DPR-aware `<canvas>`, d3-force simulation identical to SVG path, `requestAnimationFrame` draw loop with dirty flag, `Path2D` for all edge curves (reuses `linkPath`/`parallelEdgeMeta`), triangle arrowheads via `parseTip` (extracts tip + tangent from the `Q cx cy x1 y1` path tail), manual wheel/pointer pan-zoom (no d3-zoom), pointer-based node drag (force + non-force), double-click via 300 ms window, edge hit-test via `ctx.isPointInStroke`, `contextmenu` right-click, camera-focus animation (eased RAF loop), `canvas.toBlob` PNG export. `GraphView.tsx` — `CANVAS_THRESHOLD_ENTER = 1500` / `CANVAS_THRESHOLD_EXIT = 1350` (total nodes + edges), `canvasMode` state with hysteresis `useEffect`, conditional render: canvas path shows “Canvas mode” badge and delegates to `<GraphCanvas>` with identical props; SVG path unchanged.
+
 #### C2.5 — Minimap (technical)
 
 - Secondary SVG or canvas; clone node positions at low frequency (on simulation `end` or throttled `tick`). Show viewport rectangle from inverse of current zoom transform. Click/drag on minimap → `zoom.transform`.
+
+**Status (2026-04-25):** shipped. `GraphMinimap.tsx` — 160×120 DPR-aware `<canvas>` positioned `absolute left-3 bottom-3`; world bbox computed from live d3-mutated node positions each frame; `scaleM` + centred offsets map world → minimap; node dots 2px radius colored by `getNodeLabelColor`; viewport rect derived as `(0−tx)/k … (vw−tx)/k`; ~10 fps RAFloop (ts delta > 100 ms). Pointer: drag → delta in world space applied to `setTransform`; click (< 5 px) → `toWorld` → center viewport. `GraphView` (SVG mode) wires `getTransform` from `zoomTransformRef.current` and `setTransform` via `zoom.transform` on `svgSelectionRef`; `GraphCanvas` wires both through `transformRef` + `dirtyRef`.
 
 #### C2.6 — Lasso (technical)
 
@@ -528,7 +532,7 @@ Work top-to-bottom; each phase is shippable on its own.
 
 - In `MetadataSidebar.tsx`, expand each label into a collapsible panel showing properties (already in the `GraphMetadata` type, just unrendered), property types from sampling, an "indexed" badge from `pg_indexes`, and "Sample 5 rows" + "Generate match query" actions.
 
-**Status (2026-04-25, partial):** collapsible label rows shipped — `NodeLabelRow` and `EdgeLabelRow` sub-components each have a toggled panel with property name chips, count, colored dot/arrow, and "Sample 5" + "Match all" action buttons that pre-fill the editor. **Remaining:** property type inference (sample nodes → infer `string / integer / float / boolean / list / map` from parsed agtype values; cache under `types:{graph}:{label}:{kind}`); indexed-property badge (query `pg_indexes` for `properties->>'key'` expression indexes per label; expose as `indexed_properties: List[str]` on `NodeLabel`/`EdgeLabel`; render key badge in sidebar chip). Plan: add `property_types: Dict[str, str]` and `indexed_properties: List[str]` fields to backend models (backward-compat alongside existing `properties: List[str]`), two new `MetadataService` methods run concurrently via `asyncio.gather` in the metadata endpoint, update TS interfaces and chip rendering in `MetadataSidebar.tsx`.
+**Status (2026-04-26):** fully shipped. Collapsible `NodeLabelRow`/`EdgeLabelRow` panels with property chips, Sample 5 / Match all buttons, `LibraryPanel` templates (C5). Property type inference added (2026-04-26): `MetadataService.infer_property_types` samples up to 20 nodes/edges, infers `string/integer/float/boolean/list/map/unknown` from parsed agtype values, cached under `types:{graph}:{label}:{kind}`. Indexed-property badge: `MetadataService.get_indexed_properties` queries `pg_indexes` for `properties->>'key'` expression index patterns, cached under `idx:{graph}:{label}`. Both run concurrently with `asyncio.gather` in `build_node_label`/`build_edge_label`. Backend models extended with `property_types: Dict[str, str]` and `indexed_properties: List[str]` (backward-compat). Frontend chips show type as muted suffix and `idx` amber badge. 8 new unit tests in `TestInferPropertyTypes` + `TestGetIndexedProperties`; cache invalidation test extended to cover new prefixes.
 
 ### C5. Saved queries / templates UI
 
@@ -660,9 +664,9 @@ Toggle `- [ ]` → `- [x]` as items ship, and add a short **Status** line under 
 ### Milestone C — Make it a graph product
 
 - [x] **C1** — CodeMirror 6 Cypher editor (Neo4j mode + graph-catalog schema completion — see C1 section)
-- [ ] **C2** — Visualization upgrades — **C2.1–C2.3 shipped** (directed arrows, curved multi-edges, self-loops in `GraphView` + `graphLinkPaths.ts`); **C2.4–C2.6** pending (canvas/Pixi, minimap, lasso); see §C2 above
+- [ ] **C2** — Visualization upgrades — **C2.1–C2.5 shipped** (arrows, curves, self-loops, Canvas 2D fallback, minimap); **C2.6** pending (lasso); see §C2 above
 - [x] **C3** — Streaming end-to-end (server-side cursor NDJSON; store accumulation; streaming indicator; cap + safe-mode guards — 2026-04-25)
-- [ ] **C4** — Schema sidebar 2.0 — **collapsible label rows + Sample/Match actions shipped (2026-04-25)**; property type inference + indexed badge pending (see §C4)
+- [x] **C4** — Schema sidebar 2.0 (collapsible label rows, property type inference + indexed badges, Sample/Match actions, LibraryPanel — 2026-04-26)
 - [x] **C5** — Saved queries / templates UI (LibraryPanel + `queryAPI.listTemplates` + params pre-fill — 2026-04-25)
 - [x] **C6** — Read-only mode that's safe (`SET TRANSACTION READ ONLY`; mutation confirmation modal; `mutation_confirmed` field — 2026-04-25)
 - [x] **C7** — Expand options popover + truncation indicator (`ExpandOptionsPopover`, direction/depth/limit/edge-label controls, truncation badge — 2026-04-25)
