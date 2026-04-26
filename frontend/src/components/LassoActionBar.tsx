@@ -1,17 +1,22 @@
+import { useState } from 'react'
 import { useGraphStore } from '../stores/graphStore'
 import type { GraphNode } from './GraphView'
 
+const MAX_EXPAND_BATCH = 20
+
 interface LassoActionBarProps {
   filteredNodes: GraphNode[]
-  onNodeDoubleClick?: (node: GraphNode) => void
+  onNodeDoubleClick?: (node: GraphNode) => void | Promise<void>
 }
 
 export default function LassoActionBar({ filteredNodes, onNodeDoubleClick }: LassoActionBarProps) {
   const { lassoNodes, togglePinNode, toggleHideNode, clearLassoNodes } = useGraphStore()
+  const [expanding, setExpanding] = useState(false)
 
   if (lassoNodes.size === 0) return null
 
   const nodeById = new Map(filteredNodes.map((n) => [n.id, n]))
+  const overLimit = lassoNodes.size > MAX_EXPAND_BATCH
 
   function pinAll() {
     lassoNodes.forEach((id) => togglePinNode(id))
@@ -22,12 +27,18 @@ export default function LassoActionBar({ filteredNodes, onNodeDoubleClick }: Las
     clearLassoNodes()
   }
 
-  function expandAll() {
-    if (!onNodeDoubleClick) return
-    lassoNodes.forEach((id) => {
-      const n = nodeById.get(id)
-      if (n) onNodeDoubleClick(n)
-    })
+  async function expandAll() {
+    if (!onNodeDoubleClick || expanding) return
+    setExpanding(true)
+    try {
+      const ids = Array.from(lassoNodes).slice(0, MAX_EXPAND_BATCH)
+      for (const id of ids) {
+        const n = nodeById.get(id)
+        if (n) await onNodeDoubleClick(n)
+      }
+    } finally {
+      setExpanding(false)
+    }
   }
 
   const btnCls =
@@ -43,7 +54,13 @@ export default function LassoActionBar({ filteredNodes, onNodeDoubleClick }: Las
         Hide all
       </button>
       {onNodeDoubleClick && (
-        <button type="button" onClick={expandAll} className={btnCls} title="Expand all selected nodes">
+        <button
+          type="button"
+          onClick={expandAll}
+          disabled={expanding}
+          className={btnCls}
+          title={overLimit ? `Only the first ${MAX_EXPAND_BATCH} nodes will be expanded` : 'Expand all selected nodes'}
+        >
           Expand all
         </button>
       )}

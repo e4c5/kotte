@@ -1,12 +1,12 @@
 # ROADMAP Validation Report
 
-_Generated: 2026-04-24. Validates items marked complete in `docs/ROADMAP.md` against the actual codebase._
+_Generated: 2026-04-24. Updated: 2026-04-26. Validates items marked complete in `docs/ROADMAP.md` against the actual codebase._
 
 ---
 
 ## Summary
 
-**All 46 completed ROADMAP items are correctly implemented.** No partial implementations or missing files were found.
+**All 49 completed ROADMAP items are correctly implemented.** No partial implementations or missing files were found.
 
 ---
 
@@ -57,6 +57,9 @@ _Generated: 2026-04-24. Validates items marked complete in `docs/ROADMAP.md` aga
 | **C2.1** — Arrowheads | ✅ Confirmed | `graphLinkPaths.ts` exports `markerIdForColor()`; `GraphView.tsx` applies `marker-end` via `markerIdForColor(edgeStrokeColor(d))` |
 | **C2.2** — Curved links + parallel-edge offset | ✅ Confirmed | `graphLinkPaths.ts` has `parallelEdgeMeta()` (lines 20–42) and quadratic Bézier generation in `linkPath()` |
 | **C2.3** — Self-loops | ✅ Confirmed | `graphLinkPaths.ts:linkPath()` handles `source === target` case with arc above node |
+| **C2.4** — Canvas / Pixi fallback | ✅ Confirmed | `GraphCanvas.tsx` exists (835 lines); `GraphView.tsx:15` defines `CANVAS_THRESHOLD_ENTER = 1500`; `canvasMode` state with hysteresis `useEffect` |
+| **C2.5** — Minimap | ✅ Confirmed | `GraphMinimap.tsx` exists (217 lines); wired in both `GraphView.tsx` (SVG) and `GraphCanvas.tsx` via `getTransform`/`setTransform` callbacks |
+| **C2.6** — Lasso multi-select | ✅ Confirmed | `graphStore.ts` has `lassoNodes`, `setLassoNodes`, `clearLassoNodes`; `LassoActionBar.tsx` with Pin all / Hide all / Expand all / Clear actions |
 
 ---
 
@@ -65,10 +68,6 @@ _Generated: 2026-04-24. Validates items marked complete in `docs/ROADMAP.md` aga
 The following remain open and were not evaluated:
 
 - **A2 test** — `TabBar.test.tsx` test for unpinning (ROADMAP body says to add it; not checked)
-- **C2.4** — Canvas/Pixi fallback (not started)
-- **C2.5** — Minimap (not started)
-- **C2.6** — Lasso multi-select (not started)
-- **C3–C7** — Streaming, schema sidebar, saved queries, read-only mode, expand options popover
 - **D1–D6** — Multi-user, multi-tenant, observability features
 
 ---
