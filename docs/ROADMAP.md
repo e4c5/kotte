@@ -574,40 +574,229 @@ Builds on **A11**. Today expansion is hard-coded to "all relationship types, bot
 
 Only if you intend Kotte to be deployed beyond a single analyst. **Total: ~4–6 weeks; intentionally long because the multi-tenant pieces are interlocked.**
 
-### D1. DB-backed users (Alembic migration adds `users`, `user_roles`)
+**Execution order (refined from initial plan):** D5 → D1 → D2 → D3 → D4 → D6. This sequencing unblocks multi-user flows earlier and reduces risk by layering foundations (audit first, then users, then session management).
 
-- Replace `services/user.py` with a SQLAlchemy/asyncpg-backed implementation. Keep API.
-- New routes `POST /api/v1/users` (admin only), `GET /me`, `PATCH /me/password`.
-- Optional OIDC via `authlib`.
+---
 
-### D2. Redis-backed `SessionManager` and `query_tracker`
+### D5. First-class audit log (Ship first: 1–2 days)
 
-- Switch in-memory dicts to Redis with TTL = `session_max_age`.
-- Cleanly call `DatabaseConnection.disconnect()` in a Redis keyspace-notification handler when a session expires (closes the per-session pool leak).
+**Why first:** Establishes accountability from day one. All D1/D2/D3 changes are audited; retrofitting later is error-prone.
 
-### D3. Shared connection pool per `(host, db, user)` tuple
+- New table `kotte_audit_events` (Alembic migration). Schema:
+  ```sql
+  CREATE TABLE kotte_audit_events (
+      id BIGSERIAL PRIMARY KEY,
+      event TEXT NOT NULL,          -- 'login', 'mutation_execute', 'connection_crud', etc.
+      actor_id TEXT,                -- user ID (NULL for system events)
+      request_id TEXT,              -- links to request logs / traces
+      payload JSONB,                -- event-specific data
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  )
+  ```
+- `services/audit.py`: `record(event: str, actor_id: Optional[str], request_id: str, payload: dict) -> None`
+- Wire into existing SECURITY: log sites (5 identified in codebase):
+  - `middleware.py:171` (CSRF token validation failures)
+  - `middleware.py:230` (rate limit events)
+  - `auth.py:134` (invalid session user_id)
+  - `session.py:68` (missing session_id after auth)
+  - `credentials.py:73` (encryption key not set)
+- Add audit events for login/logout once D1 is wired.
 
-- Replace per-session `AsyncConnectionPool` with a process-wide `PoolRegistry` keyed by `(host, db, user)`. Sessions hold a key, not a pool. Idle pools reaped after N minutes.
+**Test:** Query `kotte_audit_events` and confirm CSRF failure, rate limit, and auth events are recorded.
 
-### D4. OpenTelemetry
+---
 
-- `opentelemetry-instrumentation-fastapi`, `opentelemetry-instrumentation-psycopg`. Trace IDs flow into `request.state.request_id`.
-- Add an OTLP exporter wired to env vars; document Tempo/Jaeger setup.
+### D1. DB-backed users (Ship second: 2–3 days)
 
-### D5. First-class audit log
+**Why second:** Unblocks multi-user flows; now audited by D5.
 
-- New table `audit_events` (Alembic). `services/audit.py` with `record(event, actor_id, request_id, payload)`. Replace `SECURITY:` log-prefix patterns at:
-  - `middleware.py` (CSRF, rate limit)
-  - `api/v1/auth.py` (login/logout)
-  - `api/v1/query.py` (mutation execute)
-  - `api/v1/connections.py` (saved-connection CRUD).
+**D1.1 — Wire `UserService` to `kotte_users` table:**
+- `kotte_users` table already stubbed in migration `78c03fa27fda` (columns: id, username, password_hash, created_at, last_login_at).
+- Replace `services/user.py` in-memory dict with async query methods:
+  - `authenticate(username: str, password: str) -> Optional[dict]` — query table, `bcrypt.checkpw()`, update `last_login_at`
+  - `get_user(user_id: str) -> Optional[dict]` — query by id
+  - `create_user(username: str, password: str) -> dict` — insert, check uniqueness on `username`
+- Add optional TTL cache layer (5 min) for `get_user` to reduce DB load.
 
-### D6. CSV importer hardening
+**D1.2 — Add user management routes (admin only):**
+- `POST /api/v1/users` — create user (admin only, body: `{username, password}`)
+- `GET /api/v1/users/me` — current user info
+- `PATCH /api/v1/users/me/password` — change password (body: `{old_password, new_password}`)
+- Guard all three with middleware check: `user_id must exist in kotte_users`
+- Audit all three (login success/failure, password change).
 
-- Stream-parse with the stdlib `csv` module (RFC-4180 quoting).
-- Use parameterized `cypher()` calls (one per row, batched with `psycopg.AsyncCursor.executemany`) instead of embedded JSON literals.
-- For files > N MB: COPY into a staging table `kotte_import_{job}`, then a single Cypher `LOAD/UNWIND` over the staging table.
-- Add an idempotency key column; `ON CONFLICT DO NOTHING` on retries.
+**D1.3 — Optional OIDC (defer to post-D2):**
+- Add `authlib` to `requirements.txt`
+- Routes: `GET /login/oidc/authorize`, `GET /login/oidc/callback`
+- Not blocking; can ship D1.1 + D1.2 first, add OIDC as follow-up.
+
+**Test:** Create user via API, log in, verify `GET /me` returns correct user, change password, verify old password no longer works.
+
+---
+
+### D2. Redis-backed `SessionManager` and `query_tracker` (Ship third: 2 days)
+
+**Why third:** Now multi-user sessions can be tracked reliably; depends on D1's stable user_id.
+
+**Redis is optional with graceful in-memory fallback:**
+- Add env var `REDIS_ENABLED=true` (default: `false` for backward compat)
+- Add env var `REDIS_URL=redis://localhost:6379` (default: not used if REDIS_ENABLED=false)
+- In `core/auth.py` and `services/query_tracker.py`: check `settings.redis_enabled`:
+  ```python
+  if settings.redis_enabled:
+      session_manager = RedisSessionManager()
+  else:
+      session_manager = InMemorySessionManager()  # Current implementation
+  ```
+- This allows development/single-instance deployments to skip Redis entirely.
+
+**Implementation:**
+- Add `redis` and `redis-py` to `requirements.txt`
+- Subclass `SessionManager` as `RedisSessionManager`: replace `_sessions: dict` with Redis calls
+  - `create_session()` → `redis.set(session_id, {user_id, ...}, ex=session_max_age)`
+  - `get_session()` → `redis.get(session_id)` (TTL auto-expires via Redis)
+  - `delete_session()` → `redis.delete(session_id)`
+  - No business logic changes; storage backend swap only.
+- Subclass `QueryTracker` as `RedisQueryTracker`: replace `_active_queries: dict` with Redis calls
+  - `register_query()` → `redis.set(request_id, {db_conn, query_text, user_id, ...}, ex=3600)`
+  - Same pattern.
+
+**Key detail — Session expiry cleanup:**
+- Current issue: per-session `DatabaseConnection` pools leak if session TTL expires.
+- Solution: Redis keyspace-notification handler
+  - Enable `CONFIG SET notify-keyspace-events KEx` on Redis
+  - Subscribe to `__keyevent@0__:expired`
+  - When `session:{session_id}` expires, call `db_conn.disconnect()` to close the pool
+  - This is what the ROADMAP meant by *"closes the per-session pool leak"*.
+
+**Test:** Start Redis; create session; verify session is in Redis. Stop Redis; fallback to in-memory. TTL-expire a session key; verify handler calls `disconnect()` and pool closes.
+
+---
+
+### D3. Shared connection pool per `(host, db, user)` tuple (Ship fourth: 2–3 days)
+
+**Why fourth:** Performance/resource optimization; lower urgency than D1/D2. Depends on D2's stable multi-user session tracking.
+
+**Current architecture:** One `DatabaseConnection` pool per session (in `session.get("db_connection")`).
+
+**Target architecture:**
+- New class `PoolRegistry` (process-wide singleton):
+  ```python
+  class PoolRegistry:
+      _pools: dict[(str, str, str), DatabaseConnection] = {}  # (host, db, user) → pool
+      
+      async def get_or_create(host, db, user, password, sslmode) -> DatabaseConnection:
+          key = (host, db, user)
+          if key not in _pools:
+              _pools[key] = DatabaseConnection(host, db, user, password, sslmode)
+              await _pools[key].connect()
+          return _pools[key]
+  ```
+- Sessions now hold the key instead of the pool:
+  ```python
+  # Old:
+  session["db_connection"] = DatabaseConnection(...)  # Pool object
+  
+  # New:
+  session["pool_key"] = (host, db, user)
+  db_conn = PoolRegistry.get_or_create(host, db, user, password, sslmode)
+  ```
+- Background task reaps idle pools (e.g., idle > 30 min): `PoolRegistry.cleanup_idle(max_idle_seconds=1800)`
+
+**Caution:** Pool sharing means one user's query can block another's. Acceptable for single-tenant or same-user multi-database. For strict resource isolation per user, keep per-session pools (skip D3).
+
+**Test:** Two sessions to same `(host, db, user)` should return the same pool object (identity check: `assert pool1 is pool2`).
+
+---
+
+### D4. OpenTelemetry (Ship fifth: 2–3 days)
+
+**Why fifth:** Observability multiplier for troubleshooting multi-user scenarios. Not blocking.
+
+- Add packages: `opentelemetry-api`, `opentelemetry-sdk`, `opentelemetry-instrumentation-fastapi`, `opentelemetry-instrumentation-psycopg`, `opentelemetry-exporter-otlp`
+- Initialize OTEL SDK in `main.py` with env var config:
+  - `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317`
+  - `OTEL_SERVICE_NAME=kotte-backend`
+  - `OTEL_EXPORTER_OTLP_PROTOCOL=grpc`
+- Auto-instrument FastAPI app: `FastAPIInstrumentor().instrument_app(app)`
+- Manually instrument PostgreSQL (psycopg library support may be partial)
+- **Key:** Plumb trace ID into logging context so logs and traces link in Grafana Loki + Tempo:
+  ```python
+  from opentelemetry import trace
+  trace_id = trace.get_current_span().get_span_context().trace_id
+  logger.info("query executed", extra={"trace_id": trace_id})
+  ```
+- Update `docs/CONFIGURATION.md` with Tempo/Jaeger setup example.
+
+**Test:** Run `docker run -d --name tempo grafana/tempo` and trace a query end-to-end. Verify logs link to traces.
+
+---
+
+### D6. CSV importer hardening (Ship last: 1–2 days)
+
+**Why last:** Orthogonal security/reliability fix; no blocking dependencies.
+
+**Current issues in `api/v1/csv_importer.py`:**
+- Line 118: naive `split(",")` fails on RFC-4180 quoted fields with embedded commas
+- Lines 238–240: f-string Cypher with JSON literals → SQL injection if user input reaches JSON
+- No parameterized Cypher queries
+- No idempotency support for retries
+
+**Hardening steps:**
+
+1. **Use stdlib `csv` module (RFC-4180 compliant):**
+   ```python
+   import csv
+   import io
+   reader = csv.DictReader(io.StringIO(content.decode("utf-8")))
+   for row in reader:
+       # row is now a proper dict; quoting and escaping handled correctly
+   ```
+
+2. **Parameterized Cypher (batch via UNWIND):**
+   ```python
+   # Instead of: f"CREATE (n:{label} {json_str})"
+   # Use: batch rows into one parameterized query
+   cypher = f"""
+   UNWIND $rows AS row
+   CREATE (n:{label} $props)
+   """
+   rows = [{"props": {"name": "Alice", "age": 30}}, ...]
+   await db_conn.execute_query(cypher, {"rows": rows})
+   ```
+   *(Note: AGE may require custom handling for `$props` syntax; validate with test.)*
+
+3. **Staging table for large files (> 50 MB):**
+   ```python
+   staging_table = f"kotte_import_{job_id}"
+   # CREATE TEMP TABLE staging_table (data JSONB)
+   # COPY FROM stdin (bulk-load CSV bytes)
+   # Then: LOAD/UNWIND over staging_table; DROP TABLE
+   ```
+   Reduces transaction pressure and memory footprint.
+
+4. **Idempotency key for retries:**
+   - Add column `idempotency_key TEXT` to CSV (user-provided)
+   - On retry, check for existing rows with same key
+   - Use `ON CONFLICT (idempotency_key) DO NOTHING` (PostgreSQL native)
+   - Prevents duplicate inserts on network retry.
+
+**Test:** CSV with quoted fields containing commas parses correctly. Import large CSV (>50 MB) via staging table. Retry same file idempotently—verify no duplication.
+
+---
+
+### D — Validation checklist
+
+Use this to sign off before shipping each item:
+
+| Item | Acceptance Criteria | Notes |
+|------|-------------------|-------|
+| **D5** | Audit logs appear for CSRF failures, rate limit hits, and auth events. Query `kotte_audit_events` and see 5+ event types. | Foundational; test manually. |
+| **D1** | Create user via `POST /api/v1/users`; login endpoint authenticates against `kotte_users` table. `GET /me` returns current user. `PATCH /me/password` works. Audit events record login/password change. | Add to test suite. |
+| **D2** | Without Redis: SessionManager falls back to in-memory (env var `REDIS_ENABLED=false`). With Redis: new sessions write to Redis; TTL-expire a key; verify handler calls `disconnect()`. | Integration test with Redis container. |
+| **D3** | Two sessions to same `(host, db, user)` return the same pool object (identity check). Idle cleanup task removes pools idle > 30 min. | Unit test with mock pools. |
+| **D4** | End-to-end trace of a query visible in Tempo UI. Logs link to traces via `trace_id`. | Deploy with `docker run -d --name tempo grafana/tempo`. |
+| **D6** | CSV with quoted fields + commas parses correctly. Large file (>50 MB) imports via staging table. Retry same file idempotently—no duplication. | Add parametrized test cases. |
 
 ---
 

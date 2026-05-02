@@ -85,6 +85,10 @@ class Settings(BaseSettings):
     credential_storage_path: str = "./data/connections.json"  # Default to local data directory
     master_encryption_key: str = ""  # Must be set from environment
 
+    # Redis (optional, for Milestone D multi-user)
+    redis_enabled: bool = False  # Set to True to use Redis for sessions and query tracking
+    redis_url: str = "redis://localhost:6379"  # Redis connection URL
+
     # Security
     csrf_enabled: bool = True
     rate_limit_enabled: bool = True
