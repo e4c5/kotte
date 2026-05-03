@@ -8,6 +8,7 @@ import psycopg
 from app.core.database.connection import DatabaseConnection as BaseConnection
 from app.core.database.cypher import CypherExecutor
 from app.core.database.manager import QueryManager
+from app.core.database.pool_registry import pool_registry  # noqa: F401
 from app.core.database.utils import cypher_return_columns as _crc, split_top_level_commas as _stlc
 
 logger = logging.getLogger(__name__)

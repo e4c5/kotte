@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, Request, status
 from app.core.auth import get_session, session_manager
 from app.core.errors import APIException, ErrorCode, ErrorCategory
 from app.models.auth import LoginRequest, LoginResponse, LogoutResponse, UserInfo
+from app.services import audit
 from app.services.user import user_service
 
 logger = logging.getLogger(__name__)
@@ -27,7 +28,8 @@ async def login(request: LoginRequest, http_request: Request) -> LoginResponse:
     client_ip = http_request.client.host if http_request.client else "unknown"
 
     # Authenticate user
-    user = user_service.authenticate(request.username, request.password)
+    request_id = getattr(http_request.state, "request_id", None)
+    user = await user_service.authenticate(request.username, request.password)
     if not user:
         # Log failed authentication attempt
         logger.warning(
@@ -38,6 +40,11 @@ async def login(request: LoginRequest, http_request: Request) -> LoginResponse:
                 "ip": client_ip,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             },
+        )
+        audit.fire_and_forget(
+            "auth_failed",
+            request_id=request_id,
+            payload={"username": request.username, "ip": client_ip},
         )
         raise APIException(
             code=ErrorCode.AUTH_INVALID_SESSION,
@@ -66,6 +73,12 @@ async def login(request: LoginRequest, http_request: Request) -> LoginResponse:
             "ip": client_ip,
             "timestamp": datetime.now(timezone.utc).isoformat(),
         },
+    )
+    audit.fire_and_forget(
+        "auth_success",
+        actor_id=user["user_id"],
+        request_id=request_id,
+        payload={"username": user["username"], "ip": client_ip},
     )
 
     return LoginResponse(
@@ -117,6 +130,13 @@ async def logout(
             "timestamp": datetime.now(timezone.utc).isoformat(),
         },
     )
+    request_id = getattr(http_request.state, "request_id", None)
+    audit.fire_and_forget(
+        "auth_logout",
+        actor_id=str(user_id) if user_id else None,
+        request_id=request_id,
+        payload={"username": username},
+    )
 
     return LogoutResponse(logged_out=True)
 
@@ -130,9 +150,11 @@ async def get_current_user(
     user_id = session.get("user_id")
     if not isinstance(user_id, str) or not user_id:
         client_ip = http_request.client.host if http_request.client else "unknown"
+        me_request_id = getattr(http_request.state, "request_id", None)
         logger.warning(
             "SECURITY: Invalid session user_id while resolving current user",
             extra={
+                "request_id": me_request_id,
                 "event": "auth_invalid_session",
                 "reason": "missing_or_invalid_user_id",
                 "error_code": ErrorCode.AUTH_INVALID_SESSION,
@@ -143,6 +165,11 @@ async def get_current_user(
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             },
         )
+        audit.fire_and_forget(
+            "auth_invalid_session",
+            request_id=me_request_id,
+            payload={"reason": "missing_or_invalid_user_id", "ip": client_ip},
+        )
         raise APIException(
             code=ErrorCode.AUTH_INVALID_SESSION,
             message="Invalid session",
@@ -150,7 +177,7 @@ async def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
         )
 
-    user = user_service.get_user(user_id)
+    user = await user_service.get_user(user_id)
     if not user:
         raise APIException(
             code=ErrorCode.AUTH_INVALID_SESSION,

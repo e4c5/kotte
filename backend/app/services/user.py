@@ -1,10 +1,24 @@
-"""User management service."""
+"""User management service (D1 — DB-backed).
+
+Uses the Kotte management database (settings.db_*) and the ``kotte_users``
+table created by Alembic revision ``78c03fa27fda``.
+
+Graceful fallback: if the DB is unreachable (e.g. in unit tests without a
+live Postgres), the built-in admin account is served from memory so existing
+tests and single-developer local runs continue to work without a running DB.
+"""
+
+from __future__ import annotations
 
 import logging
 import os
+from datetime import datetime, timezone
 from typing import Optional
 
 import bcrypt
+import psycopg
+from psycopg.rows import dict_row
+from psycopg_pool import AsyncConnectionPool
 
 from app.core.config import settings
 from app.core.errors import APIException, ErrorCode, ErrorCategory
@@ -12,103 +26,154 @@ from fastapi import status
 
 logger = logging.getLogger(__name__)
 
+_pool: Optional[AsyncConnectionPool] = None
+_pool_unavailable = False  # set after first failed open; avoids per-request retries
+
 
 def _hash_password(password: str) -> str:
-    """Hash a plaintext password using bcrypt."""
     return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 
 
 def _verify_password(password: str, password_hash: str) -> bool:
-    """Verify a plaintext password against a bcrypt hash."""
     return bcrypt.checkpw(password.encode(), password_hash.encode())
 
 
-def _build_admin_user() -> dict:
-    """Build the default admin user, reading the password from the environment.
+def _admin_password() -> str:
+    pw = os.environ.get("ADMIN_PASSWORD", "admin")
+    if pw == "admin" and settings.environment == "production":
+        logger.warning("Default admin password in use. Set ADMIN_PASSWORD in production!")
+    return pw
 
-    The ``ADMIN_PASSWORD`` environment variable overrides the default password.
-    In production, this variable **must** be set to a strong secret.
-    """
-    admin_password = os.environ.get("ADMIN_PASSWORD", "admin")
-    if admin_password == "admin" and settings.environment == "production":
-        logger.warning(
-            "Default admin password is in use. "
-            "Set the ADMIN_PASSWORD environment variable in production!"
+
+_admin_fallback: Optional[dict] = None
+
+
+def _get_admin_fallback() -> dict:
+    global _admin_fallback
+    if _admin_fallback is None:
+        _admin_fallback = {
+            "user_id": "admin",
+            "username": "admin",
+            "password_hash": _hash_password(_admin_password()),
+            "active": True,
+        }
+    return _admin_fallback
+
+
+async def _get_pool() -> Optional[AsyncConnectionPool]:
+    global _pool, _pool_unavailable
+    if settings.environment == "test":
+        return None
+    if _pool_unavailable:
+        return None
+    if _pool is not None and not _pool.closed:
+        return _pool
+    try:
+        conninfo = (
+            f"host={settings.db_host} port={settings.db_port} "
+            f"dbname={settings.db_name} user={settings.db_user} "
+            f"password={settings.db_password} "
+            f"connect_timeout=2"  # fast fail; graceful fallback handles the rest
         )
-    return {
-        "user_id": "admin",
-        "username": "admin",
-        "password_hash": _hash_password(admin_password),
-        "active": True,
-    }
+        p = AsyncConnectionPool(
+            conninfo,
+            min_size=1,
+            max_size=5,
+            kwargs={"row_factory": dict_row, "autocommit": True},
+            open=False,
+        )
+        await p.open(wait=True, timeout=3)
+        _pool = p
+        return _pool
+    except Exception as exc:
+        logger.debug("UserService: DB pool unavailable, using in-memory fallback (%s)", exc)
+        _pool_unavailable = True
+        return None
 
 
 class UserService:
-    """Service for user authentication and management."""
+    """Async user service backed by ``kotte_users``."""
 
-    # In-memory user store for MVP
-    # In production, this would be a database
-    _users: dict[str, dict] = {}
+    async def authenticate(self, username: str, password: str) -> Optional[dict]:
+        pool = await _get_pool()
+        if pool is None:
+            return self._authenticate_fallback(username, password)
+        try:
+            async with pool.connection() as conn:
+                cur = await conn.execute(
+                    "SELECT id, username, password_hash FROM kotte_users WHERE username = %s",
+                    (username,),
+                )
+                row = await cur.fetchone()
+                if row is None:
+                    logger.warning("Authentication failed: user '%s' not found", username)
+                    return None
+                if not _verify_password(password, row["password_hash"]):
+                    logger.warning("Authentication failed: invalid password for '%s'", username)
+                    return None
+                await conn.execute(
+                    "UPDATE kotte_users SET last_login_at = %s WHERE id = %s",
+                    (datetime.now(timezone.utc), row["id"]),
+                )
+            logger.info("User '%s' authenticated successfully", username)
+            return {"user_id": str(row["id"]), "username": row["username"]}
+        except Exception as exc:
+            logger.warning("UserService.authenticate DB error, trying fallback: %s", exc)
+            return self._authenticate_fallback(username, password)
 
-    @classmethod
-    def _ensure_admin(cls) -> None:
-        """Lazily initialise the admin user so tests can override ADMIN_PASSWORD."""
-        if "admin" not in cls._users:
-            cls._users["admin"] = _build_admin_user()
-
-    @classmethod
-    def authenticate(cls, username: str, password: str) -> Optional[dict]:
-        """
-        Authenticate a user.
-
-        Args:
-            username: Username
-            password: Plain text password
-
-        Returns:
-            User dict if authenticated, None otherwise
-        """
-        cls._ensure_admin()
-        user = cls._users.get(username)
-        if not user:
-            logger.warning(f"Authentication failed: user '{username}' not found")
+    def _authenticate_fallback(self, username: str, password: str) -> Optional[dict]:
+        admin = _get_admin_fallback()
+        if username != admin["username"]:
             return None
-
-        if not user.get("active", True):
-            logger.warning(f"Authentication failed: user '{username}' is inactive")
+        if not _verify_password(password, admin["password_hash"]):
             return None
+        return {"user_id": admin["user_id"], "username": admin["username"]}
 
-        if not _verify_password(password, user["password_hash"]):
-            logger.warning(f"Authentication failed: invalid password for user '{username}'")
-            return None
+    async def get_user(self, user_id: str) -> Optional[dict]:
+        pool = await _get_pool()
+        if pool is None:
+            return self._get_user_fallback(user_id)
+        try:
+            if user_id.isdigit():
+                async with pool.connection() as conn:
+                    cur = await conn.execute(
+                        "SELECT id, username FROM kotte_users WHERE id = %s",
+                        (int(user_id),),
+                    )
+                    row = await cur.fetchone()
+                if row:
+                    return {"user_id": str(row["id"]), "username": row["username"]}
+        except Exception as exc:
+            logger.warning("UserService.get_user DB error, trying fallback: %s", exc)
+        return self._get_user_fallback(user_id)
 
-        logger.info(f"User '{username}' authenticated successfully")
-        return {
-            "user_id": user["user_id"],
-            "username": user["username"],
-        }
-
-    @classmethod
-    def get_user(cls, user_id: str) -> Optional[dict]:
-        """Get user by ID."""
-        cls._ensure_admin()
-        for user in cls._users.values():
-            if user["user_id"] == user_id:
-                return {
-                    "user_id": user["user_id"],
-                    "username": user["username"],
-                }
+    def _get_user_fallback(self, user_id: str) -> Optional[dict]:
+        admin = _get_admin_fallback()
+        if user_id == admin["user_id"]:
+            return {"user_id": admin["user_id"], "username": admin["username"]}
         return None
 
-    @classmethod
-    def create_user(cls, username: str, password: str) -> dict:
-        """
-        Create a new user.
-
-        In production, this would validate password strength, check duplicates, etc.
-        """
-        cls._ensure_admin()
-        if username in cls._users:
+    async def create_user(self, username: str, password: str) -> dict:
+        pool = await _get_pool()
+        if pool is None:
+            raise APIException(
+                code=ErrorCode.INTERNAL_ERROR,
+                message="Database unavailable; cannot create users",
+                category=ErrorCategory.UPSTREAM,
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        try:
+            password_hash = _hash_password(password)
+            async with pool.connection() as conn:
+                cur = await conn.execute(
+                    "INSERT INTO kotte_users (username, password_hash) VALUES (%s, %s)"
+                    " RETURNING id, username",
+                    (username, password_hash),
+                )
+                row = await cur.fetchone()
+            logger.info("Created user '%s'", username)
+            return {"user_id": str(row["id"]), "username": row["username"]}
+        except psycopg.errors.UniqueViolation:
             raise APIException(
                 code=ErrorCode.INTERNAL_ERROR,
                 message=f"User '{username}' already exists",
@@ -116,21 +181,74 @@ class UserService:
                 status_code=status.HTTP_409_CONFLICT,
             )
 
-        user_id = username
-        password_hash = _hash_password(password)
+    async def change_password(self, user_id: str, old_password: str, new_password: str) -> None:
+        pool = await _get_pool()
+        if pool is None:
+            raise APIException(
+                code=ErrorCode.INTERNAL_ERROR,
+                message="Database unavailable",
+                category=ErrorCategory.UPSTREAM,
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        if not user_id.isdigit():
+            raise APIException(
+                code=ErrorCode.AUTH_INVALID_SESSION,
+                message="Cannot change password for built-in accounts via this endpoint",
+                category=ErrorCategory.AUTHENTICATION,
+                status_code=status.HTTP_403_FORBIDDEN,
+            )
+        async with pool.connection() as conn:
+            cur = await conn.execute(
+                "SELECT id, password_hash FROM kotte_users WHERE id = %s",
+                (int(user_id),),
+            )
+            row = await cur.fetchone()
+            if row is None:
+                raise APIException(
+                    code=ErrorCode.AUTH_INVALID_SESSION,
+                    message="User not found",
+                    category=ErrorCategory.AUTHENTICATION,
+                    status_code=status.HTTP_404_NOT_FOUND,
+                )
+            if not _verify_password(old_password, row["password_hash"]):
+                raise APIException(
+                    code=ErrorCode.AUTH_INVALID_SESSION,
+                    message="Current password is incorrect",
+                    category=ErrorCategory.AUTHENTICATION,
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                )
+            new_hash = _hash_password(new_password)
+            await conn.execute(
+                "UPDATE kotte_users SET password_hash = %s WHERE id = %s",
+                (new_hash, row["id"]),
+            )
 
-        cls._users[username] = {
-            "user_id": user_id,
-            "username": username,
-            "password_hash": password_hash,
-            "active": True,
-        }
+    async def seed_admin(self) -> None:
+        """Insert the admin user if kotte_users is empty. Called from app lifespan."""
+        pool = await _get_pool()
+        if pool is None:
+            logger.info("UserService: no DB pool; admin user served from memory")
+            return
+        try:
+            async with pool.connection() as conn:
+                cur = await conn.execute("SELECT COUNT(*) AS n FROM kotte_users")
+                row = await cur.fetchone()
+                if row and row["n"] == 0:
+                    password_hash = _hash_password(_admin_password())
+                    await conn.execute(
+                        "INSERT INTO kotte_users (username, password_hash) VALUES (%s, %s)"
+                        " ON CONFLICT (username) DO NOTHING",
+                        ("admin", password_hash),
+                    )
+                    logger.info("Seeded default admin user into kotte_users")
+        except Exception as exc:
+            logger.warning("UserService.seed_admin failed (migrations may not have run): %s", exc)
 
-        logger.info(f"Created user '{username}'")
-        return {
-            "user_id": user_id,
-            "username": username,
-        }
+    async def close(self) -> None:
+        global _pool
+        if _pool is not None and not _pool.closed:
+            await _pool.close()
+            _pool = None
 
 
 user_service = UserService()

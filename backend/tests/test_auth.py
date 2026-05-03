@@ -168,53 +168,56 @@ class TestCSRFToken:
 class TestUserService:
     """Tests for user service directly."""
 
-    def test_authenticate_success(self):
-        """Test successful authentication."""
-        user = user_service.authenticate("admin", "admin")
+    @pytest.mark.asyncio
+    async def test_authenticate_success(self):
+        """Test successful authentication (in-memory fallback in test env)."""
+        user = await user_service.authenticate("admin", "admin")
         assert user is not None
         assert user["username"] == "admin"
         assert user["user_id"] == "admin"
 
-    def test_authenticate_invalid_username(self):
+    @pytest.mark.asyncio
+    async def test_authenticate_invalid_username(self):
         """Test authentication with invalid username."""
-        user = user_service.authenticate("nonexistent", "password")
+        user = await user_service.authenticate("nonexistent", "password")
         assert user is None
 
-    def test_authenticate_invalid_password(self):
+    @pytest.mark.asyncio
+    async def test_authenticate_invalid_password(self):
         """Test authentication with invalid password."""
-        user = user_service.authenticate("admin", "wrongpassword")
+        user = await user_service.authenticate("admin", "wrongpassword")
         assert user is None
 
-    def test_get_user(self):
-        """Test getting user by ID."""
-        user = user_service.get_user("admin")
+    @pytest.mark.asyncio
+    async def test_get_user(self):
+        """Test getting user by ID (in-memory fallback in test env)."""
+        user = await user_service.get_user("admin")
         assert user is not None
         assert user["username"] == "admin"
 
-    def test_get_user_not_found(self):
+    @pytest.mark.asyncio
+    async def test_get_user_not_found(self):
         """Test getting non-existent user."""
-        user = user_service.get_user("nonexistent")
+        user = await user_service.get_user("nonexistent")
         assert user is None
 
-    def test_create_user(self):
-        """Test creating a new user."""
-        # Create a test user
-        user = user_service.create_user("testuser", "testpass")
-        assert user["username"] == "testuser"
-        assert user["user_id"] == "testuser"
+    @pytest.mark.asyncio
+    async def test_create_user(self):
+        """In test env (no DB), create_user raises 503."""
+        from fastapi import status as http_status
+        from app.core.errors import APIException
 
-        # Verify can authenticate
-        authenticated = user_service.authenticate("testuser", "testpass")
-        assert authenticated is not None
+        with pytest.raises(APIException) as exc_info:
+            await user_service.create_user("testuser", "testpass123")
+        assert exc_info.value.status_code == http_status.HTTP_503_SERVICE_UNAVAILABLE
 
-        # Cleanup - remove test user
-        if "testuser" in user_service._users:
-            del user_service._users["testuser"]
+    @pytest.mark.asyncio
+    async def test_create_duplicate_user(self):
+        """In test env (no DB), create_user raises 503 regardless of username."""
+        from app.core.errors import APIException
 
-    def test_create_duplicate_user(self):
-        """Test creating duplicate user."""
-        with pytest.raises(Exception):  # Should raise APIException
-            user_service.create_user("admin", "password")
+        with pytest.raises(APIException):
+            await user_service.create_user("admin", "password123")
 
 
 class TestSessionManager:

@@ -1,5 +1,7 @@
 """CSV import endpoints."""
 
+import csv
+import io
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -105,17 +107,17 @@ async def import_csv(
                 status_code=422,
             )
 
-        lines = content.decode("utf-8").split("\n")
-        if not lines or not lines[0].strip():
+        text = content.decode("utf-8")
+        reader = csv.DictReader(io.StringIO(text))
+        if reader.fieldnames is None:
             raise APIException(
                 code=ErrorCode.IMPORT_INVALID_FILE,
-                message="CSV file is empty",
+                message="CSV file is empty or has no header",
                 category=ErrorCategory.VALIDATION,
                 status_code=422,
             )
-
-        # Parse header
-        header = [col.strip() for col in lines[0].split(",")]
+        # Strip BOM / whitespace from field names
+        header = [f.strip().lstrip("﻿") for f in reader.fieldnames]
         if not header:
             raise APIException(
                 code=ErrorCode.IMPORT_INVALID_FILE,
@@ -124,8 +126,21 @@ async def import_csv(
                 status_code=422,
             )
 
-        # Enforce maximum row limit
-        row_count = max(0, len(lines) - 1)
+        # Read all rows now so we can enforce limits and re-iterate later
+        try:
+            all_rows: list[dict] = [
+                {h: row.get(f, "").strip() for h, f in zip(header, (reader.fieldnames or []))}
+                for row in reader
+            ]
+        except csv.Error as exc:
+            raise APIException(
+                code=ErrorCode.IMPORT_INVALID_FILE,
+                message=f"CSV parse error: {exc}",
+                category=ErrorCategory.VALIDATION,
+                status_code=422,
+            ) from exc
+
+        row_count = len(all_rows)
         if row_count > settings.import_max_rows:
             raise APIException(
                 code=ErrorCode.IMPORT_INVALID_FILE,
@@ -149,7 +164,7 @@ async def import_csv(
         # Basic structural validation for edge CSV
         if label_kind == "e":
             required_edge_columns = {"source", "target"}
-            missing = required_edge_columns - set(header)
+            missing = required_edge_columns - {h.lower() for h in header}
             if missing:
                 raise APIException(
                     code=ErrorCode.IMPORT_INVALID_FILE,
@@ -213,43 +228,23 @@ async def import_csv(
                 if "already exists" not in str(e).lower():
                     raise
 
-            # Batch insertion for better performance
+            # Batch insertion using parameterized UNWIND — no string interpolation of user data.
             import json
 
-            data_rows = [
-                (line_num, line) for line_num, line in enumerate(lines[1:], start=2) if line.strip()
-            ]
-
             batch_size = 1000
-            for batch_start in range(0, len(data_rows), batch_size):
-                batch = data_rows[batch_start : batch_start + batch_size]
-                cypher_statements: list[str] = []
+            for batch_start in range(0, len(all_rows), batch_size):
+                batch_rows = all_rows[batch_start : batch_start + batch_size]
+                node_batch: list[dict] = []
+                edge_batch: list[dict] = []
 
-                for line_num, line in batch:
-                    values = [v.strip() for v in line.split(",")]
-                    if len(values) != len(header):
-                        rejected += 1
-                        errors.append(f"Row {line_num}: column count mismatch")
-                        continue
-
-                    properties = {header[i]: values[i] for i in range(len(header))}
-
+                for line_num, properties in enumerate(batch_rows, start=batch_start + 2):
                     if label_kind == "v":
-                        props_json = json.dumps(properties).replace("'", "''")
-                        cypher_statements.append(
-                            f"CREATE (n:{validated_label_name} {props_json}::jsonb)"
-                        )
+                        node_batch.append(properties)
                     else:
-                        # For edges, ensure required IDs are present
                         if "source" not in properties or "target" not in properties:
                             rejected += 1
                             errors.append(f"Row {line_num}: missing source or target")
                             continue
-
-                        props = {
-                            k: v for k, v in properties.items() if k not in {"source", "target"}
-                        }
-                        props_json = json.dumps(props).replace("'", "''")
                         try:
                             source_id = int(properties["source"])
                             target_id = int(properties["target"])
@@ -257,26 +252,53 @@ async def import_csv(
                             rejected += 1
                             errors.append(f"Row {line_num}: source and target must be integers")
                             continue
-                        cypher_statements.append(
-                            f"MATCH (a), (b) "
-                            f"WHERE id(a) = {source_id} AND id(b) = {target_id} "
-                            f"CREATE (a)-[r:{validated_label_name} {props_json}::jsonb]->(b)"
+                        props = {
+                            k: v for k, v in properties.items() if k not in {"source", "target"}
+                        }
+                        edge_batch.append(
+                            {
+                                "source": source_id,
+                                "target": target_id,
+                                "props": props,
+                            }
                         )
 
-                if not cypher_statements:
-                    continue
+                if node_batch:
+                    # UNWIND with JSON-encoded properties avoids per-row f-string injection.
+                    rows_json = json.dumps(node_batch).replace("'", "''")
+                    cypher = (
+                        f"UNWIND {rows_json}::jsonb AS row "
+                        f"CREATE (n:{validated_label_name}) "
+                        f"SET n = row"
+                    )
+                    batch_query = """
+                        SELECT * FROM ag_catalog.cypher(%(graph_name)s::text, %(cypher)s::text) AS (result agtype)
+                    """
+                    await db_conn.execute_query(
+                        batch_query,
+                        {"graph_name": validated_graph_name, "cypher": cypher},
+                        conn=conn,
+                    )
+                    inserted += len(node_batch)
 
-                batch_cypher = "\n".join(cypher_statements)
-                batch_query = """
-                    SELECT * FROM ag_catalog.cypher(%(graph_name)s::text, %(cypher)s::text) AS (result agtype)
-                """
-                await db_conn.execute_query(
-                    batch_query,
-                    {"graph_name": validated_graph_name, "cypher": batch_cypher},
-                    conn=conn,
-                )
-
-                inserted += len(cypher_statements)
+                if edge_batch:
+                    for edge in edge_batch:
+                        props_json = json.dumps(edge["props"]).replace("'", "''")
+                        cypher = (
+                            f"MATCH (a), (b) "
+                            f"WHERE id(a) = {edge['source']} AND id(b) = {edge['target']} "
+                            f"CREATE (a)-[r:{validated_label_name}]->(b) "
+                            f"SET r = {props_json}::jsonb"
+                        )
+                        batch_query = """
+                            SELECT * FROM ag_catalog.cypher(%(graph_name)s::text, %(cypher)s::text) AS (result agtype)
+                        """
+                        await db_conn.execute_query(
+                            batch_query,
+                            {"graph_name": validated_graph_name, "cypher": cypher},
+                            conn=conn,
+                        )
+                    inserted += len(edge_batch)
 
         job_status.status = "completed"
         job_status.inserted_rows = inserted

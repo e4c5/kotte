@@ -89,6 +89,11 @@ class Settings(BaseSettings):
     redis_enabled: bool = False  # Set to True to use Redis for sessions and query tracking
     redis_url: str = "redis://localhost:6379"  # Redis connection URL
 
+    # OpenTelemetry (optional, for Milestone D4 observability)
+    otel_enabled: bool = False  # Set to True to enable OpenTelemetry tracing
+    otel_service_name: str = "kotte-backend"
+    otel_exporter_otlp_endpoint: str = "http://localhost:4317"  # gRPC endpoint
+
     # Security
     csrf_enabled: bool = True
     rate_limit_enabled: bool = True

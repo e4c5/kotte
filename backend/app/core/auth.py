@@ -1,9 +1,25 @@
-"""Authentication and session management."""
+"""Authentication and session management.
 
+Two implementations:
+- ``InMemorySessionManager`` — original, used when ``REDIS_ENABLED=false``
+- ``RedisSessionManager`` — used when ``REDIS_ENABLED=true``
+
+The module-level ``session_manager`` is set to the appropriate instance at
+import time based on ``settings.redis_enabled``.
+
+Redis storage note: only JSON-serializable fields are stored in Redis.
+The ``db_connection`` object (a live TCP pool) stays in a process-local dict
+and is keyed by ``session_id``.  On Redis-TTL expiry the keyspace-notification
+handler closes the pool to prevent leaks.
+"""
+
+from __future__ import annotations
+
+import json
 import logging
 import secrets
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import Request, status
 
@@ -12,25 +28,22 @@ from app.core.errors import APIException, ErrorCode, ErrorCategory
 
 logger = logging.getLogger(__name__)
 
+# Process-local store for non-serialisable session objects (db_connection, etc.).
+# Populated/cleared in both implementations so the rest of the code always finds
+# the db_connection here regardless of which backend is active.
+_local_session_objects: dict[str, dict] = {}
 
-class SessionManager:
-    """Manages user sessions."""
+
+class InMemorySessionManager:
+    """Original in-memory session manager (default / dev / single-instance)."""
 
     def __init__(self):
         self._sessions: dict[str, dict] = {}
 
     def create_session(self, user_id: str, connection_config: Optional[dict] = None) -> str:
-        """
-        Create a new session and return session ID.
-
-        Args:
-            user_id: User ID
-            connection_config: Optional connection config (for DB connections)
-        """
         session_id = secrets.token_urlsafe(32)
         csrf_token = secrets.token_urlsafe(32)
         now = datetime.now(timezone.utc)
-
         self._sessions[session_id] = {
             "user_id": user_id,
             "created_at": now,
@@ -39,53 +52,203 @@ class SessionManager:
             "graph_context": None,
             "csrf_token": csrf_token,
         }
-
         logger.info(f"Created session {session_id[:8]}... for user {user_id}")
         return session_id
 
     def get_session(self, session_id: str) -> Optional[dict]:
-        """Get session data if valid."""
         session = self._sessions.get(session_id)
         if not session:
             return None
 
-        # Check idle timeout
         idle_timeout = timedelta(seconds=settings.session_idle_timeout)
         if datetime.now(timezone.utc) - session["last_activity"] > idle_timeout:
             logger.info(f"Session {session_id[:8]}... expired (idle timeout)")
             del self._sessions[session_id]
             return None
 
-        # Check max age
         max_age = timedelta(seconds=settings.session_max_age)
         if datetime.now(timezone.utc) - session["created_at"] > max_age:
             logger.info(f"Session {session_id[:8]}... expired (max age)")
             del self._sessions[session_id]
             return None
 
-        # Update last activity
         session["last_activity"] = datetime.now(timezone.utc)
         return session
 
     def update_session(self, session_id: str, updates: dict) -> None:
-        """Update session data."""
         if session_id in self._sessions:
             self._sessions[session_id].update(updates)
             self._sessions[session_id]["last_activity"] = datetime.now(timezone.utc)
 
     def delete_session(self, session_id: str) -> None:
-        """Delete a session."""
         if session_id in self._sessions:
             logger.info(f"Deleted session {session_id[:8]}...")
             del self._sessions[session_id]
 
     def get_user_id(self, session_id: str) -> Optional[str]:
-        """Get user ID from session."""
         session = self.get_session(session_id)
         return session["user_id"] if session else None
 
 
-session_manager = SessionManager()
+class RedisSessionManager:
+    """Redis-backed session manager for multi-user / multi-instance deployments.
+
+    Non-serialisable values (``db_connection``) are stored in the process-local
+    ``_local_session_objects`` dict so lookups still return them transparently.
+    """
+
+    _SERIALISABLE = {
+        "user_id",
+        "created_at",
+        "last_activity",
+        "connection_config",
+        "graph_context",
+        "csrf_token",
+    }
+
+    def __init__(self, redis_url: str):
+        import redis.asyncio as aioredis
+
+        self._client = aioredis.from_url(redis_url, decode_responses=True)
+        self._prefix = "kotte:session:"
+
+    def _key(self, session_id: str) -> str:
+        return f"{self._prefix}{session_id}"
+
+    def _serialise(self, session: dict) -> str:
+        safe = {}
+        for k, v in session.items():
+            if k not in self._SERIALISABLE:
+                continue
+            if isinstance(v, datetime):
+                safe[k] = v.isoformat()
+            else:
+                safe[k] = v
+        return json.dumps(safe)
+
+    def _deserialise(self, raw: str, session_id: str) -> dict:
+        data = json.loads(raw)
+        for field in ("created_at", "last_activity"):
+            if field in data and isinstance(data[field], str):
+                data[field] = datetime.fromisoformat(data[field])
+        # Re-attach non-serialisable local objects
+        local = _local_session_objects.get(session_id, {})
+        data.update(local)
+        return data
+
+    def create_session(self, user_id: str, connection_config: Optional[dict] = None) -> str:
+        import asyncio
+
+        session_id = secrets.token_urlsafe(32)
+        csrf_token = secrets.token_urlsafe(32)
+        now = datetime.now(timezone.utc)
+        session: dict[str, Any] = {
+            "user_id": user_id,
+            "created_at": now,
+            "last_activity": now,
+            "connection_config": connection_config or {},
+            "graph_context": None,
+            "csrf_token": csrf_token,
+        }
+        try:
+            loop = asyncio.get_event_loop()
+            loop.create_task(self._async_set(session_id, session))
+        except RuntimeError:
+            pass
+        logger.info(f"Created session {session_id[:8]}... for user {user_id}")
+        return session_id
+
+    async def _async_set(self, session_id: str, session: dict) -> None:
+        try:
+            await self._client.set(
+                self._key(session_id),
+                self._serialise(session),
+                ex=settings.session_max_age,
+            )
+        except Exception as exc:
+            logger.warning("RedisSessionManager.set failed: %s", exc)
+
+    def get_session(self, session_id: str) -> Optional[dict]:
+        import asyncio
+
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+
+                future = asyncio.run_coroutine_threadsafe(self._async_get(session_id), loop)
+                return future.result(timeout=1.0)
+        except Exception as exc:
+            logger.warning("RedisSessionManager.get failed: %s", exc)
+        return None
+
+    async def _async_get(self, session_id: str) -> Optional[dict]:
+        try:
+            raw = await self._client.get(self._key(session_id))
+            if raw is None:
+                return None
+            session = self._deserialise(raw, session_id)
+            # Idle timeout check
+            idle_timeout = timedelta(seconds=settings.session_idle_timeout)
+            if datetime.now(timezone.utc) - session["last_activity"] > idle_timeout:
+                await self._client.delete(self._key(session_id))
+                return None
+            # Refresh TTL and last_activity
+            session["last_activity"] = datetime.now(timezone.utc)
+            await self._async_set(session_id, session)
+            return session
+        except Exception as exc:
+            logger.warning("RedisSessionManager._async_get failed: %s", exc)
+            return None
+
+    def update_session(self, session_id: str, updates: dict) -> None:
+        import asyncio
+
+        # Non-serialisable keys go to local dict; serialisable go to Redis
+        local_updates = {k: v for k, v in updates.items() if k not in self._SERIALISABLE}
+        redis_updates = {k: v for k, v in updates.items() if k in self._SERIALISABLE}
+        if local_updates:
+            _local_session_objects.setdefault(session_id, {}).update(local_updates)
+        if redis_updates:
+            try:
+                loop = asyncio.get_event_loop()
+                loop.create_task(self._async_update(session_id, redis_updates))
+            except RuntimeError:
+                pass
+
+    async def _async_update(self, session_id: str, updates: dict) -> None:
+        raw = await self._client.get(self._key(session_id))
+        if raw is None:
+            return
+        session = self._deserialise(raw, session_id)
+        session.update(updates)
+        session["last_activity"] = datetime.now(timezone.utc)
+        await self._async_set(session_id, session)
+
+    def delete_session(self, session_id: str) -> None:
+        import asyncio
+
+        _local_session_objects.pop(session_id, None)
+        try:
+            loop = asyncio.get_event_loop()
+            loop.create_task(self._client.delete(self._key(session_id)))
+        except RuntimeError:
+            pass
+        logger.info(f"Deleted session {session_id[:8]}...")
+
+    def get_user_id(self, session_id: str) -> Optional[str]:
+        session = self.get_session(session_id)
+        return session["user_id"] if session else None
+
+
+# Alias: the rest of the codebase only references `SessionManager` as a type
+# name for isinstance() checks and type hints written before D2.  Bind it to
+# whichever concrete class is active so old imports don't break.
+if settings.redis_enabled:
+    session_manager = RedisSessionManager(settings.redis_url)
+    SessionManager = RedisSessionManager
+else:
+    session_manager = InMemorySessionManager()
+    SessionManager = InMemorySessionManager  # type: ignore[misc]
 
 
 async def get_session(request: Request) -> dict:

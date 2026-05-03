@@ -14,6 +14,7 @@ from starlette.responses import JSONResponse
 from app.core.config import settings
 from app.core.errors import APIException, ErrorCode, ErrorCategory
 from app.core.metrics import metrics
+from app.services import audit
 
 logger = logging.getLogger(__name__)
 
@@ -167,15 +168,29 @@ class CSRFMiddleware(BaseHTTPMiddleware):
                 session_csrf = session_data.get("csrf_token")
 
         if not csrf_token or csrf_token != session_csrf:
+            request_id = getattr(request.state, "request_id", None)
+            client_ip = request.client.host if request.client else "unknown"
             logger.warning(
-                f"SECURITY: CSRF token validation failed for {request.method} {request.url.path} from IP {request.client.host if request.client else 'unknown'}",
+                f"SECURITY: CSRF token validation failed for {request.method} {request.url.path} from IP {client_ip}",
                 extra={
-                    "request_id": getattr(request.state, "request_id", None),
+                    "request_id": request_id,
                     "event": "csrf_failure",
                     "path": request.url.path,
                     "method": request.method,
-                    "ip": request.client.host if request.client else "unknown",
+                    "ip": client_ip,
                 },
+            )
+            session_id = request.session.get("session_id")
+            actor_id = None
+            if session_id:
+                from app.core.auth import session_manager
+
+                actor_id = session_manager.get_user_id(session_id)
+            audit.fire_and_forget(
+                "csrf_failure",
+                actor_id=actor_id,
+                request_id=request_id,
+                payload={"method": request.method, "path": request.url.path, "ip": client_ip},
             )
             raise APIException(
                 code=ErrorCode.INTERNAL_ERROR,
@@ -226,14 +241,22 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         before FastAPI's exception handlers can intercept them, so we must
         return a Response directly instead of raising APIException.
         """
+        request_id = getattr(request.state, "request_id", None)
         logger.warning(
             f"SECURITY: {event} on {request.method} {request.url.path}",
             extra={
-                "request_id": getattr(request.state, "request_id", None),
+                "request_id": request_id,
                 "event": event,
                 "path": request.url.path,
                 **extra,
             },
+        )
+        actor_id = extra.get("user_id")
+        audit.fire_and_forget(
+            event,
+            actor_id=actor_id,
+            request_id=request_id,
+            payload={"method": request.method, "path": request.url.path, **extra},
         )
         return JSONResponse(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,

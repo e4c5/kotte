@@ -11,6 +11,7 @@ from app.api.v1 import router as v1_router
 from app.core.config import settings
 from app.core.errors import setup_error_handlers
 from app.core.logging import setup_logging
+from app.core.telemetry import setup_telemetry
 from app.core.middleware import (
     CSRFMiddleware,
     MetricsMiddleware,
@@ -27,8 +28,18 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     """Application lifespan events."""
     logger.info("Starting Kotte backend...")
+    from app.services.user import user_service
+
+    await user_service.seed_admin()
     yield
     logger.info("Shutting down Kotte backend...")
+    from app.services import audit
+    from app.services.user import user_service as _us
+    from app.core.database import pool_registry
+
+    await audit.close()
+    await _us.close()
+    await pool_registry.close_all()
 
 
 def create_app() -> FastAPI:
@@ -100,6 +111,9 @@ Apache AGE Graph Visualizer Backend API.
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # OpenTelemetry (no-op when OTEL_ENABLED=false)
+    setup_telemetry(app)
 
     # Error handlers
     setup_error_handlers(app)

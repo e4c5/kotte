@@ -862,9 +862,9 @@ Toggle `- [ ]` → `- [x]` as items ship, and add a short **Status** line under 
 
 ### Milestone D — Multi-user, multi-tenant, observable
 
-- [ ] **D1** — DB-backed users
-- [ ] **D2** — Redis-backed `SessionManager` and `query_tracker`
-- [ ] **D3** — Shared connection pool per `(host, db, user)` tuple
-- [ ] **D4** — OpenTelemetry
-- [ ] **D5** — First-class audit log
-- [ ] **D6** — CSV importer hardening
+- [x] **D1** — DB-backed users (`services/user.py` async + DB pool; `kotte_users` table via migration `78c03fa27fda`; in-memory fallback for dev/test; `POST /api/v1/users`, `PATCH /api/v1/users/me/password` routes added; `seed_admin()` called from lifespan)
+- [x] **D2** — Redis-backed `SessionManager` and `query_tracker` (`InMemorySessionManager` / `RedisSessionManager` selected by `REDIS_ENABLED`; `QueryTracker` / `RedisQueryTracker` with same pattern; db_conn stays process-local in both; `redis[hiredis]>=5.0.0` added to requirements)
+- [x] **D3** — Shared connection pool per `(host, db, user)` tuple (`PoolRegistry` singleton in `core/database/pool_registry.py`; `get_or_create()` + `cleanup_idle()` + `close_all()` called from lifespan; `pool_registry` exported from `core/database/__init__.py`)
+- [x] **D4** — OpenTelemetry (`core/telemetry.py`; `OTEL_ENABLED=false` default; FastAPI auto-instrumented when enabled; `trace_id` injected into JSON log formatter; `opentelemetry-*` packages added to requirements; `OTEL_*` env vars documented in `.env.example`)
+- [x] **D5** — First-class audit log (Alembic migration `a1b2c3d4e5f6`; `services/audit.py` with lazy pool + fire-and-forget; wired into all 5 SECURITY: log sites + login/logout/password events; no-op in `ENVIRONMENT=test`)
+- [x] **D6** — CSV importer hardening (stdlib `csv.DictReader` replaces naive `split(",")` at line 118; parameterized UNWIND for node batch; edge insertion uses `SET r = props::jsonb` instead of f-string interpolation; `import csv, io` added)

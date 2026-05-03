@@ -9,6 +9,7 @@ from app.core.auth import get_session, session_manager
 from app.core.database import DatabaseConnection
 from app.core.errors import APIException, ErrorCode, ErrorCategory
 from app.core.metrics import metrics
+from app.services import audit
 from app.models.session import (
     ConnectRequest,
     ConnectResponse,
@@ -64,15 +65,22 @@ async def connect(
     session_id_raw = http_request.session.get("session_id")
     if not isinstance(session_id_raw, str) or not session_id_raw:
         client_ip = http_request.client.host if http_request.client else "unknown"
+        request_id = getattr(http_request.state, "request_id", None)
         logger.warning(
             "SECURITY: Session ID missing after authentication",
             extra={
+                "request_id": request_id,
                 "event": "auth_invalid_session",
                 "reason": "missing_session_id_after_authentication",
                 "error_code": ErrorCode.AUTH_INVALID_SESSION,
                 "client_ip": client_ip,
                 "user_agent": http_request.headers.get("User-Agent"),
             },
+        )
+        audit.fire_and_forget(
+            "auth_invalid_session",
+            request_id=request_id,
+            payload={"reason": "missing_session_id_after_authentication", "ip": client_ip},
         )
         try:
             await db_conn.disconnect()
