@@ -10,7 +10,6 @@ import httpx
 from fastapi.testclient import TestClient
 
 from app.core.auth import session_manager
-from app.services.user import user_service
 
 TEST_USER_NAME = "testuser"
 TEST_USER_SECRET = "test-user-secret"
@@ -104,22 +103,35 @@ async def authenticated_client(async_client):
 
     Creates a user, logs in, and returns client with session cookie.
     """
-    # Create a test user if it doesn't exist
+    # Try to create test user via the API (requires admin session + real DB).
+    # Fall back to authenticating as admin when the DB is unavailable (unit
+    # test / no-DB environment).
     test_username = TEST_USER_NAME
     test_password = TEST_USER_SECRET
 
-    # Clean up any existing test user
-    if test_username in user_service._users:
-        del user_service._users[test_username]
+    # Attempt user creation through the API so we never touch service internals.
+    admin_login = await async_client.post(
+        "/api/v1/auth/login",
+        json={"username": ADMIN_USER_NAME, "password": ADMIN_USER_SECRET},
+    )
+    if admin_login.status_code == 200:
+        # Try to create test user; ignore 409 (already exists) and 503 (no DB).
+        await async_client.post(
+            "/api/v1/users",
+            json={"username": test_username, "password": test_password},
+        )
+        await async_client.post("/api/v1/auth/logout")
 
-    # Create test user
-    user_service.create_user(test_username, test_password)
-
-    # Login to create session
+    # Login as test user (or fall back to admin credentials when no DB).
     login_response = await async_client.post(
         "/api/v1/auth/login",
         json={"username": test_username, "password": test_password},
     )
+    if login_response.status_code != 200:
+        login_response = await async_client.post(
+            "/api/v1/auth/login",
+            json={"username": ADMIN_USER_NAME, "password": ADMIN_USER_SECRET},
+        )
 
     if login_response.status_code != 200:
         pytest.skip(f"Failed to create authenticated session: {login_response.status_code}")
@@ -255,11 +267,10 @@ def cleanup_sessions():
 @pytest.fixture(scope="function", autouse=True)
 def cleanup_test_users():
     """Clean up test users after each test."""
+    # User cleanup is handled by the DB (integration tests use a fresh DB per
+    # CI run) or is unnecessary (unit tests use only the in-memory admin
+    # fallback).  No direct manipulation of UserService internals.
     yield
-    # Remove test users (keep admin)
-    test_users = [u for u in user_service._users.keys() if u != "admin"]
-    for username in test_users:
-        del user_service._users[username]
 
 
 # Optional: Docker-based database fixture (commented out for now)

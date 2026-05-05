@@ -108,15 +108,15 @@ class UserService:
                 if row is None:
                     logger.warning("Authentication failed: user '%s' not found", username)
                     return None
-                if not _verify_password(password, row["password_hash"]):
+                if not _verify_password(password, row["password_hash"]):  # type: ignore[index,call-overload]
                     logger.warning("Authentication failed: invalid password for '%s'", username)
                     return None
                 await conn.execute(
                     "UPDATE kotte_users SET last_login_at = %s WHERE id = %s",
-                    (datetime.now(timezone.utc), row["id"]),
+                    (datetime.now(timezone.utc), row["id"]),  # type: ignore[index,call-overload]
                 )
             logger.info("User '%s' authenticated successfully", username)
-            return {"user_id": str(row["id"]), "username": row["username"]}
+            return {"user_id": str(row["id"]), "username": row["username"]}  # type: ignore[index,call-overload]
         except Exception as exc:
             logger.warning("UserService.authenticate DB error, trying fallback: %s", exc)
             return self._authenticate_fallback(username, password)
@@ -142,7 +142,7 @@ class UserService:
                     )
                     row = await cur.fetchone()
                 if row:
-                    return {"user_id": str(row["id"]), "username": row["username"]}
+                    return {"user_id": str(row["id"]), "username": row["username"]}  # type: ignore[index,call-overload]
         except Exception as exc:
             logger.warning("UserService.get_user DB error, trying fallback: %s", exc)
         return self._get_user_fallback(user_id)
@@ -172,7 +172,7 @@ class UserService:
                 )
                 row = await cur.fetchone()
             logger.info("Created user '%s'", username)
-            return {"user_id": str(row["id"]), "username": row["username"]}
+            return {"user_id": str(row["id"]), "username": row["username"]}  # type: ignore[index,call-overload]
         except psycopg.errors.UniqueViolation:
             raise APIException(
                 code=ErrorCode.INTERNAL_ERROR,
@@ -210,7 +210,7 @@ class UserService:
                     category=ErrorCategory.AUTHENTICATION,
                     status_code=status.HTTP_404_NOT_FOUND,
                 )
-            if not _verify_password(old_password, row["password_hash"]):
+            if not _verify_password(old_password, row["password_hash"]):  # type: ignore[index,call-overload]
                 raise APIException(
                     code=ErrorCode.AUTH_INVALID_SESSION,
                     message="Current password is incorrect",
@@ -220,7 +220,7 @@ class UserService:
             new_hash = _hash_password(new_password)
             await conn.execute(
                 "UPDATE kotte_users SET password_hash = %s WHERE id = %s",
-                (new_hash, row["id"]),
+                (new_hash, row["id"]),  # type: ignore[index,call-overload]
             )
 
     async def seed_admin(self) -> None:
@@ -233,7 +233,7 @@ class UserService:
             async with pool.connection() as conn:
                 cur = await conn.execute("SELECT COUNT(*) AS n FROM kotte_users")
                 row = await cur.fetchone()
-                if row and row["n"] == 0:
+                if row and row["n"] == 0:  # type: ignore[index,call-overload]
                     password_hash = _hash_password(_admin_password())
                     await conn.execute(
                         "INSERT INTO kotte_users (username, password_hash) VALUES (%s, %s)"

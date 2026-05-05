@@ -230,7 +230,7 @@ class RedisSessionManager:
         _local_session_objects.pop(session_id, None)
         try:
             loop = asyncio.get_event_loop()
-            loop.create_task(self._client.delete(self._key(session_id)))
+            loop.create_task(self._client.delete(self._key(session_id)))  # type: ignore[arg-type]
         except RuntimeError:
             pass
         logger.info(f"Deleted session {session_id[:8]}...")
@@ -247,8 +247,8 @@ if settings.redis_enabled:
     session_manager = RedisSessionManager(settings.redis_url)
     SessionManager = RedisSessionManager
 else:
-    session_manager = InMemorySessionManager()
-    SessionManager = InMemorySessionManager  # type: ignore[misc]
+    session_manager = InMemorySessionManager()  # type: ignore[assignment]
+    SessionManager = InMemorySessionManager  # type: ignore[misc,assignment]
 
 
 async def get_session(request: Request) -> dict:

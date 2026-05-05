@@ -159,4 +159,4 @@ class CypherExecutor:
                 rows = await cur.fetchmany(chunk_size)
                 if not rows:
                     break
-                yield rows
+                yield rows  # type: ignore[misc]

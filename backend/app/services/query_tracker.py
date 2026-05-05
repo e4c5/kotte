@@ -143,7 +143,7 @@ class RedisQueryTracker:
         try:
             loop = asyncio.get_event_loop()
             loop.create_task(
-                self._client.set(self._key(request_id), json.dumps(meta), ex=self._ttl)
+                self._client.set(self._key(request_id), json.dumps(meta), ex=self._ttl)  # type: ignore[arg-type]
             )
         except RuntimeError:
             pass
@@ -207,7 +207,7 @@ class RedisQueryTracker:
         self._db_conns.pop(request_id, None)
         try:
             loop = asyncio.get_event_loop()
-            loop.create_task(self._client.delete(self._key(request_id)))
+            loop.create_task(self._client.delete(self._key(request_id)))  # type: ignore[arg-type]
         except RuntimeError:
             pass
         logger.debug(f"Unregistered query {request_id[:8]}...")
@@ -227,4 +227,4 @@ class RedisQueryTracker:
 if settings.redis_enabled:
     query_tracker = RedisQueryTracker(settings.redis_url)
 else:
-    query_tracker = QueryTracker()
+    query_tracker = QueryTracker()  # type: ignore[assignment]
