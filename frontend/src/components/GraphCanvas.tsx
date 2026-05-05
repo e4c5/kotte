@@ -22,18 +22,21 @@ interface Tip {
   angle: number
 }
 
+const TIP_Q_RE = /Q\s*([-\d.e]+)\s+([-\d.e]+)\s+([-\d.e]+)\s+([-\d.e]+)\s*$/
+const TIP_L_RE = /M\s*([-\d.e]+)\s+([-\d.e]+)\s+L\s*([-\d.e]+)\s+([-\d.e]+)\s*$/
+
 /**
  * Extract arrowhead tip and tangent angle from a linkPath `d` string.
  * All linkPath paths end with a quadratic bezier "Q cx cy x1 y1".
  */
 function parseTip(d: string): Tip | null {
-  const q = d.match(/Q\s*([-\d.e]+)\s+([-\d.e]+)\s+([-\d.e]+)\s+([-\d.e]+)\s*$/)
+  const q = TIP_Q_RE.exec(d)
   if (q) {
     const cx = +q[1], cy = +q[2], x1 = +q[3], y1 = +q[4]
     return { x: x1, y: y1, angle: Math.atan2(y1 - cy, x1 - cx) }
   }
   // Degenerate near-zero line: "M x0 y0 L x1 y1"
-  const l = d.match(/M\s*([-\d.e]+)\s+([-\d.e]+).*L\s*([-\d.e]+)\s+([-\d.e]+)\s*$/)
+  const l = TIP_L_RE.exec(d)
   if (l) {
     const x0 = +l[1], y0 = +l[2], x1 = +l[3], y1 = +l[4]
     return { x: x1, y: y1, angle: Math.atan2(y1 - y0, x1 - x0) }
@@ -218,8 +221,8 @@ export default function GraphCanvas({
       .map((e) => {
         const v = e.properties[edgeWidthMapping.property!]
         if (v == null) return null
-        const n = typeof v === 'number' ? v : parseFloat(String(v))
-        return isNaN(n) ? null : n
+        const n = typeof v === 'number' ? v : Number.parseFloat(String(v))
+        return Number.isNaN(n) ? null : n
       })
       .filter((v): v is number => v !== null)
     if (!vals.length) return null
@@ -286,7 +289,7 @@ export default function GraphCanvas({
     )
 
     // HiDPI: size the backing store at physical pixels.
-    const dpr = window.devicePixelRatio || 1
+    const dpr = globalThis.devicePixelRatio || 1
     canvas.width = vw * dpr
     canvas.height = vh * dpr
     canvas.style.width = `${vw}px`
@@ -366,45 +369,27 @@ export default function GraphCanvas({
     rebuildPaths()
     dirtyRef.current = true
 
-    // ── draw closure ─────────────────────────────────────────────────────────────
-    function draw() {
-      // ctx is guaranteed non-null here — closures are only active while the canvas is mounted.
-      if (!ctx) return
-      const { x: tx, y: ty, k } = transformRef.current
+    const edgeColor = (e: GraphEdge) =>
+      pathEdgeIds.has(String(e.id))
+        ? '#0066cc'
+        : getEdgeStyle(e, edgeStyles, edgeWidthScale, edgeWidthMapping.property).color
 
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-      ctx.clearRect(0, 0, vw, vh)
-      ctx.fillStyle = '#09090b'
-      ctx.fillRect(0, 0, vw, vh)
-
-      ctx.translate(tx, ty)
-      ctx.scale(k, k)
-
-      const edgeColor = (e: GraphEdge) =>
-        pathEdgeIds.has(String(e.id))
-          ? '#0066cc'
-          : getEdgeStyle(e, edgeStyles, edgeWidthScale, edgeWidthMapping.property).color
-
-      // Edges
+    function drawEdges() {
       for (const edge of filteredEdges) {
         const result = pathByEdgeIdRef.current.get(edge.id)
         if (!result) continue
         const color = edgeColor(edge)
         const style = getEdgeStyle(edge, edgeStyles, edgeWidthScale, edgeWidthMapping.property)
-        const sw = pathEdgeIds.has(String(edge.id)) ? Math.max(3, style.size) : style.size
-        const alpha = pathEdgeIds.has(String(edge.id)) ? 1 : 0.6
-
-        ctx.globalAlpha = alpha
+        const highlighted = pathEdgeIds.has(String(edge.id))
+        ctx.globalAlpha = highlighted ? 1 : 0.6
         ctx.strokeStyle = color
-        ctx.lineWidth = sw
+        ctx.lineWidth = highlighted ? Math.max(3, style.size) : style.size
         ctx.stroke(new Path2D(result.d))
-
         const tip = parseTip(result.d)
         if (tip) {
           ctx.fillStyle = color
           drawArrow(ctx, tip.x, tip.y, tip.angle, ARROW_SIZE)
         }
-
         const caption = getEdgeCaption(edge, edgeStyles, edgeWidthScale, edgeWidthMapping.property)
         if (caption) {
           ctx.globalAlpha = 0.7
@@ -415,26 +400,21 @@ export default function GraphCanvas({
           ctx.fillText(caption, result.lx, result.ly - 4)
         }
       }
-
       ctx.globalAlpha = 1
+    }
 
-      // Nodes
+    function drawNodes() {
       for (const node of filteredNodes) {
         const style = getNodeStyle(node, nodeStyles)
         const nx = node.x ?? vw / 2
         const ny = node.y ?? vh / 2
         const fill = pathNodeIds.has(node.id) ? '#0066cc' : style.color
-        const stroke =
-          selectedNode === node.id
-            ? '#ff0000'
-            : pathNodeIds.has(node.id)
-              ? '#004499'
-              : pinnedNodes.has(node.id)
-                ? '#f59e0b'
-                : '#fff'
+        let stroke = '#fff'
+        if (selectedNode === node.id) stroke = '#ff0000'
+        else if (pathNodeIds.has(node.id)) stroke = '#004499'
+        else if (pinnedNodes.has(node.id)) stroke = '#f59e0b'
         const sw =
           selectedNode === node.id || pathNodeIds.has(node.id) || pinnedNodes.has(node.id) ? 3 : 2
-
         ctx.beginPath()
         ctx.arc(nx, ny, style.size, 0, Math.PI * 2)
         ctx.fillStyle = fill
@@ -442,7 +422,6 @@ export default function GraphCanvas({
         ctx.strokeStyle = stroke
         ctx.lineWidth = sw
         ctx.stroke()
-
         const caption = getNodeCaption(node, nodeStyles)
         if (caption) {
           ctx.fillStyle = '#e4e4e7'
@@ -452,10 +431,10 @@ export default function GraphCanvas({
           ctx.fillText(caption, nx + style.size + 5, ny)
         }
       }
+    }
 
-      ctx.globalAlpha = 1
-
-      // Lasso rings — dashed outline around each lasso-selected node (world space)
+    function drawLassoOverlay(pointerState: PointerState) {
+      // Dashed rings around each lasso-selected node (world space)
       const lasso = useGraphStore.getState().lassoNodes
       if (lasso.size > 0) {
         ctx.setLineDash([4, 3])
@@ -470,8 +449,7 @@ export default function GraphCanvas({
         }
         ctx.setLineDash([])
       }
-
-      // Lasso drag rect — drawn in screen space after resetting transform
+      // Selection rect in screen space (reset transform first)
       if (pointerState.type === 'lasso') {
         const { x0, y0, x1, y1 } = pointerState
         const rx = Math.min(x0, x1), ry = Math.min(y0, y1)
@@ -485,6 +463,27 @@ export default function GraphCanvas({
         ctx.strokeRect(rx, ry, rw, rh)
         ctx.setLineDash([])
       }
+    }
+
+    // ── draw closure ─────────────────────────────────────────────────────────────
+    function draw() {
+      // ctx is guaranteed non-null here — closures are only active while the canvas is mounted.
+      if (!ctx) return
+      const { x: tx, y: ty, k } = transformRef.current
+
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+      ctx.clearRect(0, 0, vw, vh)
+      ctx.fillStyle = '#09090b'
+      ctx.fillRect(0, 0, vw, vh)
+
+      ctx.translate(tx, ty)
+      ctx.scale(k, k)
+
+      drawEdges()
+      ctx.globalAlpha = 1
+      drawNodes()
+      ctx.globalAlpha = 1
+      drawLassoOverlay(pointerState)
     }
 
     drawRef.current = draw
@@ -600,53 +599,58 @@ export default function GraphCanvas({
       }
     }
 
+    function releaseLasso(state: LassoState) {
+      const { x0, y0, x1, y1 } = state
+      const { x: tx, y: ty, k } = transformRef.current
+      const wx0 = (Math.min(x0, x1) - tx) / k, wy0 = (Math.min(y0, y1) - ty) / k
+      const wx1 = (Math.max(x0, x1) - tx) / k, wy1 = (Math.max(y0, y1) - ty) / k
+      const hitSet = new Set<string>()
+      for (const n of nodesArr) {
+        const nx = n.x ?? 0, ny = n.y ?? 0
+        if (nx >= wx0 && nx <= wx1 && ny >= wy0 && ny <= wy1) hitSet.add(n.id)
+      }
+      useGraphStore.getState().setLassoNodes(hitSet)
+      dirtyRef.current = true
+    }
+
+    function releaseDrag(state: DragState) {
+      const { node, didMove } = state
+      if (!didMove) {
+        const now = Date.now()
+        if (lastClick && lastClick.id === node.id && now - lastClick.time < 300) {
+          onNodeDoubleClickRef.current?.(node)
+          lastClick = null
+        } else {
+          onNodeClickRef.current?.(node)
+          lastClick = { id: node.id, time: now }
+        }
+      }
+      if (layout === 'force') {
+        if (!pinnedNodes.has(node.id)) {
+          node.fx = null
+          node.fy = null
+        }
+        sim.alphaTarget(0)
+      }
+    }
+
+    function releasePan(state: PanState, e: PointerEvent) {
+      const dx = e.offsetX - state.startX
+      const dy = e.offsetY - state.startY
+      if (Math.hypot(dx, dy) < 5) {
+        const [wx, wy] = toWorld(e.offsetX, e.offsetY)
+        const he = hitEdge(wx, wy)
+        if (he) onEdgeClickRef.current?.(he)
+        else useGraphStore.getState().clearLassoNodes()
+      }
+    }
+
     function onPointerUp(e: PointerEvent) {
       if (e.button !== 0) return
       el.style.cursor = 'grab'
-      if (pointerState.type === 'lasso') {
-        const { x0, y0, x1, y1 } = pointerState
-        const { x: tx, y: ty, k } = transformRef.current
-        const sx0 = Math.min(x0, x1), sy0 = Math.min(y0, y1)
-        const sx1 = Math.max(x0, x1), sy1 = Math.max(y0, y1)
-        const wx0 = (sx0 - tx) / k, wy0 = (sy0 - ty) / k
-        const wx1 = (sx1 - tx) / k, wy1 = (sy1 - ty) / k
-        const hitSet = new Set<string>()
-        for (const n of nodesArr) {
-          const nx = n.x ?? 0, ny = n.y ?? 0
-          if (nx >= wx0 && nx <= wx1 && ny >= wy0 && ny <= wy1) hitSet.add(n.id)
-        }
-        useGraphStore.getState().setLassoNodes(hitSet)
-        pointerState = { type: 'idle' }
-        dirtyRef.current = true
-      } else if (pointerState.type === 'drag') {
-        const { node, didMove } = pointerState
-        if (!didMove) {
-          const now = Date.now()
-          if (lastClick && lastClick.id === node.id && now - lastClick.time < 300) {
-            onNodeDoubleClickRef.current?.(node)
-            lastClick = null
-          } else {
-            onNodeClickRef.current?.(node)
-            lastClick = { id: node.id, time: now }
-          }
-        }
-        if (layout === 'force') {
-          if (!pinnedNodes.has(node.id)) {
-            node.fx = null
-            node.fy = null
-          }
-          sim.alphaTarget(0)
-        }
-      } else if (pointerState.type === 'pan') {
-        const dx = e.offsetX - pointerState.startX
-        const dy = e.offsetY - pointerState.startY
-        if (Math.hypot(dx, dy) < 5) {
-          const [wx, wy] = toWorld(e.offsetX, e.offsetY)
-          const he = hitEdge(wx, wy)
-          if (he) onEdgeClickRef.current?.(he)
-          else useGraphStore.getState().clearLassoNodes()
-        }
-      }
+      if (pointerState.type === 'lasso') releaseLasso(pointerState)
+      else if (pointerState.type === 'drag') releaseDrag(pointerState)
+      else if (pointerState.type === 'pan') releasePan(pointerState, e)
       pointerState = { type: 'idle' }
     }
 
@@ -666,7 +670,7 @@ export default function GraphCanvas({
     el.addEventListener('pointermove', onPointerMove)
     el.addEventListener('pointerup', onPointerUp)
     el.addEventListener('contextmenu', onContextMenu)
-    window.addEventListener('keydown', onKeyDown)
+    globalThis.addEventListener('keydown', onKeyDown)
 
     return () => {
       sim.stop()
@@ -681,7 +685,7 @@ export default function GraphCanvas({
       el.removeEventListener('pointermove', onPointerMove)
       el.removeEventListener('pointerup', onPointerUp)
       el.removeEventListener('contextmenu', onContextMenu)
-      window.removeEventListener('keydown', onKeyDown)
+      globalThis.removeEventListener('keydown', onKeyDown)
       drawRef.current = null
     }
   }, [

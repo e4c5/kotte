@@ -110,6 +110,18 @@ class MetadataService:
         return "unknown"
 
     @staticmethod
+    def _accumulate_types_from_row(row: dict, type_map: dict[str, str]) -> None:
+        element = AgTypeParser.parse(next(iter(row.values()), None)) if row else None
+        if not isinstance(element, dict):
+            return
+        props = element.get("properties", {})
+        if not isinstance(props, dict):
+            return
+        for key, val in props.items():
+            if key not in type_map and val is not None:
+                type_map[key] = MetadataService._infer_type(val)
+
+    @staticmethod
     async def infer_property_types(
         db_conn: DatabaseConnection,
         graph_name: str,
@@ -138,15 +150,7 @@ class MetadataService:
             raw_rows = await db_conn.execute_cypher(validated_graph_name, cypher, params=None)
             type_map: dict[str, str] = {}
             for row in raw_rows:
-                element = AgTypeParser.parse(next(iter(row.values()), None)) if row else None
-                if not isinstance(element, dict):
-                    continue
-                props = element.get("properties", {})
-                if not isinstance(props, dict):
-                    continue
-                for key, val in props.items():
-                    if key not in type_map and val is not None:
-                        type_map[key] = MetadataService._infer_type(val)
+                MetadataService._accumulate_types_from_row(row, type_map)
 
             await metadata_cache.set(cache_key, type_map)
             return type_map

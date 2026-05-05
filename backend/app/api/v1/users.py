@@ -54,7 +54,8 @@ async def create_user(
         request_id=request_id,
         payload={"username": body.username},
     )
-    logger.info("Admin '%s' created user '%s'", actor_id, body.username)
+    safe_username = "".join(c for c in body.username if c.isprintable())
+    logger.info("Admin '%s' created user '%s'", actor_id, safe_username)
     return UserInfo(user_id=user["user_id"], username=user["username"])
 
 

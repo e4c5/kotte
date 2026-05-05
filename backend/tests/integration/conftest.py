@@ -16,6 +16,8 @@ TEST_USER_SECRET = "test-user-secret"
 ADMIN_USER_NAME = "admin"
 ADMIN_USER_SECRET = "admin"
 
+_LOGIN_ENDPOINT = "/api/v1/auth/login"
+
 # Public default for the upstream ``apache/age`` Docker image — not a prod
 # secret. Always set ``TEST_DB_PASSWORD`` in CI; operators override locally.
 _DEFAULT_INTEGRATION_DB_PASSWORD = "postgres"  # NOSONAR python:S2068
@@ -111,7 +113,7 @@ async def authenticated_client(async_client):
 
     # Attempt user creation through the API so we never touch service internals.
     admin_login = await async_client.post(
-        "/api/v1/auth/login",
+        _LOGIN_ENDPOINT,
         json={"username": ADMIN_USER_NAME, "password": ADMIN_USER_SECRET},
     )
     if admin_login.status_code == 200:
@@ -124,12 +126,12 @@ async def authenticated_client(async_client):
 
     # Login as test user (or fall back to admin credentials when no DB).
     login_response = await async_client.post(
-        "/api/v1/auth/login",
+        _LOGIN_ENDPOINT,
         json={"username": test_username, "password": test_password},
     )
     if login_response.status_code != 200:
         login_response = await async_client.post(
-            "/api/v1/auth/login",
+            _LOGIN_ENDPOINT,
             json={"username": ADMIN_USER_NAME, "password": ADMIN_USER_SECRET},
         )
 
@@ -147,7 +149,7 @@ async def admin_client(async_client):
     """
     # Login as admin
     login_response = await async_client.post(
-        "/api/v1/auth/login",
+        _LOGIN_ENDPOINT,
         json={"username": ADMIN_USER_NAME, "password": ADMIN_USER_SECRET},
     )
 

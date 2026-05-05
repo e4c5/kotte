@@ -5,8 +5,8 @@ import type { GraphNode } from './GraphView'
 const MAX_EXPAND_BATCH = 20
 
 interface LassoActionBarProps {
-  filteredNodes: GraphNode[]
-  onNodeDoubleClick?: (node: GraphNode) => void | Promise<void>
+  readonly filteredNodes: GraphNode[]
+  readonly onNodeDoubleClick?: (node: GraphNode) => void | Promise<void>
 }
 
 export default function LassoActionBar({ filteredNodes, onNodeDoubleClick }: LassoActionBarProps) {

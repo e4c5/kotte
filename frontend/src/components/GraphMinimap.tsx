@@ -22,13 +22,13 @@ interface WorldMapping {
 }
 
 export interface GraphMinimapProps {
-  nodes: GraphNode[]
-  viewportWidth: number
-  viewportHeight: number
+  readonly nodes: GraphNode[]
+  readonly viewportWidth: number
+  readonly viewportHeight: number
   /** Read the current viewport transform — called every draw frame. */
-  getTransform: () => { x: number; y: number; k: number }
+  readonly getTransform: () => { x: number; y: number; k: number }
   /** Apply a new viewport transform from a minimap interaction. */
-  setTransform: (t: { x: number; y: number; k: number }) => void
+  readonly setTransform: (t: { x: number; y: number; k: number }) => void
 }
 
 export default function GraphMinimap({
@@ -46,7 +46,7 @@ export default function GraphMinimap({
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
-    const dpr = window.devicePixelRatio || 1
+    const dpr = globalThis.devicePixelRatio || 1
     canvas.width = MINIMAP_W * dpr
     canvas.height = MINIMAP_H * dpr
     canvas.style.width = `${MINIMAP_W}px`
@@ -60,7 +60,7 @@ export default function GraphMinimap({
       if (!canvas) return
       const ctx = canvas.getContext('2d')
       if (!ctx) return
-      const dpr = window.devicePixelRatio || 1
+      const dpr = globalThis.devicePixelRatio || 1
 
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
       ctx.clearRect(0, 0, MINIMAP_W, MINIMAP_H)

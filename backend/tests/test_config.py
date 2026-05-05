@@ -99,12 +99,12 @@ class TestSettings:
             os.environ,
             {
                 "SESSION_SECRET_KEY": _TEST_SESSION_SECRET,
-                "CORS_ORIGINS": '["http://example.com", "http://other.com"]',
+                "CORS_ORIGINS": '["https://example.com", "https://other.com"]',
             },
             clear=True,
         ):
             s = Settings()
-            assert s.cors_origins == ["http://example.com", "http://other.com"]
+            assert s.cors_origins == ["https://example.com", "https://other.com"]
 
     def test_cors_origins_comma_separated_form(self):
         """Comma-separated string (documented in CONFIGURATION.md) is also accepted."""
@@ -112,12 +112,12 @@ class TestSettings:
             os.environ,
             {
                 "SESSION_SECRET_KEY": _TEST_SESSION_SECRET,
-                "CORS_ORIGINS": "http://example.com,http://other.com",
+                "CORS_ORIGINS": "https://example.com,https://other.com",
             },
             clear=True,
         ):
             s = Settings()
-            assert s.cors_origins == ["http://example.com", "http://other.com"]
+            assert s.cors_origins == ["https://example.com", "https://other.com"]
 
     def test_cors_origins_comma_separated_with_spaces(self):
         """Whitespace around commas is stripped."""
@@ -125,15 +125,15 @@ class TestSettings:
             os.environ,
             {
                 "SESSION_SECRET_KEY": _TEST_SESSION_SECRET,
-                "CORS_ORIGINS": " http://a.com , http://b.com ",
+                "CORS_ORIGINS": " https://a.com , https://b.com ",
             },
             clear=True,
         ):
             s = Settings()
-            assert s.cors_origins == ["http://a.com", "http://b.com"]
+            assert s.cors_origins == ["https://a.com", "https://b.com"]
 
     def test_cors_origins_list_passthrough(self):
         """A Python list (from direct Settings(...) instantiation) is passed through unchanged."""
         with patch.dict(os.environ, {"SESSION_SECRET_KEY": _TEST_SESSION_SECRET}, clear=True):
-            s = Settings(cors_origins=["http://direct.com"])
-            assert s.cors_origins == ["http://direct.com"]
+            s = Settings(cors_origins=["https://direct.com"])
+            assert s.cors_origins == ["https://direct.com"]

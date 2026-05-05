@@ -200,7 +200,7 @@ async def test_stream_query_no_cap_warning_when_results_exactly_match_max_rows()
     """
     # Exactly max_rows=5 rows split across two cursor batches (chunk_size=3).
     # The cursor returns empty on the third fetchmany → no truncation.
-    chunks, mock_db = await _collect_stream_chunks(
+    chunks, _mock_db = await _collect_stream_chunks(
         request_id="stream-max-rows-exact",
         batches=[[{"x": i} for i in range(3)], [{"x": i} for i in range(3, 5)]],
         max_rows=5,

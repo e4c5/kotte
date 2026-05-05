@@ -101,7 +101,7 @@ export default function TableView({
           {streaming && (
             <span className="inline-flex items-center gap-1 text-xs text-blue-400 animate-pulse">
               <span className="w-1.5 h-1.5 rounded-full bg-blue-400 inline-block" />
-              streaming
+              <span>streaming</span>
             </span>
           )}
         </div>

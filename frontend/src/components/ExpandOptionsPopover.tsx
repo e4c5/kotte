@@ -32,7 +32,7 @@ export default function ExpandOptionsPopover({
   onExpand,
   onClose,
 }: ExpandOptionsPopoverProps) {
-  const popoverRef = useRef<HTMLDivElement>(null)
+  const popoverRef = useRef<HTMLDialogElement>(null)
   const [depth, setDepth] = useState(1)
   const [limit, setLimit] = useState(100)
   const [direction, setDirection] = useState<'in' | 'out' | 'both'>('both')
@@ -94,9 +94,9 @@ export default function ExpandOptionsPopover({
   }
 
   return (
-    <div
+    <dialog
       ref={popoverRef}
-      role="dialog"
+      open
       aria-label={`Expand options for node ${nodeId}`}
       style={{
         position: 'fixed',
@@ -111,6 +111,7 @@ export default function ExpandOptionsPopover({
         padding: '12px 14px',
         fontSize: '13px',
         outline: 'none',
+        margin: 0,
       }}
     >
       <div style={{ fontWeight: 600, marginBottom: 10, fontSize: '14px' }}>
@@ -147,7 +148,7 @@ export default function ExpandOptionsPopover({
 
       {/* Depth */}
       <div style={{ marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
-        <label style={{ color: '#555', minWidth: 40 }}>Depth</label>
+        <span style={{ color: '#555', minWidth: 40 }}>Depth</span>
         <div style={{ display: 'flex', gap: 4 }}>
           {[1, 2].map((d) => (
             <button
@@ -284,6 +285,6 @@ export default function ExpandOptionsPopover({
           Expand
         </button>
       </div>
-    </div>
+    </dialog>
   )
 }

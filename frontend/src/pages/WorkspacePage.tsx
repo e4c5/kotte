@@ -126,6 +126,21 @@ export default function WorkspacePage() {
 
   const MUTATION_RE = /\b(CREATE|DELETE|SET|REMOVE|MERGE|DETACH)\b/i
 
+  function applyGraphViewMode(tabId: string) {
+    const { tabs: latestTabs } = useQueryStore.getState()
+    const tab = latestTabs.find((t) => t.id === tabId)
+    if (!tab?.result) return
+    const { result } = tab
+    if (result.visualization_warning) {
+      updateTab(tabId, { viewMode: 'table' })
+    } else if (result.graph_elements) {
+      const hasElements =
+        (result.graph_elements.nodes?.length || 0) > 0 ||
+        (result.graph_elements.edges?.length || 0) > 0
+      updateTab(tabId, { viewMode: hasElements ? 'graph' : 'table' })
+    }
+  }
+
   const runQuery = async (mutationConfirmed = false) => {
     if (!activeTabId || !currentGraph || !query.trim()) return
     const parseResult = getQueryParams(params)
@@ -135,19 +150,7 @@ export default function WorkspacePage() {
     try {
       if (wantsGraph) {
         await executeQuery(activeTabId, currentGraph, query, parseResult.value, true, mutationConfirmed)
-        const { tabs: latestTabs } = useQueryStore.getState()
-        const tab = latestTabs.find((t) => t.id === activeTabId)
-        if (tab?.result) {
-          const result = tab.result
-          if (result.graph_elements && !result.visualization_warning) {
-            const hasElements =
-              (result.graph_elements.nodes?.length || 0) > 0 ||
-              (result.graph_elements.edges?.length || 0) > 0
-            updateTab(activeTabId, { viewMode: hasElements ? 'graph' : 'table' })
-          } else if (result.visualization_warning) {
-            updateTab(activeTabId, { viewMode: 'table' })
-          }
-        }
+        applyGraphViewMode(activeTabId)
       } else {
         await streamQuery(activeTabId, currentGraph, query, parseResult.value, mutationConfirmed)
       }

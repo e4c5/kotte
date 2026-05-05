@@ -14,17 +14,100 @@ interface MetadataSidebarProps {
   onCollapsedChange: (collapsed: boolean) => void
 }
 
+// ---- LabelPropertiesPanel (shared by NodeLabelRow and EdgeLabelRow) ----------
+
+interface LabelPropertiesPanelProps {
+  readonly properties: string[]
+  readonly property_types?: Record<string, string>
+  readonly indexed_properties?: string[]
+  readonly property_statistics?: Array<{ property: string; min?: unknown; max?: unknown }>
+  readonly sampleQuery: string
+  readonly matchAllQuery: string
+  readonly sampleTitle: string
+  readonly matchAllTitle: string
+  readonly onQueryTemplate: (q: string) => void
+}
+
+function LabelPropertiesPanel({
+  properties,
+  property_types,
+  indexed_properties,
+  property_statistics,
+  sampleQuery,
+  matchAllQuery,
+  sampleTitle,
+  matchAllTitle,
+  onQueryTemplate,
+}: LabelPropertiesPanelProps) {
+  return (
+    <div className="mx-3 mb-2 rounded-md bg-zinc-900/60 border border-zinc-700/60 text-xs">
+      {properties.length > 0 ? (
+        <div className="px-2 pt-2 pb-1 flex flex-wrap gap-1">
+          {properties.map((p) => (
+            <span
+              key={p}
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-zinc-700 text-zinc-300 font-mono"
+            >
+              {p}
+              {property_types?.[p] && (
+                <span className="text-zinc-500 font-sans text-[10px]">{property_types[p]}</span>
+              )}
+              {indexed_properties?.includes(p) && (
+                <span
+                  className="text-[9px] px-0.5 rounded bg-amber-900/60 text-amber-400 font-sans leading-none"
+                  title="Indexed"
+                >
+                  idx
+                </span>
+              )}
+            </span>
+          ))}
+        </div>
+      ) : (
+        <p className="px-2 pt-2 pb-1 text-zinc-500 italic">No properties</p>
+      )}
+      {property_statistics && property_statistics.length > 0 && (
+        <div className="px-2 pb-1 flex flex-col gap-0.5">
+          {property_statistics.map((s) => (
+            <span key={s.property} className="text-zinc-500">
+              <span className="font-mono text-zinc-400">{s.property}</span>:{' '}
+              {String(s.min ?? '?')} – {String(s.max ?? '?')}
+            </span>
+          ))}
+        </div>
+      )}
+      <div className="flex gap-1 px-2 pb-2 pt-1 border-t border-zinc-700/60">
+        <button
+          type="button"
+          onClick={() => onQueryTemplate(sampleQuery)}
+          className="flex-1 rounded border border-zinc-600 bg-zinc-800 px-2 py-1 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 transition-colors"
+          title={sampleTitle}
+        >
+          Sample 5
+        </button>
+        <button
+          type="button"
+          onClick={() => onQueryTemplate(matchAllQuery)}
+          className="flex-1 rounded border border-zinc-600 bg-zinc-800 px-2 py-1 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 transition-colors"
+          title={matchAllTitle}
+        >
+          Match all
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // ---- NodeLabelRow ------------------------------------------------------------
 
 interface NodeLabelRowProps {
-  label: NodeLabel
-  onQueryTemplate: (q: string) => void
+  readonly label: NodeLabel
+  readonly onQueryTemplate: (q: string) => void
 }
 
 function NodeLabelRow({ label, onQueryTemplate }: NodeLabelRowProps) {
   const [open, setOpen] = useState(false)
   const color = getNodeLabelColor(label.label)
-  const hasProps = label.properties.length > 0
 
   return (
     <div>
@@ -49,59 +132,17 @@ function NodeLabelRow({ label, onQueryTemplate }: NodeLabelRowProps) {
           {open ? '▲' : '▼'}
         </span>
       </button>
-
       {open && (
-        <div className="mx-3 mb-2 rounded-md bg-zinc-900/60 border border-zinc-700/60 text-xs">
-          {hasProps ? (
-            <div className="px-2 pt-2 pb-1 flex flex-wrap gap-1">
-              {label.properties.map((p) => (
-                <span
-                  key={p}
-                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-zinc-700 text-zinc-300 font-mono"
-                >
-                  {p}
-                  {label.property_types?.[p] && (
-                    <span className="text-zinc-500 font-sans text-[10px]">
-                      {label.property_types[p]}
-                    </span>
-                  )}
-                  {label.indexed_properties?.includes(p) && (
-                    <span
-                      className="text-[9px] px-0.5 rounded bg-amber-900/60 text-amber-400 font-sans leading-none"
-                      title="Indexed"
-                    >
-                      idx
-                    </span>
-                  )}
-                </span>
-              ))}
-            </div>
-          ) : (
-            <p className="px-2 pt-2 pb-1 text-zinc-500 italic">No properties</p>
-          )}
-          <div className="flex gap-1 px-2 pb-2 pt-1 border-t border-zinc-700/60">
-            <button
-              type="button"
-              onClick={() =>
-                onQueryTemplate(`MATCH (n:${label.label}) RETURN n LIMIT 5`)
-              }
-              className="flex-1 rounded border border-zinc-600 bg-zinc-800 px-2 py-1 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 transition-colors"
-              title="Sample 5 nodes with this label"
-            >
-              Sample 5
-            </button>
-            <button
-              type="button"
-              onClick={() =>
-                onQueryTemplate(`MATCH (n:${label.label}) RETURN n LIMIT 100`)
-              }
-              className="flex-1 rounded border border-zinc-600 bg-zinc-800 px-2 py-1 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 transition-colors"
-              title="Generate MATCH query for all nodes with this label"
-            >
-              Match all
-            </button>
-          </div>
-        </div>
+        <LabelPropertiesPanel
+          properties={label.properties}
+          property_types={label.property_types}
+          indexed_properties={label.indexed_properties}
+          sampleQuery={`MATCH (n:${label.label}) RETURN n LIMIT 5`}
+          matchAllQuery={`MATCH (n:${label.label}) RETURN n LIMIT 100`}
+          sampleTitle="Sample 5 nodes with this label"
+          matchAllTitle="Generate MATCH query for all nodes with this label"
+          onQueryTemplate={onQueryTemplate}
+        />
       )}
     </div>
   )
@@ -110,13 +151,12 @@ function NodeLabelRow({ label, onQueryTemplate }: NodeLabelRowProps) {
 // ---- EdgeLabelRow ------------------------------------------------------------
 
 interface EdgeLabelRowProps {
-  label: EdgeLabel
-  onQueryTemplate: (q: string) => void
+  readonly label: EdgeLabel
+  readonly onQueryTemplate: (q: string) => void
 }
 
 function EdgeLabelRow({ label, onQueryTemplate }: EdgeLabelRowProps) {
   const [open, setOpen] = useState(false)
-  const hasProps = label.properties.length > 0
 
   return (
     <div>
@@ -137,73 +177,18 @@ function EdgeLabelRow({ label, onQueryTemplate }: EdgeLabelRowProps) {
           {open ? '▲' : '▼'}
         </span>
       </button>
-
       {open && (
-        <div className="mx-3 mb-2 rounded-md bg-zinc-900/60 border border-zinc-700/60 text-xs">
-          {hasProps ? (
-            <div className="px-2 pt-2 pb-1 flex flex-wrap gap-1">
-              {label.properties.map((p) => (
-                <span
-                  key={p}
-                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-zinc-700 text-zinc-300 font-mono"
-                >
-                  {p}
-                  {label.property_types?.[p] && (
-                    <span className="text-zinc-500 font-sans text-[10px]">
-                      {label.property_types[p]}
-                    </span>
-                  )}
-                  {label.indexed_properties?.includes(p) && (
-                    <span
-                      className="text-[9px] px-0.5 rounded bg-amber-900/60 text-amber-400 font-sans leading-none"
-                      title="Indexed"
-                    >
-                      idx
-                    </span>
-                  )}
-                </span>
-              ))}
-            </div>
-          ) : (
-            <p className="px-2 pt-2 pb-1 text-zinc-500 italic">No properties</p>
-          )}
-          {label.property_statistics && label.property_statistics.length > 0 && (
-            <div className="px-2 pb-1 flex flex-col gap-0.5">
-              {label.property_statistics.map((s) => (
-                <span key={s.property} className="text-zinc-500">
-                  <span className="font-mono text-zinc-400">{s.property}</span>:{' '}
-                  {s.min ?? '?'} – {s.max ?? '?'}
-                </span>
-              ))}
-            </div>
-          )}
-          <div className="flex gap-1 px-2 pb-2 pt-1 border-t border-zinc-700/60">
-            <button
-              type="button"
-              onClick={() =>
-                onQueryTemplate(
-                  `MATCH (a)-[r:${label.label}]->(b) RETURN a, r, b LIMIT 5`
-                )
-              }
-              className="flex-1 rounded border border-zinc-600 bg-zinc-800 px-2 py-1 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 transition-colors"
-              title="Sample 5 edges with this label"
-            >
-              Sample 5
-            </button>
-            <button
-              type="button"
-              onClick={() =>
-                onQueryTemplate(
-                  `MATCH (a)-[r:${label.label}]->(b) RETURN a, r, b LIMIT 100`
-                )
-              }
-              className="flex-1 rounded border border-zinc-600 bg-zinc-800 px-2 py-1 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 transition-colors"
-              title="Generate MATCH query for all edges with this label"
-            >
-              Match all
-            </button>
-          </div>
-        </div>
+        <LabelPropertiesPanel
+          properties={label.properties}
+          property_types={label.property_types}
+          indexed_properties={label.indexed_properties}
+          property_statistics={label.property_statistics}
+          sampleQuery={`MATCH (a)-[r:${label.label}]->(b) RETURN a, r, b LIMIT 5`}
+          matchAllQuery={`MATCH (a)-[r:${label.label}]->(b) RETURN a, r, b LIMIT 100`}
+          sampleTitle="Sample 5 edges with this label"
+          matchAllTitle="Generate MATCH query for all edges with this label"
+          onQueryTemplate={onQueryTemplate}
+        />
       )}
     </div>
   )
