@@ -1,6 +1,7 @@
 import { useEffect, useRef, useMemo, useState, useCallback } from 'react'
 import * as d3 from 'd3'
 import { useGraphStore } from '../stores/graphStore'
+import type { LabelStyle } from '../stores/graphStore'
 import { initializeLayout } from '../utils/graphLayouts'
 import { getNodeStyle, getEdgeStyle, getNodeCaption, getEdgeCaption } from '../utils/graphStyles'
 import { linkPath, markerIdForColor, parallelEdgeMeta, type LinkPathResult } from '../utils/graphLinkPaths'
@@ -59,6 +60,33 @@ function applyLinkPathD(
   pathByEdgeId: Map<string, LinkPathResult>
 ) {
   sel.attr('d', (d) => pathByEdgeId.get(d.id)?.d ?? '')
+}
+
+function applyLassoRings(
+  group: d3.Selection<SVGGElement, unknown, d3.BaseType, unknown>,
+  nodes: GraphNode[],
+  lasso: Set<string>,
+  nodeStyles: Record<string, LabelStyle>,
+  centerX: number,
+  centerY: number,
+): void {
+  group
+    .selectAll<SVGCircleElement, GraphNode>('circle')
+    .data(nodes.filter((n) => lasso.has(n.id)), (d) => d.id)
+    .join(
+      (enter) =>
+        enter
+          .append('circle')
+          .attr('r', (d) => getNodeStyle(d, nodeStyles).size + 5)
+          .attr('fill', 'none')
+          .attr('stroke', '#60a5fa')
+          .attr('stroke-width', 1.5)
+          .attr('stroke-dasharray', '4 2'),
+      (update) => update,
+      (exit) => exit.remove(),
+    )
+    .attr('cx', (d) => d.x ?? centerX)
+    .attr('cy', (d) => d.y ?? centerY)
 }
 
 export default function GraphView({
@@ -331,7 +359,7 @@ export default function GraphView({
     svgEl.addEventListener('pointermove', onLassoMove)
     svgEl.addEventListener('pointerup', onLassoUp)
     svg.on('click.lasso', onBgClick)
-    window.addEventListener('keydown', onKeyDown)
+    globalThis.addEventListener('keydown', onKeyDown)
 
     const hasEdges = filteredEdges.length > 0
     let simulation: d3.Simulation<GraphNode, GraphEdge>
@@ -490,30 +518,8 @@ export default function GraphView({
 
     // updateLassoRings: rebuilds the dashed-ring selection for lasso-selected nodes.
     // Also called from a separate useEffect when lassoNodes changes externally (e.g. Escape).
-    function updateLassoRings() {
-      const lasso = useGraphStore.getState().lassoNodes
-      lassoRingGroup
-        .selectAll<SVGCircleElement, GraphNode>('circle')
-        .data(
-          nodesWithPositions.filter((n) => lasso.has(n.id)),
-          (d) => d.id,
-        )
-        .join(
-          (enter) =>
-            enter
-              .append('circle')
-              .attr('r', (d) => getNodeStyle(d, nodeStyles).size + 5)
-              .attr('fill', 'none')
-              .attr('stroke', '#60a5fa')
-              .attr('stroke-width', 1.5)
-              .attr('stroke-dasharray', '4 2'),
-          (update) => update,
-          (exit) => exit.remove(),
-        )
-        .attr('cx', (d) => d.x ?? centerX)
-        .attr('cy', (d) => d.y ?? centerY)
-    }
-    updateLassoRingsRef.current = updateLassoRings
+    updateLassoRingsRef.current = () =>
+      applyLassoRings(lassoRingGroup, nodesWithPositions, useGraphStore.getState().lassoNodes, nodeStyles, centerX, centerY)
 
     let didAutoStop = false
     const pathByEdgeId = new Map<string, LinkPathResult>()
@@ -563,7 +569,7 @@ export default function GraphView({
       svgEl.removeEventListener('pointerdown', onLassoDown);
       svgEl.removeEventListener('pointermove', onLassoMove);
       svgEl.removeEventListener('pointerup', onLassoUp);
-      window.removeEventListener('keydown', onKeyDown);
+      globalThis.removeEventListener('keydown', onKeyDown);
       svg.on('.zoom', null);
       svg.on('click.lasso', null);
       svg.selectAll('*').remove();

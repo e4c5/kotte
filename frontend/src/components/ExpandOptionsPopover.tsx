@@ -1,24 +1,26 @@
 import { useEffect, useRef, useState } from 'react'
 
+export type ExpandDirection = 'in' | 'out' | 'both'
+
 export interface ExpandOptions {
-  depth: number
-  limit: number
-  edge_labels: string[] | undefined
-  direction: 'in' | 'out' | 'both'
+  readonly depth: number
+  readonly limit: number
+  readonly edge_labels: string[] | undefined
+  readonly direction: ExpandDirection
 }
 
 export interface ExpandOptionsPopoverProps {
-  x: number
-  y: number
-  nodeId: string
+  readonly x: number
+  readonly y: number
+  readonly nodeId: string
   /** Available relationship types from graph metadata. */
-  availableEdgeLabels: string[]
+  readonly availableEdgeLabels: string[]
   /** Called when the user clicks "Expand". */
-  onExpand: (nodeId: string, options: ExpandOptions) => void
-  onClose: () => void
+  readonly onExpand: (nodeId: string, options: ExpandOptions) => void
+  readonly onClose: () => void
 }
 
-const DIRECTIONS: { value: 'in' | 'out' | 'both'; label: string }[] = [
+const DIRECTIONS: { value: ExpandDirection; label: string }[] = [
   { value: 'both', label: '↔ Both' },
   { value: 'out', label: '→ Outgoing' },
   { value: 'in', label: '← Incoming' },
@@ -35,7 +37,7 @@ export default function ExpandOptionsPopover({
   const popoverRef = useRef<HTMLDialogElement>(null)
   const [depth, setDepth] = useState(1)
   const [limit, setLimit] = useState(100)
-  const [direction, setDirection] = useState<'in' | 'out' | 'both'>('both')
+  const [direction, setDirection] = useState<ExpandDirection>('both')
   // null = all types selected; string[] = explicit subset
   const [selectedLabels, setSelectedLabels] = useState<string[] | null>(null)
 

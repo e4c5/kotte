@@ -49,6 +49,7 @@ class InMemorySessionManager:
     def __init__(self):
         self._sessions: dict[str, dict] = {}
 
+    # async without await: matches the RedisSessionManager interface so callers can always await.
     async def create_session(self, user_id: str, connection_config: Optional[dict] = None) -> str:
         session_id = secrets.token_urlsafe(32)
         csrf_token = secrets.token_urlsafe(32)

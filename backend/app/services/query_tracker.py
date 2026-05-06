@@ -242,7 +242,7 @@ class RedisQueryTracker:
             logger.warning("RedisQueryTracker.get_query_info_full failed: %s", exc)
             return {"db_conn": db_conn}
 
-    def cleanup_stale_queries(self, max_age_seconds: int = 3600) -> None:
+    def cleanup_stale_queries(self) -> None:
         # Purge local db_conn entries whose Redis key has already expired.
         # We can only check this synchronously via a best-effort scan of local keys;
         # actual TTL-based expiry is handled by Redis. Schedule async purge as a task.
@@ -255,7 +255,7 @@ class RedisQueryTracker:
 
     async def _async_cleanup_stale(self) -> None:
         stale = []
-        for request_id in list(self._db_conns.keys()):
+        for request_id in list(self._db_conns):
             try:
                 exists = await self._client.exists(self._key(request_id))
                 if not exists:

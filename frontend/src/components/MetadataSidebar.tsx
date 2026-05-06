@@ -5,13 +5,13 @@ import { useGraphStore } from '../stores/graphStore'
 import { getNodeLabelColor } from '../utils/nodeColors'
 
 interface MetadataSidebarProps {
-  currentGraph?: string
-  onGraphSelect: (graphName: string) => void
+  readonly currentGraph?: string
+  readonly onGraphSelect: (graphName: string) => void
   /** Second arg carries the template's default params JSON when invoked from the Library. */
-  onQueryTemplate: (query: string, params?: string) => void
+  readonly onQueryTemplate: (query: string, params?: string) => void
   /** Controlled: whether the sidebar is collapsed. Parent is the source of truth. */
-  collapsed: boolean
-  onCollapsedChange: (collapsed: boolean) => void
+  readonly collapsed: boolean
+  readonly onCollapsedChange: (collapsed: boolean) => void
 }
 
 // ---- LabelPropertiesPanel (shared by NodeLabelRow and EdgeLabelRow) ----------
@@ -197,7 +197,7 @@ function EdgeLabelRow({ label, onQueryTemplate }: EdgeLabelRowProps) {
 // ---- LibraryPanel -----------------------------------------------------------
 
 interface LibraryPanelProps {
-  onQueryTemplate: (query: string, params?: string) => void
+  readonly onQueryTemplate: (query: string, params?: string) => void
 }
 
 function LibraryPanel({ onQueryTemplate }: LibraryPanelProps) {
@@ -407,7 +407,7 @@ export default function MetadataSidebar({
               aria-expanded={nodeLabelsOpen}
             >
               <span>
-                Node Labels
+                Node Labels{' '}
                 <span className="ml-1.5 normal-case font-normal text-zinc-500">
                   ({metadata.node_labels.length})
                 </span>
@@ -438,7 +438,7 @@ export default function MetadataSidebar({
               aria-expanded={edgeLabelsOpen}
             >
               <span>
-                Edge Labels
+                Edge Labels{' '}
                 <span className="ml-1.5 normal-case font-normal text-zinc-500">
                   ({metadata.edge_labels.length})
                 </span>

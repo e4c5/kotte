@@ -99,17 +99,34 @@ const ZOOM_MIN = 0.05
 const ZOOM_MAX = 20
 const ARROW_SIZE = 8
 
+async function downloadCanvasBlob(canvas: HTMLCanvasElement): Promise<void> {
+  return new Promise<void>((resolve) => {
+    canvas.toBlob((blob) => {
+      if (!blob) { resolve(); return }
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `graph-export-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.png`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      queueMicrotask(() => URL.revokeObjectURL(url))
+      resolve()
+    }, 'image/png')
+  })
+}
+
 export interface GraphCanvasProps {
-  nodes: GraphNode[]
-  edges: GraphEdge[]
-  width: number
-  height: number
-  pathHighlights?: PathHighlights
-  onNodeClick?: (node: GraphNode) => void
-  onNodeDoubleClick?: (node: GraphNode) => void
-  onNodeRightClick?: (node: GraphNode, event: MouseEvent) => void
-  onEdgeClick?: (edge: GraphEdge) => void
-  onExportReady?: (exportFn: () => Promise<void>) => void
+  readonly nodes: GraphNode[]
+  readonly edges: GraphEdge[]
+  readonly width: number
+  readonly height: number
+  readonly pathHighlights?: PathHighlights
+  readonly onNodeClick?: (node: GraphNode) => void
+  readonly onNodeDoubleClick?: (node: GraphNode) => void
+  readonly onNodeRightClick?: (node: GraphNode, event: MouseEvent) => void
+  readonly onEdgeClick?: (edge: GraphEdge) => void
+  readonly onExportReady?: (exportFn: () => Promise<void>) => void
 }
 
 // ── component ─────────────────────────────────────────────────────────────────
@@ -260,28 +277,11 @@ export default function GraphCanvas({
   // ── canvas export ────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!onExportReady) return
-    const exportFn = async () => {
+    onExportReady(async () => {
       const canvas = canvasRef.current
       if (!canvas) return
-      await new Promise<void>((resolve) => {
-        canvas.toBlob((blob) => {
-          if (!blob) {
-            resolve()
-            return
-          }
-          const url = URL.createObjectURL(blob)
-          const a = document.createElement('a')
-          a.href = url
-          a.download = `graph-export-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.png`
-          document.body.appendChild(a)
-          a.click()
-          a.remove()
-          queueMicrotask(() => URL.revokeObjectURL(url))
-          resolve()
-        }, 'image/png')
-      })
-    }
-    onExportReady(exportFn)
+      await downloadCanvasBlob(canvas)
+    })
   }, [onExportReady])
 
   // ── main effect: simulation + draw closure + event handlers ──────────────────
@@ -624,7 +624,7 @@ export default function GraphCanvas({
       const { node, didMove } = state
       if (!didMove) {
         const now = Date.now()
-        if (lastClick && lastClick.id === node.id && now - lastClick.time < 300) {
+        if (lastClick?.id === node.id && now - lastClick.time < 300) {
           onNodeDoubleClickRef.current?.(node)
           lastClick = null
         } else {

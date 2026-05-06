@@ -112,7 +112,7 @@ class PoolRegistry:
     async def close_all(self) -> None:
         """Close every managed pool. Called from app lifespan shutdown."""
         async with self._lock:
-            for key, pool in list(self._pools.items()):
+            for key, pool in self._pools.items():
                 try:
                     await pool.disconnect()
                 except Exception as exc:
