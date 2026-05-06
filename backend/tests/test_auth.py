@@ -223,51 +223,51 @@ class TestUserService:
 class TestSessionManager:
     """Tests for session manager."""
 
-    def test_create_session(self):
+    async def test_create_session(self):
         """Test creating a session."""
-        session_id = session_manager.create_session("user1")
+        session_id = await session_manager.create_session("user1")
         assert session_id is not None
         assert len(session_id) > 0
 
         # Verify session exists
-        session = session_manager.get_session(session_id)
+        session = await session_manager.get_session(session_id)
         assert session is not None
         assert session["user_id"] == "user1"
 
-    def test_get_session(self):
+    async def test_get_session(self):
         """Test getting a session."""
-        session_id = session_manager.create_session("user1")
-        session = session_manager.get_session(session_id)
+        session_id = await session_manager.create_session("user1")
+        session = await session_manager.get_session(session_id)
 
         assert session is not None
         assert session["user_id"] == "user1"
         assert "created_at" in session
         assert "last_activity" in session
 
-    def test_get_invalid_session(self):
+    async def test_get_invalid_session(self):
         """Test getting non-existent session."""
-        session = session_manager.get_session("invalid-session-id")
+        session = await session_manager.get_session("invalid-session-id")
         assert session is None
 
-    def test_update_session(self):
+    async def test_update_session(self):
         """Test updating a session."""
-        session_id = session_manager.create_session("user1")
-        session_manager.update_session(session_id, {"graph_context": "test_graph"})
+        session_id = await session_manager.create_session("user1")
+        await session_manager.update_session(session_id, {"graph_context": "test_graph"})
 
-        session = session_manager.get_session(session_id)
+        session = await session_manager.get_session(session_id)
         assert session["graph_context"] == "test_graph"
 
-    def test_delete_session(self):
+    async def test_delete_session(self):
         """Test deleting a session."""
-        session_id = session_manager.create_session("user1")
-        session_manager.delete_session(session_id)
+        session_id = await session_manager.create_session("user1")
+        await session_manager.delete_session(session_id)
 
-        session = session_manager.get_session(session_id)
+        session = await session_manager.get_session(session_id)
         assert session is None
 
-    def test_get_user_id(self):
+    async def test_get_user_id(self):
         """Test getting user ID from session."""
-        session_id = session_manager.create_session("user1")
-        user_id = session_manager.get_user_id(session_id)
+        session_id = await session_manager.create_session("user1")
+        user_id = await session_manager.get_user_id(session_id)
 
         assert user_id == "user1"

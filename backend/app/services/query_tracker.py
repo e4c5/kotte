@@ -222,12 +222,49 @@ class RedisQueryTracker:
         db_conn = self._db_conns.get(request_id)
         if db_conn is None:
             return None
+        # Return what we can from the local store; Redis metadata is fetched async
+        # by callers that need it (e.g. cancel_query fetches Redis data directly).
         return {"db_conn": db_conn}
 
+    async def get_query_info_full(self, request_id: str) -> Optional[Dict]:
+        """Fetch full metadata (including Redis fields) for a query."""
+        db_conn = self._db_conns.get(request_id)
+        if db_conn is None:
+            return None
+        try:
+            raw = await self._client.get(self._key(request_id))
+            if raw is None:
+                return {"db_conn": db_conn}
+            meta = json.loads(raw)
+            meta["db_conn"] = db_conn
+            return meta
+        except Exception as exc:
+            logger.warning("RedisQueryTracker.get_query_info_full failed: %s", exc)
+            return {"db_conn": db_conn}
+
     def cleanup_stale_queries(self, max_age_seconds: int = 3600) -> None:
-        # Redis TTL handles expiry; just purge local db_conn references that
-        # have no matching Redis key (best-effort in process scope).
-        pass
+        # Purge local db_conn entries whose Redis key has already expired.
+        # We can only check this synchronously via a best-effort scan of local keys;
+        # actual TTL-based expiry is handled by Redis. Schedule async purge as a task.
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                _keep_task(loop.create_task(self._async_cleanup_stale()))
+        except RuntimeError:
+            pass
+
+    async def _async_cleanup_stale(self) -> None:
+        stale = []
+        for request_id in list(self._db_conns.keys()):
+            try:
+                exists = await self._client.exists(self._key(request_id))
+                if not exists:
+                    stale.append(request_id)
+            except Exception:
+                break
+        for request_id in stale:
+            logger.warning(f"Purging stale local db_conn for query {request_id[:8]}...")
+            self._db_conns.pop(request_id, None)
 
 
 if settings.redis_enabled:

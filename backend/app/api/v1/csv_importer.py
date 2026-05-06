@@ -116,8 +116,8 @@ async def import_csv(
                 category=ErrorCategory.VALIDATION,
                 status_code=422,
             )
-        # Strip BOM / whitespace from field names
-        header = [f.strip().lstrip("﻿") for f in reader.fieldnames]
+        # Strip BOM then whitespace from field names (BOM must come off before strip)
+        header = [f.lstrip("﻿").strip() for f in reader.fieldnames]
         # Case-insensitive lookup: lowercase → original header name
         header_lower_map = {h.lower(): h for h in header}
         if not header:
@@ -224,7 +224,9 @@ async def import_csv(
                 SELECT * FROM ag_catalog.create_label({graph_lit}, {label_lit}, {label_kind == 'v'})
             """
             try:
-                await db_conn.execute_query(create_label_query, conn=conn)
+                # Use a savepoint so an "already exists" error doesn't abort the outer transaction
+                async with conn.transaction():
+                    await db_conn.execute_query(create_label_query, conn=conn)
                 job_status.created_labels.append(validated_label_name)
             except Exception as e:
                 if "already exists" not in str(e).lower():

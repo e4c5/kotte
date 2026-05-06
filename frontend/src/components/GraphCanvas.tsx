@@ -305,6 +305,7 @@ export default function GraphCanvas({
 
     const ctx = canvas.getContext('2d')
     if (!ctx) return
+    const ctxNonNull: CanvasRenderingContext2D = ctx
 
     // ── simulation setup ────────────────────────────────────────────────────────
     // initializeLayout mutates nodes in-place; filteredNodes and the returned array
@@ -389,26 +390,26 @@ export default function GraphCanvas({
         const color = edgeColor(edge)
         const style = getEdgeStyle(edge, edgeStyles, edgeWidthScale, edgeWidthMapping.property)
         const highlighted = pathEdgeIdsRef.current.has(String(edge.id))
-        ctx.globalAlpha = highlighted ? 1 : 0.6
-        ctx.strokeStyle = color
-        ctx.lineWidth = highlighted ? Math.max(3, style.size) : style.size
-        ctx.stroke(new Path2D(result.d))
+        ctxNonNull.globalAlpha = highlighted ? 1 : 0.6
+        ctxNonNull.strokeStyle = color
+        ctxNonNull.lineWidth = highlighted ? Math.max(3, style.size) : style.size
+        ctxNonNull.stroke(new Path2D(result.d))
         const tip = parseTip(result.d)
         if (tip) {
-          ctx.fillStyle = color
-          drawArrow(ctx, tip.x, tip.y, tip.angle, ARROW_SIZE)
+          ctxNonNull.fillStyle = color
+          drawArrow(ctxNonNull, tip.x, tip.y, tip.angle, ARROW_SIZE)
         }
         const caption = getEdgeCaption(edge, edgeStyles, edgeWidthScale, edgeWidthMapping.property)
         if (caption) {
-          ctx.globalAlpha = 0.7
-          ctx.fillStyle = '#a1a1aa'
-          ctx.font = '10px sans-serif'
-          ctx.textAlign = 'center'
-          ctx.textBaseline = 'alphabetic'
-          ctx.fillText(caption, result.lx, result.ly - 4)
+          ctxNonNull.globalAlpha = 0.7
+          ctxNonNull.fillStyle = '#a1a1aa'
+          ctxNonNull.font = '10px sans-serif'
+          ctxNonNull.textAlign = 'center'
+          ctxNonNull.textBaseline = 'alphabetic'
+          ctxNonNull.fillText(caption, result.lx, result.ly - 4)
         }
       }
-      ctx.globalAlpha = 1
+      ctxNonNull.globalAlpha = 1
     }
 
     function drawNodes() {
@@ -423,20 +424,20 @@ export default function GraphCanvas({
         else if (pinnedNodes.has(node.id)) stroke = '#f59e0b'
         const sw =
           selectedNodeRef.current === node.id || pathNodeIdsRef.current.has(node.id) || pinnedNodes.has(node.id) ? 3 : 2
-        ctx.beginPath()
-        ctx.arc(nx, ny, style.size, 0, Math.PI * 2)
-        ctx.fillStyle = fill
-        ctx.fill()
-        ctx.strokeStyle = stroke
-        ctx.lineWidth = sw
-        ctx.stroke()
+        ctxNonNull.beginPath()
+        ctxNonNull.arc(nx, ny, style.size, 0, Math.PI * 2)
+        ctxNonNull.fillStyle = fill
+        ctxNonNull.fill()
+        ctxNonNull.strokeStyle = stroke
+        ctxNonNull.lineWidth = sw
+        ctxNonNull.stroke()
         const caption = getNodeCaption(node, nodeStyles)
         if (caption) {
-          ctx.fillStyle = '#e4e4e7'
-          ctx.font = '12px sans-serif'
-          ctx.textAlign = 'left'
-          ctx.textBaseline = 'middle'
-          ctx.fillText(caption, nx + style.size + 5, ny)
+          ctxNonNull.fillStyle = '#e4e4e7'
+          ctxNonNull.font = '12px sans-serif'
+          ctxNonNull.textAlign = 'left'
+          ctxNonNull.textBaseline = 'middle'
+          ctxNonNull.fillText(caption, nx + style.size + 5, ny)
         }
       }
     }
@@ -445,52 +446,50 @@ export default function GraphCanvas({
       // Dashed rings around each lasso-selected node (world space)
       const lasso = useGraphStore.getState().lassoNodes
       if (lasso.size > 0) {
-        ctx.setLineDash([4, 3])
-        ctx.lineWidth = 2
-        ctx.strokeStyle = '#60a5fa'
+        ctxNonNull.setLineDash([4, 3])
+        ctxNonNull.lineWidth = 2
+        ctxNonNull.strokeStyle = '#60a5fa'
         for (const node of filteredNodes) {
           if (!lasso.has(node.id)) continue
           const style = getNodeStyle(node, nodeStyles)
-          ctx.beginPath()
-          ctx.arc(node.x ?? vw / 2, node.y ?? vh / 2, style.size + 5, 0, Math.PI * 2)
-          ctx.stroke()
+          ctxNonNull.beginPath()
+          ctxNonNull.arc(node.x ?? vw / 2, node.y ?? vh / 2, style.size + 5, 0, Math.PI * 2)
+          ctxNonNull.stroke()
         }
-        ctx.setLineDash([])
+        ctxNonNull.setLineDash([])
       }
       // Selection rect in screen space (reset transform first)
       if (pointerState.type === 'lasso') {
         const { x0, y0, x1, y1 } = pointerState
         const rx = Math.min(x0, x1), ry = Math.min(y0, y1)
         const rw = Math.abs(x1 - x0), rh = Math.abs(y1 - y0)
-        ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-        ctx.fillStyle = 'rgba(96,165,250,0.08)'
-        ctx.fillRect(rx, ry, rw, rh)
-        ctx.strokeStyle = '#60a5fa'
-        ctx.lineWidth = 1
-        ctx.setLineDash([4, 2])
-        ctx.strokeRect(rx, ry, rw, rh)
-        ctx.setLineDash([])
+        ctxNonNull.setTransform(dpr, 0, 0, dpr, 0, 0)
+        ctxNonNull.fillStyle = 'rgba(96,165,250,0.08)'
+        ctxNonNull.fillRect(rx, ry, rw, rh)
+        ctxNonNull.strokeStyle = '#60a5fa'
+        ctxNonNull.lineWidth = 1
+        ctxNonNull.setLineDash([4, 2])
+        ctxNonNull.strokeRect(rx, ry, rw, rh)
+        ctxNonNull.setLineDash([])
       }
     }
 
     // ── draw closure ─────────────────────────────────────────────────────────────
     function draw() {
-      // ctx is guaranteed non-null here — closures are only active while the canvas is mounted.
-      if (!ctx) return
       const { x: tx, y: ty, k } = transformRef.current
 
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-      ctx.clearRect(0, 0, vw, vh)
-      ctx.fillStyle = '#09090b'
-      ctx.fillRect(0, 0, vw, vh)
+      ctxNonNull.setTransform(dpr, 0, 0, dpr, 0, 0)
+      ctxNonNull.clearRect(0, 0, vw, vh)
+      ctxNonNull.fillStyle = '#09090b'
+      ctxNonNull.fillRect(0, 0, vw, vh)
 
-      ctx.translate(tx, ty)
-      ctx.scale(k, k)
+      ctxNonNull.translate(tx, ty)
+      ctxNonNull.scale(k, k)
 
       drawEdges()
-      ctx.globalAlpha = 1
+      ctxNonNull.globalAlpha = 1
       drawNodes()
-      ctx.globalAlpha = 1
+      ctxNonNull.globalAlpha = 1
       drawLassoOverlay(pointerState)
     }
 
@@ -524,22 +523,22 @@ export default function GraphCanvas({
     }
 
     function hitEdge(wx: number, wy: number): GraphEdge | null {
-      if (!onEdgeClickRef.current || !ctx) return null
+      if (!onEdgeClickRef.current) return null
       const { x: tx, y: ty, k } = transformRef.current
-      ctx.save()
-      ctx.setTransform(dpr * k, 0, 0, dpr * k, dpr * tx, dpr * ty)
-      ctx.lineWidth = 16 / k
+      ctxNonNull.save()
+      ctxNonNull.setTransform(dpr * k, 0, 0, dpr * k, dpr * tx, dpr * ty)
+      ctxNonNull.lineWidth = 16 / k
       let found: GraphEdge | null = null
       for (let i = filteredEdges.length - 1; i >= 0; i--) {
         const e = filteredEdges[i]
         const pr = pathByEdgeIdRef.current.get(e.id)
         if (!pr) continue
-        if (ctx.isPointInStroke(new Path2D(pr.d), wx, wy)) {
+        if (ctxNonNull.isPointInStroke(new Path2D(pr.d), wx, wy)) {
           found = e
           break
         }
       }
-      ctx.restore()
+      ctxNonNull.restore()
       return found
     }
 

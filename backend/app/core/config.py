@@ -99,6 +99,7 @@ class Settings(BaseSettings):
     rate_limit_enabled: bool = True
     rate_limit_per_minute: int = 60  # Requests per minute per IP
     rate_limit_per_user: int = 100  # Requests per minute per user
+    allow_admin_fallback: bool = False  # Allow in-memory admin auth when DB is unreachable
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)

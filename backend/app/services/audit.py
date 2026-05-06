@@ -30,7 +30,6 @@ logger = logging.getLogger(__name__)
 
 _pool: Optional[AsyncConnectionPool] = None
 _pool_lock = asyncio.Lock()
-_pool_unavailable = False
 
 _INSERT = """
     INSERT INTO kotte_audit_events (event, actor_id, request_id, payload)
@@ -39,16 +38,14 @@ _INSERT = """
 
 
 async def _get_pool() -> Optional[AsyncConnectionPool]:
-    global _pool, _pool_unavailable
+    global _pool
     if settings.environment == "test":
-        return None
-    if _pool_unavailable:
         return None
     if _pool is not None and not _pool.closed:
         return _pool
     async with _pool_lock:
-        if _pool_unavailable or (_pool is not None and not _pool.closed):
-            return _pool if not _pool_unavailable else None
+        if _pool is not None and not _pool.closed:
+            return _pool
         try:
             conninfo = (
                 f"host={settings.db_host} port={settings.db_port} "
@@ -67,8 +64,7 @@ async def _get_pool() -> Optional[AsyncConnectionPool]:
             _pool = p
         except Exception as exc:
             logger.debug("audit: DB pool unavailable, audit writes will be skipped (%s)", exc)
-            _pool_unavailable = True
-    return _pool if not _pool_unavailable else None
+    return _pool
 
 
 async def record(

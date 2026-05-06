@@ -101,7 +101,7 @@ async def connect(
     session_id = session_id_raw
 
     # Update session with connection config and store DB connection
-    session_manager.update_session(
+    await session_manager.update_session(
         session_id,
         {
             "connection_config": request.connection.model_dump(),
@@ -146,7 +146,7 @@ async def disconnect(
 
     # Delete session
     if session_id:
-        session_manager.delete_session(session_id)
+        await session_manager.delete_session(session_id)
         metrics.record_db_connection_attempt("disconnect")
         metrics.record_session_destruction()
 

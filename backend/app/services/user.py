@@ -105,7 +105,14 @@ class UserService:
     async def authenticate(self, username: str, password: str) -> Optional[dict]:
         pool = await _get_pool()
         if pool is None:
-            return self._authenticate_fallback(username, password)
+            if settings.environment == "test" or settings.allow_admin_fallback:
+                return self._authenticate_fallback(username, password)
+            raise APIException(
+                code=ErrorCode.DB_UNAVAILABLE,
+                message="Authentication service unavailable",
+                category=ErrorCategory.UPSTREAM,
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
         try:
             async with pool.connection() as conn:
                 cur = await conn.execute(
@@ -125,9 +132,18 @@ class UserService:
                 )
             logger.info("User '%s' authenticated successfully", username)
             return {"user_id": str(row["id"]), "username": row["username"]}  # type: ignore[index,call-overload]
+        except APIException:
+            raise
         except Exception as exc:
-            logger.warning("UserService.authenticate DB error, trying fallback: %s", exc)
-            return self._authenticate_fallback(username, password)
+            logger.warning("UserService.authenticate DB error: %s", exc)
+            if settings.environment == "test" or settings.allow_admin_fallback:
+                return self._authenticate_fallback(username, password)
+            raise APIException(
+                code=ErrorCode.DB_UNAVAILABLE,
+                message="Authentication service unavailable",
+                category=ErrorCategory.UPSTREAM,
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            ) from exc
 
     def _authenticate_fallback(self, username: str, password: str) -> Optional[dict]:
         admin = _get_admin_fallback()
@@ -140,7 +156,9 @@ class UserService:
     async def get_user(self, user_id: str) -> Optional[dict]:
         pool = await _get_pool()
         if pool is None:
-            return self._get_user_fallback(user_id)
+            if settings.environment == "test" or settings.allow_admin_fallback:
+                return self._get_user_fallback(user_id)
+            return None
         try:
             if user_id.isdigit():
                 async with pool.connection() as conn:
@@ -152,8 +170,14 @@ class UserService:
                 if row:
                     return {"user_id": str(row["id"]), "username": row["username"]}  # type: ignore[index,call-overload]
         except Exception as exc:
-            logger.warning("UserService.get_user DB error, trying fallback: %s", exc)
-        return self._get_user_fallback(user_id)
+            logger.warning("UserService.get_user DB error: %s", exc)
+            if settings.environment == "test" or settings.allow_admin_fallback:
+                return self._get_user_fallback(user_id)
+        return (
+            self._get_user_fallback(user_id)
+            if settings.allow_admin_fallback or settings.environment == "test"
+            else None
+        )
 
     def _get_user_fallback(self, user_id: str) -> Optional[dict]:
         admin = _get_admin_fallback()

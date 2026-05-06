@@ -193,7 +193,7 @@ class TestRateLimitPerUser:
         """
         from app.core.auth import session_manager
 
-        sid = session_manager.create_session(user_id="rate-limit-test-user")
+        sid = await session_manager.create_session(user_id="rate-limit-test-user")
         session = {"session_id": sid}
 
         r1 = await per_user_dispatch(_make_request(session=session))
@@ -214,8 +214,8 @@ class TestRateLimitPerUser:
         """User A hitting their cap must not throttle User B."""
         from app.core.auth import session_manager
 
-        sid_a = session_manager.create_session(user_id="user-a")
-        sid_b = session_manager.create_session(user_id="user-b")
+        sid_a = await session_manager.create_session(user_id="user-a")
+        sid_b = await session_manager.create_session(user_id="user-b")
 
         for _ in range(2):
             assert (

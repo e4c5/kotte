@@ -203,6 +203,11 @@ export default function GraphMinimap({
     dragRef.current = null
   }
 
+  function onPointerCancel(e: React.PointerEvent<HTMLCanvasElement>) {
+    dragRef.current = null
+    e.currentTarget.releasePointerCapture(e.pointerId)
+  }
+
   return (
     <canvas
       ref={canvasRef}
@@ -210,6 +215,7 @@ export default function GraphMinimap({
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
+      onPointerCancel={onPointerCancel}
       title="Minimap — click or drag to navigate"
       aria-label="Graph minimap"
     />

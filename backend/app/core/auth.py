@@ -49,7 +49,7 @@ class InMemorySessionManager:
     def __init__(self):
         self._sessions: dict[str, dict] = {}
 
-    def create_session(self, user_id: str, connection_config: Optional[dict] = None) -> str:
+    async def create_session(self, user_id: str, connection_config: Optional[dict] = None) -> str:
         session_id = secrets.token_urlsafe(32)
         csrf_token = secrets.token_urlsafe(32)
         now = datetime.now(timezone.utc)
@@ -84,12 +84,12 @@ class InMemorySessionManager:
         session["last_activity"] = datetime.now(timezone.utc)
         return session
 
-    def update_session(self, session_id: str, updates: dict) -> None:
+    async def update_session(self, session_id: str, updates: dict) -> None:
         if session_id in self._sessions:
             self._sessions[session_id].update(updates)
             self._sessions[session_id]["last_activity"] = datetime.now(timezone.utc)
 
-    def delete_session(self, session_id: str) -> None:
+    async def delete_session(self, session_id: str) -> None:
         if session_id in self._sessions:
             logger.info(f"Deleted session {session_id[:8]}...")
             del self._sessions[session_id]
@@ -146,7 +146,7 @@ class RedisSessionManager:
         data.update(local)
         return data
 
-    def create_session(self, user_id: str, connection_config: Optional[dict] = None) -> str:
+    async def create_session(self, user_id: str, connection_config: Optional[dict] = None) -> str:
         session_id = secrets.token_urlsafe(32)
         csrf_token = secrets.token_urlsafe(32)
         now = datetime.now(timezone.utc)
@@ -158,11 +158,7 @@ class RedisSessionManager:
             "graph_context": None,
             "csrf_token": csrf_token,
         }
-        try:
-            loop = asyncio.get_event_loop()
-            _keep_task(loop.create_task(self._async_set(session_id, session)))
-        except RuntimeError:
-            pass
+        await self._async_set(session_id, session)
         logger.info(f"Created session {session_id[:8]}... for user {user_id}")
         return session_id
 
@@ -185,31 +181,40 @@ class RedisSessionManager:
             if raw is None:
                 return None
             session = self._deserialise(raw, session_id)
+            now = datetime.now(timezone.utc)
             # Idle timeout check
             idle_timeout = timedelta(seconds=settings.session_idle_timeout)
-            if datetime.now(timezone.utc) - session["last_activity"] > idle_timeout:
+            if now - session["last_activity"] > idle_timeout:
+                logger.info(f"Session {session_id[:8]}... expired (idle timeout)")
                 await self._client.delete(self._key(session_id))
                 return None
-            # Refresh TTL and last_activity
-            session["last_activity"] = datetime.now(timezone.utc)
-            await self._async_set(session_id, session)
+            # Absolute max-age check — prevents indefinite session extension
+            max_age = timedelta(seconds=settings.session_max_age)
+            if now - session["created_at"] > max_age:
+                logger.info(f"Session {session_id[:8]}... expired (max age)")
+                await self._client.delete(self._key(session_id))
+                return None
+            # Refresh TTL with remaining absolute time so Redis TTL tracks max_age
+            remaining_ttl = max(1, int((session["created_at"] + max_age - now).total_seconds()))
+            session["last_activity"] = now
+            await self._client.set(
+                self._key(session_id),
+                self._serialise(session),
+                ex=remaining_ttl,
+            )
             return session
         except Exception as exc:
             logger.warning("RedisSessionManager._async_get failed: %s", exc)
             return None
 
-    def update_session(self, session_id: str, updates: dict) -> None:
+    async def update_session(self, session_id: str, updates: dict) -> None:
         # Non-serialisable keys go to local dict; serialisable go to Redis
         local_updates = {k: v for k, v in updates.items() if k not in self._SERIALISABLE}
         redis_updates = {k: v for k, v in updates.items() if k in self._SERIALISABLE}
         if local_updates:
             _local_session_objects.setdefault(session_id, {}).update(local_updates)
         if redis_updates:
-            try:
-                loop = asyncio.get_event_loop()
-                _keep_task(loop.create_task(self._async_update(session_id, redis_updates)))
-            except RuntimeError:
-                pass
+            await self._async_update(session_id, redis_updates)
 
     async def _async_update(self, session_id: str, updates: dict) -> None:
         raw = await self._client.get(self._key(session_id))
@@ -220,13 +225,12 @@ class RedisSessionManager:
         session["last_activity"] = datetime.now(timezone.utc)
         await self._async_set(session_id, session)
 
-    def delete_session(self, session_id: str) -> None:
+    async def delete_session(self, session_id: str) -> None:
         _local_session_objects.pop(session_id, None)
         try:
-            loop = asyncio.get_event_loop()
-            _keep_task(loop.create_task(self._client.delete(self._key(session_id))))  # type: ignore[arg-type]
-        except RuntimeError:
-            pass
+            await self._client.delete(self._key(session_id))
+        except Exception as exc:
+            logger.warning("RedisSessionManager.delete_session failed: %s", exc)
         logger.info(f"Deleted session {session_id[:8]}...")
 
     async def get_user_id(self, session_id: str) -> Optional[str]:

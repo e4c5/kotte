@@ -55,8 +55,10 @@ async def login(request: LoginRequest, http_request: Request) -> LoginResponse:
 
     # Create session
     role = "admin" if user["username"] == "admin" else "user"
-    session_id = session_manager.create_session(user["user_id"], {"username": user["username"]})
-    session_manager.update_session(session_id, {"role": role})
+    session_id = await session_manager.create_session(
+        user["user_id"], {"username": user["username"]}
+    )
+    await session_manager.update_session(session_id, {"role": role})
 
     # Set session cookie and CSRF token
     http_request.session["session_id"] = session_id
@@ -117,7 +119,7 @@ async def logout(
 
     # Delete session
     if session_id:
-        session_manager.delete_session(session_id)
+        await session_manager.delete_session(session_id)
 
     # Clear session cookie
     http_request.session.clear()
@@ -224,7 +226,7 @@ async def get_csrf_token(http_request: Request) -> dict:
             )
         # Session exists but missing token – generate and store
         csrf_token = secrets.token_urlsafe(32)
-        session_manager.update_session(session_id, {"csrf_token": csrf_token})
+        await session_manager.update_session(session_id, {"csrf_token": csrf_token})
         http_request.session["csrf_token"] = csrf_token
         return {"csrf_token": csrf_token}
 

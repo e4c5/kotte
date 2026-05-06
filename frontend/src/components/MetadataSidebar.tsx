@@ -205,7 +205,9 @@ function LibraryPanel({ onQueryTemplate }: LibraryPanelProps) {
   const [open, setOpen] = useState<string | null>(null)
 
   useEffect(() => {
-    queryAPI.listTemplates().then(setTemplates).catch(() => {})
+    queryAPI.listTemplates().then(setTemplates).catch((err) => {
+      console.error('Failed to load query templates:', err)
+    })
   }, [])
 
   if (templates.length === 0) return null
