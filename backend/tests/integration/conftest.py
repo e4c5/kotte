@@ -212,7 +212,7 @@ async def connected_client(authenticated_client):
             session_id = next(iter(session_manager._sessions.keys()), None)
             if not session_id:
                 pytest.skip("No active authenticated session found")
-            session_manager.update_session(
+            await session_manager.update_session(
                 session_id,
                 {
                     "connection_config": {
