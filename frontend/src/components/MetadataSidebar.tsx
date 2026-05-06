@@ -20,7 +20,7 @@ interface LabelPropertiesPanelProps {
   readonly properties: string[]
   readonly property_types?: Record<string, string>
   readonly indexed_properties?: string[]
-  readonly property_statistics?: Array<{ property: string; min?: unknown; max?: unknown }>
+  readonly property_statistics?: Array<{ property: string; min?: string | number | boolean | null; max?: string | number | boolean | null }>
   readonly sampleQuery: string
   readonly matchAllQuery: string
   readonly sampleTitle: string
@@ -249,7 +249,7 @@ function LibraryPanel({ onQueryTemplate }: LibraryPanelProps) {
                         title={schema.description}
                       >
                         ${key}
-                        {schema.default !== undefined ? `=${String(schema.default)}` : ''}
+                        {schema.default === undefined ? '' : `=${String(schema.default)}`}
                       </span>
                     ))}
                   </div>

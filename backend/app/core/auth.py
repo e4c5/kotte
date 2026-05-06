@@ -44,12 +44,15 @@ def _keep_task(task: asyncio.Task) -> None:
 
 
 class InMemorySessionManager:
-    """Original in-memory session manager (default / dev / single-instance)."""
+    """In-memory session manager for dev / test / single-instance deployments.
+
+    All methods are declared ``async`` to share the same interface as
+    ``RedisSessionManager`` so callers can unconditionally ``await`` them.
+    """
 
     def __init__(self):
         self._sessions: dict[str, dict] = {}
 
-    # async without await: matches the RedisSessionManager interface so callers can always await.
     async def create_session(self, user_id: str, connection_config: Optional[dict] = None) -> str:
         session_id = secrets.token_urlsafe(32)
         csrf_token = secrets.token_urlsafe(32)

@@ -154,8 +154,9 @@ export default function WorkspacePage() {
       } else {
         await streamQuery(activeTabId, currentGraph, query, parseResult.value, mutationConfirmed)
       }
-    } catch (_err) {
-      // Error handled by store
+    } catch (err) {
+      // Primary error state is set by the store; log here for debuggability.
+      console.error('Query execution error:', err)
     }
   }
 

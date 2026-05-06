@@ -196,7 +196,8 @@ export default function GraphCanvas({
       filtered = filtered.filter((node) =>
         filters.propertyFilters.every((f) => {
           if (f.label && f.label !== node.label) return true
-          const pv = String(node.properties[f.property] || '')
+          const rawProp = node.properties[f.property]
+          const pv = rawProp != null && typeof rawProp !== 'object' ? String(rawProp) : ''
           const fv = f.value.toLowerCase()
           switch (f.operator) {
             case 'equals': return pv.toLowerCase() === fv

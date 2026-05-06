@@ -17,7 +17,7 @@ from app.core.validation import validate_graph_name
 
 logger = logging.getLogger(__name__)
 
-_SAFE_CURSOR_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]{0,62}$")
+_SAFE_CURSOR_RE = re.compile(r"^[a-zA-Z_]\w{0,62}$")
 
 
 def _sanitize_cursor_name(name: str) -> str:
