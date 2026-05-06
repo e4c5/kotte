@@ -148,9 +148,11 @@ export default function WorkspacePage() {
     const currentTab = tabs.find((t) => t.id === activeTabId)
     const wantsGraph = currentTab?.viewMode === 'graph'
     try {
-      if (wantsGraph) {
+      if (wantsGraph || mutationConfirmed) {
         await executeQuery(activeTabId, currentGraph, query, parseResult.value, true, mutationConfirmed)
-        applyGraphViewMode(activeTabId)
+        if (wantsGraph) {
+          applyGraphViewMode(activeTabId)
+        }
       } else {
         await streamQuery(activeTabId, currentGraph, query, parseResult.value, mutationConfirmed)
       }

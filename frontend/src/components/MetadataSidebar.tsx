@@ -14,6 +14,21 @@ interface MetadataSidebarProps {
   readonly onCollapsedChange: (collapsed: boolean) => void
 }
 
+function formatStat(v: string | number | boolean | null | undefined): string {
+  if (v == null) return '?'
+  if (typeof v === 'object') return JSON.stringify(v)
+  return String(v)
+}
+
+function quoteCypherIdentifier(value: string): string {
+  return `\`${value.replace(/`/g, '``')}\``
+}
+
+function buildLabelSelector(label: string): string {
+  const trimmed = label.trim()
+  return trimmed ? `:${quoteCypherIdentifier(trimmed)}` : ''
+}
+
 // ---- LabelPropertiesPanel (shared by NodeLabelRow and EdgeLabelRow) ----------
 
 interface LabelPropertiesPanelProps {
@@ -71,7 +86,7 @@ function LabelPropertiesPanel({
           {property_statistics.map((s) => (
             <span key={s.property} className="text-zinc-500">
               <span className="font-mono text-zinc-400">{s.property}</span>:{' '}
-              {String(s.min ?? '?')} – {String(s.max ?? '?')}
+              {formatStat(s.min)} – {formatStat(s.max)}
             </span>
           ))}
         </div>
@@ -108,6 +123,7 @@ interface NodeLabelRowProps {
 function NodeLabelRow({ label, onQueryTemplate }: NodeLabelRowProps) {
   const [open, setOpen] = useState(false)
   const color = getNodeLabelColor(label.label)
+  const labelSelector = buildLabelSelector(label.label)
 
   return (
     <div>
@@ -137,8 +153,8 @@ function NodeLabelRow({ label, onQueryTemplate }: NodeLabelRowProps) {
           properties={label.properties}
           property_types={label.property_types}
           indexed_properties={label.indexed_properties}
-          sampleQuery={`MATCH (n:${label.label}) RETURN n LIMIT 5`}
-          matchAllQuery={`MATCH (n:${label.label}) RETURN n LIMIT 100`}
+          sampleQuery={`MATCH (n${labelSelector}) RETURN n LIMIT 5`}
+          matchAllQuery={`MATCH (n${labelSelector}) RETURN n LIMIT 100`}
           sampleTitle="Sample 5 nodes with this label"
           matchAllTitle="Generate MATCH query for all nodes with this label"
           onQueryTemplate={onQueryTemplate}
@@ -183,8 +199,8 @@ function EdgeLabelRow({ label, onQueryTemplate }: EdgeLabelRowProps) {
           property_types={label.property_types}
           indexed_properties={label.indexed_properties}
           property_statistics={label.property_statistics}
-          sampleQuery={`MATCH (a)-[r:${label.label}]->(b) RETURN a, r, b LIMIT 5`}
-          matchAllQuery={`MATCH (a)-[r:${label.label}]->(b) RETURN a, r, b LIMIT 100`}
+          sampleQuery={`MATCH (a)-[r${buildLabelSelector(label.label)}]->(b) RETURN a, r, b LIMIT 5`}
+          matchAllQuery={`MATCH (a)-[r${buildLabelSelector(label.label)}]->(b) RETURN a, r, b LIMIT 100`}
           sampleTitle="Sample 5 edges with this label"
           matchAllTitle="Generate MATCH query for all edges with this label"
           onQueryTemplate={onQueryTemplate}

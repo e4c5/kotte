@@ -338,6 +338,14 @@ export default function GraphView({
       lassoStart = null
     }
 
+    function onLassoCancel(e: PointerEvent) {
+      if (!lassoStart || !lassoRectEl) return
+      try { svgEl.releasePointerCapture(e.pointerId) } catch { /* ignore: pointer may already be released */ }
+      lassoRectEl.remove()
+      lassoRectEl = null
+      lassoStart = null
+    }
+
     function onBgClick(e: MouseEvent) {
       if (e.target === svgEl) useGraphStore.getState().clearLassoNodes()
     }
@@ -358,6 +366,7 @@ export default function GraphView({
     svgEl.addEventListener('pointerdown', onLassoDown)
     svgEl.addEventListener('pointermove', onLassoMove)
     svgEl.addEventListener('pointerup', onLassoUp)
+    svgEl.addEventListener('pointercancel', onLassoCancel)
     svg.on('click.lasso', onBgClick)
     globalThis.addEventListener('keydown', onKeyDown)
 
@@ -569,6 +578,7 @@ export default function GraphView({
       svgEl.removeEventListener('pointerdown', onLassoDown);
       svgEl.removeEventListener('pointermove', onLassoMove);
       svgEl.removeEventListener('pointerup', onLassoUp);
+      svgEl.removeEventListener('pointercancel', onLassoCancel);
       globalThis.removeEventListener('keydown', onKeyDown);
       svg.on('.zoom', null);
       svg.on('click.lasso', null);

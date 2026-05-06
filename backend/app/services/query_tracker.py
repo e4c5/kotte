@@ -97,7 +97,7 @@ class QueryTracker:
             del self._active_queries[request_id]
             logger.debug(f"Unregistered query {request_id[:8]}...")
 
-    def get_query_info(self, request_id: str) -> Optional[Dict]:
+    async def get_query_info(self, request_id: str) -> Optional[Dict]:
         return self._active_queries.get(request_id)
 
     def cleanup_stale_queries(self, max_age_seconds: int = 3600) -> None:
@@ -181,6 +181,13 @@ class RedisQueryTracker:
 
         meta = json.loads(raw)
         if meta["user_id"] != user_id:
+            # Item 25: log denied cancellation as a security event before raising.
+            logger.warning(
+                "SECURITY: query cancel denied — requesting user_id=%s, owner user_id=%s, request_id=%s",
+                user_id,
+                meta["user_id"],
+                request_id,
+            )
             raise APIException(
                 code=ErrorCode.QUERY_CANCELLED,
                 message="Cannot cancel query owned by another user",
@@ -218,16 +225,12 @@ class RedisQueryTracker:
             pass
         logger.debug(f"Unregistered query {request_id[:8]}...")
 
-    def get_query_info(self, request_id: str) -> Optional[Dict]:
-        db_conn = self._db_conns.get(request_id)
-        if db_conn is None:
-            return None
-        # Return what we can from the local store; Redis metadata is fetched async
-        # by callers that need it (e.g. cancel_query fetches Redis data directly).
-        return {"db_conn": db_conn}
+    async def get_query_info(self, request_id: str) -> Optional[Dict]:
+        """Fetch full metadata from Redis merged with the local db_conn reference.
 
-    async def get_query_info_full(self, request_id: str) -> Optional[Dict]:
-        """Fetch full metadata (including Redis fields) for a query."""
+        Item 21: made async so callers can await it and get both the db_conn and
+        all Redis-stored fields (user_id, query_text, backend_pid, started_at).
+        """
         db_conn = self._db_conns.get(request_id)
         if db_conn is None:
             return None
@@ -239,8 +242,12 @@ class RedisQueryTracker:
             meta["db_conn"] = db_conn
             return meta
         except Exception as exc:
-            logger.warning("RedisQueryTracker.get_query_info_full failed: %s", exc)
+            logger.warning("RedisQueryTracker.get_query_info failed: %s", exc)
             return {"db_conn": db_conn}
+
+    async def get_query_info_full(self, request_id: str) -> Optional[Dict]:
+        """Alias kept for backward compatibility — delegates to get_query_info."""
+        return await self.get_query_info(request_id)
 
     def cleanup_stale_queries(self) -> None:
         # Purge local db_conn entries whose Redis key has already expired.
@@ -255,7 +262,7 @@ class RedisQueryTracker:
 
     async def _async_cleanup_stale(self) -> None:
         stale = []
-        for request_id in self._db_conns:
+        for request_id in list(self._db_conns):
             try:
                 exists = await self._client.exists(self._key(request_id))
                 if not exists:

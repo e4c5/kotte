@@ -5,6 +5,7 @@ Dynamic SQL is built only from ``validate_graph_name`` output and parameterized
 for the AGE ``AS (...)`` clause, not from arbitrary user-controlled identifiers.
 """
 
+import asyncio
 import hashlib
 import logging
 import re
@@ -17,7 +18,7 @@ from app.core.validation import validate_graph_name
 
 logger = logging.getLogger(__name__)
 
-_SAFE_CURSOR_RE = re.compile(r"^[a-zA-Z_]\w{0,62}$")
+_SAFE_CURSOR_RE = re.compile(r"^[a-zA-Z_]\w{0,62}$", re.ASCII)
 
 
 def _sanitize_cursor_name(name: str) -> str:
@@ -111,6 +112,7 @@ class CypherExecutor:
         cursor_name: str,
         conn: psycopg.AsyncConnection,
         params: Optional[dict] = None,
+        time_limit_seconds: float = 30.0,
     ) -> AsyncGenerator[list[dict], None]:
         """Stream Cypher results via a psycopg server-side cursor.
 
@@ -164,9 +166,12 @@ class CypherExecutor:
 
         safe_cursor = _sanitize_cursor_name(cursor_name)
         async with conn.cursor(name=safe_cursor) as cur:
-            await cur.execute(runnable_sql, run_params)
+            # Item 16: enforce timeout on the initial execute and on each fetch.
+            await asyncio.wait_for(
+                cur.execute(runnable_sql, run_params), timeout=time_limit_seconds
+            )
             while True:
-                rows = await cur.fetchmany(chunk_size)
+                rows = await asyncio.wait_for(cur.fetchmany(chunk_size), timeout=time_limit_seconds)
                 if not rows:
                     break
                 yield rows  # type: ignore[misc]
