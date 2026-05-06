@@ -3,6 +3,7 @@
 import asyncio
 import hashlib
 import logging
+import re
 import time
 import uuid
 from typing import Annotated
@@ -43,6 +44,12 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+# Item 19: Pattern to detect Cypher mutations so unconfirmed writes are rejected.
+_MUTATION_RE = re.compile(
+    r"\b(CREATE|MERGE|DELETE|DETACH\s+DELETE|SET|REMOVE|DROP)\b",
+    re.IGNORECASE,
+)
+
 
 @router.get("/templates")
 async def list_query_templates():
@@ -71,6 +78,23 @@ async def execute_query(
     # Validate query length
     validate_query_length(request.cypher)
     validate_variable_length_traversal(request.cypher, settings.query_max_variable_hops)
+
+    # Item 19: Reject mutating queries when mutation_confirmed is not set.
+    # Only enforced when safe_mode is off — in safe_mode the DB itself rejects mutations.
+    if (
+        not settings.query_safe_mode
+        and _MUTATION_RE.search(request.cypher)
+        and not request.mutation_confirmed
+    ):
+        raise APIException(
+            code=ErrorCode.QUERY_VALIDATION_ERROR,
+            message=(
+                "Query contains mutating operations (CREATE/MERGE/DELETE/SET/REMOVE/DROP). "
+                "Set mutation_confirmed=true to execute."
+            ),
+            category=ErrorCategory.VALIDATION,
+            status_code=400,
+        )
 
     # Apply result caps (visualization cap is stricter than generic query cap)
     if request.for_visualization:
@@ -383,8 +407,8 @@ async def cancel_query(
     """
     user_id = session.get("user_id", "unknown")
 
-    # Check if query exists
-    query_info = query_tracker.get_query_info(request_id)
+    # Check if query exists (Item 21: get_query_info is now async)
+    query_info = await query_tracker.get_query_info(request_id)
     if not query_info:
         raise APIException(
             code=ErrorCode.QUERY_CANCELLED,

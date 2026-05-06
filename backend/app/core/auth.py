@@ -145,9 +145,26 @@ class RedisSessionManager:
         for field in ("created_at", "last_activity"):
             if field in data and isinstance(data[field], str):
                 data[field] = datetime.fromisoformat(data[field])
-        # Re-attach non-serialisable local objects
+        # Re-attach non-serialisable local objects (Item 2: use _local_session_objects as cache)
         local = _local_session_objects.get(session_id, {})
         data.update(local)
+        # Item 2: if db_connection is absent, try to reconstruct from pool_registry
+        if "db_connection" not in data:
+            cfg = data.get("connection_config") or {}
+            host = cfg.get("host")
+            port = cfg.get("port")
+            database = cfg.get("database")
+            user = cfg.get("user") or cfg.get("username")
+            if host and port and database and user:
+                try:
+                    from app.core.database.pool_registry import pool_registry
+
+                    conn = pool_registry._pools.get((host, int(port), database, user))
+                    if conn is not None:
+                        data["db_connection"] = conn
+                        _local_session_objects.setdefault(session_id, {})["db_connection"] = conn
+                except Exception:
+                    pass
         return data
 
     async def create_session(self, user_id: str, connection_config: Optional[dict] = None) -> str:
@@ -191,20 +208,28 @@ class RedisSessionManager:
             if now - session["last_activity"] > idle_timeout:
                 logger.info(f"Session {session_id[:8]}... expired (idle timeout)")
                 await self._client.delete(self._key(session_id))
+                # Item 15: clear process-local objects on expiry
+                _local_session_objects.pop(session_id, None)
                 return None
             # Absolute max-age check — prevents indefinite session extension
             max_age = timedelta(seconds=settings.session_max_age)
             if now - session["created_at"] > max_age:
                 logger.info(f"Session {session_id[:8]}... expired (max age)")
                 await self._client.delete(self._key(session_id))
+                # Item 15: clear process-local objects on expiry
+                _local_session_objects.pop(session_id, None)
                 return None
-            # Refresh TTL with remaining absolute time so Redis TTL tracks max_age
-            remaining_ttl = max(1, int((session["created_at"] + max_age - now).total_seconds()))
+            # Item 22: Refresh TTL using min(idle_ttl, remaining_absolute_ttl)
+            idle_ttl = settings.session_idle_timeout
+            remaining_absolute_ttl = max(
+                1, int((session["created_at"] + max_age - now).total_seconds())
+            )
+            refresh_ttl = min(idle_ttl, remaining_absolute_ttl)
             session["last_activity"] = now
             await self._client.set(
                 self._key(session_id),
                 self._serialise(session),
-                ex=remaining_ttl,
+                ex=refresh_ttl,
             )
             return session
         except Exception as exc:
@@ -226,8 +251,19 @@ class RedisSessionManager:
             return
         session = self._deserialise(raw, session_id)
         session.update(updates)
-        session["last_activity"] = datetime.now(timezone.utc)
-        await self._async_set(session_id, session)
+        now = datetime.now(timezone.utc)
+        session["last_activity"] = now
+        # Item 23: preserve absolute max-age — compute remaining TTL from created_at
+        max_age = timedelta(seconds=settings.session_max_age)
+        remaining_ttl = max(1, int((session["created_at"] + max_age - now).total_seconds()))
+        try:
+            await self._client.set(
+                self._key(session_id),
+                self._serialise(session),
+                ex=remaining_ttl,
+            )
+        except Exception as exc:
+            logger.warning("RedisSessionManager._async_update failed: %s", exc)
 
     async def delete_session(self, session_id: str) -> None:
         _local_session_objects.pop(session_id, None)

@@ -128,10 +128,11 @@ async def import_csv(
                 status_code=422,
             )
 
-        # Read all rows now so we can enforce limits and re-iterate later
+        # Read all rows now so we can enforce limits and re-iterate later.
+        # Item 11: use (row.get(f) or "") to handle None for missing cells in short rows.
         try:
             all_rows: list[dict] = [
-                {h: row.get(f, "").strip() for h, f in zip(header, (reader.fieldnames or []))}
+                {h: (row.get(f) or "").strip() for h, f in zip(header, (reader.fieldnames or []))}
                 for row in reader
             ]
         except csv.Error as exc:
@@ -233,8 +234,6 @@ async def import_csv(
                     raise
 
             # Batch insertion using parameterized UNWIND — no string interpolation of user data.
-            import json
-
             batch_size = 1000
             for batch_start in range(0, len(all_rows), batch_size):
                 batch_rows = all_rows[batch_start : batch_start + batch_size]
@@ -270,41 +269,36 @@ async def import_csv(
                         )
 
                 if node_batch:
-                    # UNWIND with JSON-encoded properties avoids per-row f-string injection.
-                    rows_json = json.dumps(node_batch).replace("'", "''")
-                    cypher = (
-                        f"UNWIND {rows_json}::jsonb AS row "
-                        f"CREATE (n:{validated_label_name}) "
-                        f"SET n = row"
+                    # Items 5+12: use Cypher $rows parameter — no ::jsonb cast, no f-string injection.
+                    # Item 10: no .replace("'", "''") — parameterised queries make that unnecessary.
+                    node_cypher = (
+                        f"UNWIND $rows AS row " f"CREATE (n:{validated_label_name}) " f"SET n = row"
                     )
-                    batch_query = """
-                        SELECT * FROM ag_catalog.cypher(%(graph_name)s::text, %(cypher)s::text) AS (result agtype)
-                    """
-                    await db_conn.execute_query(
-                        batch_query,
-                        {"graph_name": validated_graph_name, "cypher": cypher},
+                    await db_conn.execute_cypher(
+                        validated_graph_name,
+                        node_cypher,
+                        params={"rows": node_batch},
                         conn=conn,
                     )
                     inserted += len(node_batch)
 
                 if edge_batch:
-                    # UNWIND with parameterized JSON — no user data interpolated via f-strings.
-                    edges_json = json.dumps(
-                        [{"s": e["source"], "t": e["target"], "p": e["props"]} for e in edge_batch]
-                    ).replace("'", "''")
-                    cypher = (
-                        f"UNWIND {edges_json}::jsonb AS row "
+                    # Items 5+12: use Cypher $rows parameter — no ::jsonb cast, no f-string injection.
+                    # Item 10: no .replace("'", "''") — parameterised queries make that unnecessary.
+                    edge_rows = [
+                        {"s": e["source"], "t": e["target"], "p": e["props"]} for e in edge_batch
+                    ]
+                    edge_cypher = (
+                        f"UNWIND $rows AS row "
                         f"MATCH (a), (b) "
                         f"WHERE id(a) = toInteger(row.s) AND id(b) = toInteger(row.t) "
                         f"CREATE (a)-[r:{validated_label_name}]->(b) "
                         f"SET r = row.p"
                     )
-                    batch_query = """
-                        SELECT * FROM ag_catalog.cypher(%(graph_name)s::text, %(cypher)s::text) AS (result agtype)
-                    """
-                    await db_conn.execute_query(
-                        batch_query,
-                        {"graph_name": validated_graph_name, "cypher": cypher},
+                    await db_conn.execute_cypher(
+                        validated_graph_name,
+                        edge_cypher,
+                        params={"rows": edge_rows},
                         conn=conn,
                     )
                     inserted += len(edge_batch)

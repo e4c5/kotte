@@ -14,7 +14,7 @@ import asyncio
 import logging
 import os
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional, cast
 
 import bcrypt
 import psycopg
@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 
 _pool: Optional[AsyncConnectionPool] = None
 _pool_lock: Optional[asyncio.Lock] = None
+_pool_unavailable: bool = False  # Item 9: circuit breaker flag
 
 
 def _hash_password(password: str) -> str:
@@ -69,12 +70,17 @@ def _get_pool_lock() -> asyncio.Lock:
 
 
 async def _get_pool() -> Optional[AsyncConnectionPool]:
-    global _pool
+    global _pool, _pool_unavailable
     if settings.environment == "test":
+        return None
+    # Item 9: circuit breaker — skip connection attempt if previously failed
+    if _pool_unavailable:
         return None
     if _pool is not None and not _pool.closed:
         return _pool
     async with _get_pool_lock():
+        if _pool_unavailable:
+            return None
         if _pool is not None and not _pool.closed:
             return _pool
         try:
@@ -96,7 +102,15 @@ async def _get_pool() -> Optional[AsyncConnectionPool]:
             return _pool
         except Exception as exc:
             logger.debug("UserService: DB pool unavailable, using in-memory fallback (%s)", exc)
+            _pool_unavailable = True  # Item 9: trip the circuit breaker
             return None
+
+
+def reset_pool() -> None:
+    """Item 9: Reset the circuit breaker so the pool can be re-tested (e.g. on health checks)."""
+    global _pool, _pool_unavailable
+    _pool_unavailable = False
+    _pool = None
 
 
 class UserService:
@@ -123,15 +137,16 @@ class UserService:
                 if row is None:
                     logger.warning("Authentication failed: user '%s' not found", username)
                     return None
-                if not _verify_password(password, row["password_hash"]):  # type: ignore[index,call-overload]
+                row_dict = cast(dict[str, Any], row)
+                if not _verify_password(password, row_dict["password_hash"]):
                     logger.warning("Authentication failed: invalid password for '%s'", username)
                     return None
                 await conn.execute(
                     "UPDATE kotte_users SET last_login_at = %s WHERE id = %s",
-                    (datetime.now(timezone.utc), row["id"]),  # type: ignore[index,call-overload]
+                    (datetime.now(timezone.utc), row_dict["id"]),
                 )
             logger.info("User '%s' authenticated successfully", username)
-            return {"user_id": str(row["id"]), "username": row["username"]}  # type: ignore[index,call-overload]
+            return {"user_id": str(row_dict["id"]), "username": row_dict["username"]}
         except APIException:
             raise
         except Exception as exc:
@@ -168,7 +183,8 @@ class UserService:
                     )
                     row = await cur.fetchone()
                 if row:
-                    return {"user_id": str(row["id"]), "username": row["username"]}  # type: ignore[index,call-overload]
+                    row_dict = cast(dict[str, Any], row)
+                    return {"user_id": str(row_dict["id"]), "username": row_dict["username"]}
         except Exception as exc:
             logger.warning("UserService.get_user DB error: %s", exc)
             if settings.environment == "test" or settings.allow_admin_fallback:
@@ -204,7 +220,8 @@ class UserService:
                 )
                 row = await cur.fetchone()
             logger.info("Created user '%s'", username)
-            return {"user_id": str(row["id"]), "username": row["username"]}  # type: ignore[index,call-overload]
+            row_dict = cast(dict[str, Any], row)
+            return {"user_id": str(row_dict["id"]), "username": row_dict["username"]}
         except psycopg.errors.UniqueViolation:
             raise APIException(
                 code=ErrorCode.INTERNAL_ERROR,
@@ -212,6 +229,14 @@ class UserService:
                 category=ErrorCategory.CONFLICT,
                 status_code=status.HTTP_409_CONFLICT,
             )
+        except Exception as exc:
+            logger.warning("UserService.create_user DB error: %s", exc)
+            raise APIException(
+                code=ErrorCode.INTERNAL_ERROR,
+                message="User creation failed due to a service error",
+                category=ErrorCategory.UPSTREAM,
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            ) from exc
 
     async def change_password(self, user_id: str, old_password: str, new_password: str) -> None:
         pool = await _get_pool()
@@ -242,7 +267,8 @@ class UserService:
                     category=ErrorCategory.AUTHENTICATION,
                     status_code=status.HTTP_404_NOT_FOUND,
                 )
-            if not _verify_password(old_password, row["password_hash"]):  # type: ignore[index,call-overload]
+            row_dict = cast(dict[str, Any], row)
+            if not _verify_password(old_password, row_dict["password_hash"]):
                 raise APIException(
                     code=ErrorCode.AUTH_INVALID_SESSION,
                     message="Current password is incorrect",
@@ -252,7 +278,7 @@ class UserService:
             new_hash = _hash_password(new_password)
             await conn.execute(
                 "UPDATE kotte_users SET password_hash = %s WHERE id = %s",
-                (new_hash, row["id"]),  # type: ignore[index,call-overload]
+                (new_hash, row_dict["id"]),
             )
 
     async def seed_admin(self) -> None:
@@ -265,7 +291,8 @@ class UserService:
             async with pool.connection() as conn:
                 cur = await conn.execute("SELECT COUNT(*) AS n FROM kotte_users")
                 row = await cur.fetchone()
-                if row and row["n"] == 0:  # type: ignore[index,call-overload]
+                row_dict = cast(dict[str, Any], row) if row is not None else None
+                if row_dict and row_dict["n"] == 0:
                     password_hash = _hash_password(_admin_password())
                     await conn.execute(
                         "INSERT INTO kotte_users (username, password_hash) VALUES (%s, %s)"

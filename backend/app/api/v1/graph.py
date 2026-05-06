@@ -378,11 +378,13 @@ async def expand_node_neighborhood(
             RETURN DISTINCT n, pn, rel
         """
 
-        # Count query: cheap scalar — same direction/label filters but no depth limit or LIMIT.
+        # Count query: cheap scalar — same direction/label filters, uses same depth as main query.
+        # Item 1: rel_type_filter is already built from validate_label_name()-sanitised labels above.
+        # Item 17: use *1..{depth} to match the same traversal depth as the main expansion query.
         if request.edge_labels:
-            count_rel = f"[:{rel_type_filter}]"
+            count_rel = f"[:{rel_type_filter}*1..{depth}]"
         else:
-            count_rel = "[r]"
+            count_rel = f"[*1..{depth}]"
 
         if direction == "out":
             count_pattern = f"(n)-{count_rel}->(m)"
@@ -456,7 +458,7 @@ async def expand_node_neighborhood(
             edges=all_edges,
             node_count=len(nodes_list),
             edge_count=len(all_edges),
-            truncated=len(nodes_list) >= limit,
+            truncated=total_neighbours > len(nodes_list),
             total_neighbours=total_neighbours,
         )
 

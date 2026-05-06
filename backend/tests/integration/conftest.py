@@ -118,10 +118,15 @@ async def authenticated_client(async_client):
     )
     if admin_login.status_code == 200:
         # Try to create test user; ignore 409 (already exists) and 503 (no DB).
-        await async_client.post(
+        create_response = await async_client.post(
             "/api/v1/users",
             json={"username": test_username, "password": test_password},
         )
+        if create_response.status_code not in (201, 409, 503):
+            pytest.fail(
+                f"Unexpected status {create_response.status_code} creating test user: "
+                f"{create_response.text}"
+            )
         await async_client.post("/api/v1/auth/logout")
 
     # Login as test user (or fall back to admin credentials when no DB).
@@ -130,6 +135,12 @@ async def authenticated_client(async_client):
         json={"username": test_username, "password": test_password},
     )
     if login_response.status_code != 200:
+        use_real_db = os.getenv("USE_REAL_TEST_DB", "false").lower() == "true"
+        if use_real_db:
+            pytest.fail(
+                f"Test user login failed with real DB (status {login_response.status_code}). "
+                "Refusing admin fallback to surface auth regressions."
+            )
         login_response = await async_client.post(
             _LOGIN_ENDPOINT,
             json={"username": ADMIN_USER_NAME, "password": ADMIN_USER_SECRET},

@@ -110,7 +110,7 @@ async function downloadCanvasBlob(canvas: HTMLCanvasElement): Promise<void> {
       document.body.appendChild(a)
       a.click()
       a.remove()
-      queueMicrotask(() => URL.revokeObjectURL(url))
+      setTimeout(() => URL.revokeObjectURL(url), 100)
       resolve()
     }, 'image/png')
   })
@@ -315,6 +315,15 @@ export default function GraphCanvas({
     const nodesArr = filteredNodes
     if (!nodesArr.length) {
       drawRef.current = null
+      const clearCanvas = canvasRef.current
+      if (clearCanvas) {
+        const clearCtx = clearCanvas.getContext('2d')
+        if (clearCtx) {
+          clearCtx.clearRect(0, 0, clearCanvas.width, clearCanvas.height)
+          clearCtx.fillStyle = '#18181b'
+          clearCtx.fillRect(0, 0, clearCanvas.width, clearCanvas.height)
+        }
+      }
       return
     }
 
@@ -662,6 +671,26 @@ export default function GraphCanvas({
       pointerState = { type: 'idle' }
     }
 
+    function onPointerCancel(e: PointerEvent) {
+      // Release any active interaction (drag, pan, lasso) without triggering
+      // click/release side-effects — e.g. when a touch is stolen by the OS.
+      if (el.hasPointerCapture(e.pointerId)) {
+        el.releasePointerCapture(e.pointerId)
+      }
+      if (pointerState.type === 'drag' && layout === 'force') {
+        // Stop dragging the node — restore simulation behaviour.
+        const { node } = pointerState
+        if (!pinnedNodes.has(node.id)) {
+          node.fx = null
+          node.fy = null
+        }
+        sim.alphaTarget(0)
+      }
+      el.style.cursor = 'grab'
+      pointerState = { type: 'idle' }
+      dirtyRef.current = true
+    }
+
     function onContextMenu(e: MouseEvent) {
       e.preventDefault()
       const [wx, wy] = toWorld(e.offsetX, e.offsetY)
@@ -677,6 +706,7 @@ export default function GraphCanvas({
     el.addEventListener('pointerdown', onPointerDown)
     el.addEventListener('pointermove', onPointerMove)
     el.addEventListener('pointerup', onPointerUp)
+    el.addEventListener('pointercancel', onPointerCancel)
     el.addEventListener('contextmenu', onContextMenu)
     globalThis.addEventListener('keydown', onKeyDown)
 
@@ -692,6 +722,7 @@ export default function GraphCanvas({
       el.removeEventListener('pointerdown', onPointerDown)
       el.removeEventListener('pointermove', onPointerMove)
       el.removeEventListener('pointerup', onPointerUp)
+      el.removeEventListener('pointercancel', onPointerCancel)
       el.removeEventListener('contextmenu', onContextMenu)
       globalThis.removeEventListener('keydown', onKeyDown)
       drawRef.current = null
@@ -715,8 +746,14 @@ export default function GraphCanvas({
     const sim = simRef.current
     if (!sim) return
 
+    // `cancelled` is checked at the top of every RAF callback so that cleanup
+    // reliably stops the animation — storing only the first frame ID would
+    // leave subsequent frames running after the effect re-fires.
+    let cancelled = false
+
     const anchorSet = new Set(cameraFocusAnchorIds)
-    const raf = requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      if (cancelled) return
       const anchors = sim.nodes().filter((n) => anchorSet.has(n.id))
       if (!anchors.length) {
         clearCameraFocusAnchorIds()
@@ -744,6 +781,7 @@ export default function GraphCanvas({
       const duration = 400
 
       function step() {
+        if (cancelled) return
         const t = Math.min((performance.now() - t0) / duration, 1)
         const ease = t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t
         transformRef.current = {
@@ -758,7 +796,7 @@ export default function GraphCanvas({
       requestAnimationFrame(step)
     })
 
-    return () => cancelAnimationFrame(raf)
+    return () => { cancelled = true }
   }, [cameraFocusAnchorIds, filteredNodes, resolvedSize.width, resolvedSize.height, clearCameraFocusAnchorIds])
 
   // ── minimap callbacks ─────────────────────────────────────────────────────────

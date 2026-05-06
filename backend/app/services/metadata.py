@@ -163,7 +163,8 @@ class MetadataService:
                 logger.warning(msg)
             return {}
 
-    _INDEX_PROP_RE = re.compile(r"properties\s*->>\s*'([^']+)'", re.IGNORECASE)
+    # Item 20: match both ->> (text) and -> (jsonb) operator forms.
+    _INDEX_PROP_RE = re.compile(r"properties\s*->>?\s*'([^']+)'", re.IGNORECASE)
 
     @staticmethod
     async def get_indexed_properties(

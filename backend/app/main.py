@@ -37,9 +37,19 @@ async def lifespan(app: FastAPI):
     from app.services.user import user_service as _us
     from app.core.database import pool_registry
 
-    await audit.close()
-    await _us.close()
-    await pool_registry.close_all()
+    # Item 14: isolate each cleanup so one failure doesn't prevent others
+    try:
+        await audit.close()
+    except Exception as exc:
+        logger.warning("audit.close() failed during shutdown: %s", exc)
+    try:
+        await _us.close()
+    except Exception as exc:
+        logger.warning("user_service.close() failed during shutdown: %s", exc)
+    try:
+        await pool_registry.close_all()
+    except Exception as exc:
+        logger.warning("pool_registry.close_all() failed during shutdown: %s", exc)
 
 
 def create_app() -> FastAPI:

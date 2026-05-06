@@ -104,7 +104,9 @@ async def logout(
     """
     session_id = http_request.session.get("session_id")
     user_id = session.get("user_id")
-    username = session.get("connection_config", {}).get("username", "unknown")
+    username = session.get("username") or session.get("connection_config", {}).get(
+        "username", "unknown"
+    )
 
     db_conn = session.get("db_connection")
     if db_conn:

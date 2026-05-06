@@ -98,7 +98,7 @@ async def test_stream_query_unregisters_tracker_on_completion():
 
     # Empty cursor → no data chunks
     assert len(chunks) == 0
-    assert query_tracker.get_query_info(request_id) is None
+    assert await query_tracker.get_query_info(request_id) is None
 
 
 @pytest.mark.asyncio

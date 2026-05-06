@@ -75,6 +75,7 @@ export interface QueryStreamRequest {
   params?: Record<string, unknown>
   chunk_size?: number
   offset?: number
+  mutation_confirmed?: boolean
 }
 
 export interface QueryStreamChunk {

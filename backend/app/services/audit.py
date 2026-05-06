@@ -21,6 +21,7 @@ import json
 import logging
 from typing import Any, Optional
 
+from psycopg.conninfo import make_conninfo
 from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
 
@@ -47,11 +48,13 @@ async def _get_pool() -> Optional[AsyncConnectionPool]:
         if _pool is not None and not _pool.closed:
             return _pool
         try:
-            conninfo = (
-                f"host={settings.db_host} port={settings.db_port} "
-                f"dbname={settings.db_name} user={settings.db_user} "
-                f"password={settings.db_password} "
-                f"connect_timeout=2"
+            conninfo = make_conninfo(
+                host=settings.db_host,
+                port=settings.db_port,
+                dbname=settings.db_name,
+                user=settings.db_user,
+                password=settings.db_password,
+                connect_timeout=2,
             )
             p = AsyncConnectionPool(
                 conninfo,

@@ -101,6 +101,16 @@ async def stream_query_results(
                 status_code=404,
             )
 
+        # Item 13: Apply SKIP for pagination when offset > 0.
+        # Inline the validated integer offset directly (not via $param) since AGE does not
+        # support parameter binding in SKIP/LIMIT position in all versions.
+        if offset > 0:
+            # Strip trailing semicolon before appending SKIP.
+            cypher_stripped = cypher_query.rstrip()
+            if cypher_stripped.endswith(";"):
+                cypher_stripped = cypher_stripped[:-1].rstrip()
+            cypher_query = f"{cypher_stripped} SKIP {int(offset)}"
+
         async with db_conn.connection() as exec_conn:
             # Safe mode: DB-level enforcement — mutations raise ReadOnlySqlTransaction (25006).
             if settings.query_safe_mode:

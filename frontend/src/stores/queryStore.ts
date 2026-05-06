@@ -331,7 +331,7 @@ export const useQueryStore = create<QueryState>()(
           graph: string,
           query: string,
           params?: Record<string, unknown>,
-          _mutationConfirmed: boolean = false
+          mutationConfirmed: boolean = false
         ) => {
           // Abort any in-flight stream for this tab before starting a new one.
           _streamAbortControllers.get(tabId)?.abort()
@@ -352,7 +352,7 @@ export const useQueryStore = create<QueryState>()(
 
           try {
             for await (const chunk of queryAPI.stream(
-              { graph, cypher: query, params: params || {} },
+              { graph, cypher: query, params: params || {}, mutation_confirmed: mutationConfirmed },
               controller.signal
             )) {
               if (controller.signal.aborted) break
