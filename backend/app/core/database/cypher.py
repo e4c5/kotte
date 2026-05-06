@@ -7,6 +7,7 @@ for the AGE ``AS (...)`` clause, not from arbitrary user-controlled identifiers.
 
 import hashlib
 import logging
+import re
 from typing import AsyncGenerator, Optional
 
 import psycopg
@@ -15,6 +16,14 @@ from app.core.database.utils import cypher_return_columns
 from app.core.validation import validate_graph_name
 
 logger = logging.getLogger(__name__)
+
+_SAFE_CURSOR_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]{0,62}$")
+
+
+def _sanitize_cursor_name(name: str) -> str:
+    if not _SAFE_CURSOR_RE.match(name):
+        raise ValueError(f"cursor_name must match [a-zA-Z_][a-zA-Z0-9_]{{0,62}}, got: {name!r}")
+    return name
 
 
 class CypherExecutor:
@@ -153,7 +162,8 @@ class CypherExecutor:
             chunk_size,
         )
 
-        async with conn.cursor(name=cursor_name) as cur:
+        safe_cursor = _sanitize_cursor_name(cursor_name)
+        async with conn.cursor(name=safe_cursor) as cur:
             await cur.execute(runnable_sql, run_params)
             while True:
                 rows = await cur.fetchmany(chunk_size)

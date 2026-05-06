@@ -163,7 +163,7 @@ class CSRFMiddleware(BaseHTTPMiddleware):
         if not session_csrf and session_id:
             from app.core.auth import session_manager
 
-            session_data = session_manager.get_session(session_id)
+            session_data = await session_manager.get_session(session_id)
             if session_data:
                 session_csrf = session_data.get("csrf_token")
 
@@ -185,7 +185,7 @@ class CSRFMiddleware(BaseHTTPMiddleware):
             if session_id:
                 from app.core.auth import session_manager
 
-                actor_id = session_manager.get_user_id(session_id)
+                actor_id = await session_manager.get_user_id(session_id)
             audit.fire_and_forget(
                 "csrf_failure",
                 actor_id=actor_id,
@@ -298,7 +298,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if session_id:
             from app.core.auth import session_manager
 
-            user_id = session_manager.get_user_id(session_id)
+            user_id = await session_manager.get_user_id(session_id)
 
         now = time.time()
         cutoff = now - 60  # Last minute

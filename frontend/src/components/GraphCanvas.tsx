@@ -131,6 +131,11 @@ export default function GraphCanvas({
   const transformRef = useRef<Transform>({ x: 0, y: 0, k: 1 })
   const dirtyRef = useRef(true)
   const pathByEdgeIdRef = useRef(new Map<string, LinkPathResult>())
+  // Refs for visual-only state so selection/path changes don't restart the simulation.
+  // Initialized with empty values; synced by the useEffects below before any draw call.
+  const selectedNodeRef = useRef<string | null | undefined>(undefined)
+  const pathNodeIdsRef = useRef(new Set<string>())
+  const pathEdgeIdsRef = useRef(new Set<string>())
   // drawRef holds the latest draw closure; the RAF loop always calls the current version.
   const drawRef = useRef<(() => void) | null>(null)
   const [resolvedSize, setResolvedSize] = useState({ width, height })
@@ -161,10 +166,9 @@ export default function GraphCanvas({
     clearCameraFocusAnchorIds,
   } = useGraphStore()
 
-  // Trigger redraw whenever lasso selection changes.
-  useEffect(() => {
-    dirtyRef.current = true
-  }, [lassoNodes])
+  // selectedNode is available here (from useGraphStore above); sync its ref now.
+  useEffect(() => { selectedNodeRef.current = selectedNode; dirtyRef.current = true }, [selectedNode])
+  useEffect(() => { dirtyRef.current = true }, [lassoNodes])
 
   // Mirror the same filter logic from GraphView.
   const filteredNodes = useMemo(() => {
@@ -214,6 +218,10 @@ export default function GraphCanvas({
     () => new Set(pathHighlights?.edgeIds?.map(String) ?? []),
     [pathHighlights?.edgeIds],
   )
+
+  // Sync path-highlight refs after the memo values are available.
+  useEffect(() => { pathNodeIdsRef.current = pathNodeIds; dirtyRef.current = true }, [pathNodeIds])
+  useEffect(() => { pathEdgeIdsRef.current = pathEdgeIds; dirtyRef.current = true }, [pathEdgeIds])
 
   const edgeWidthScale = useMemo(() => {
     if (!edgeWidthMapping.enabled || !edgeWidthMapping.property) return null
@@ -370,7 +378,7 @@ export default function GraphCanvas({
     dirtyRef.current = true
 
     const edgeColor = (e: GraphEdge) =>
-      pathEdgeIds.has(String(e.id))
+      pathEdgeIdsRef.current.has(String(e.id))
         ? '#0066cc'
         : getEdgeStyle(e, edgeStyles, edgeWidthScale, edgeWidthMapping.property).color
 
@@ -380,7 +388,7 @@ export default function GraphCanvas({
         if (!result) continue
         const color = edgeColor(edge)
         const style = getEdgeStyle(edge, edgeStyles, edgeWidthScale, edgeWidthMapping.property)
-        const highlighted = pathEdgeIds.has(String(edge.id))
+        const highlighted = pathEdgeIdsRef.current.has(String(edge.id))
         ctx.globalAlpha = highlighted ? 1 : 0.6
         ctx.strokeStyle = color
         ctx.lineWidth = highlighted ? Math.max(3, style.size) : style.size
@@ -408,13 +416,13 @@ export default function GraphCanvas({
         const style = getNodeStyle(node, nodeStyles)
         const nx = node.x ?? vw / 2
         const ny = node.y ?? vh / 2
-        const fill = pathNodeIds.has(node.id) ? '#0066cc' : style.color
+        const fill = pathNodeIdsRef.current.has(node.id) ? '#0066cc' : style.color
         let stroke = '#fff'
-        if (selectedNode === node.id) stroke = '#ff0000'
-        else if (pathNodeIds.has(node.id)) stroke = '#004499'
+        if (selectedNodeRef.current === node.id) stroke = '#ff0000'
+        else if (pathNodeIdsRef.current.has(node.id)) stroke = '#004499'
         else if (pinnedNodes.has(node.id)) stroke = '#f59e0b'
         const sw =
-          selectedNode === node.id || pathNodeIds.has(node.id) || pinnedNodes.has(node.id) ? 3 : 2
+          selectedNodeRef.current === node.id || pathNodeIdsRef.current.has(node.id) || pinnedNodes.has(node.id) ? 3 : 2
         ctx.beginPath()
         ctx.arc(nx, ny, style.size, 0, Math.PI * 2)
         ctx.fillStyle = fill
@@ -691,14 +699,11 @@ export default function GraphCanvas({
   }, [
     filteredNodes,
     filteredEdges,
-    pathNodeIds,
-    pathEdgeIds,
     width,
     height,
     layout,
     nodeStyles,
     edgeStyles,
-    selectedNode,
     pinnedNodes,
     edgeWidthScale,
     edgeWidthMapping.property,

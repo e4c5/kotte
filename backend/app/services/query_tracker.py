@@ -9,6 +9,7 @@ The module-level ``query_tracker`` is bound to the appropriate instance.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from datetime import datetime, timezone
@@ -20,6 +21,13 @@ from app.core.errors import APIException, ErrorCode, ErrorCategory
 from fastapi import status
 
 logger = logging.getLogger(__name__)
+
+_background_tasks: set[asyncio.Task] = set()
+
+
+def _keep_task(task: asyncio.Task) -> None:
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
 
 
 class QueryTracker:
@@ -131,8 +139,6 @@ class RedisQueryTracker:
         query_text: str,
         user_id: str,
     ) -> None:
-        import asyncio
-
         self._db_conns[request_id] = db_conn
         meta = {
             "user_id": user_id,
@@ -142,8 +148,10 @@ class RedisQueryTracker:
         }
         try:
             loop = asyncio.get_event_loop()
-            loop.create_task(
-                self._client.set(self._key(request_id), json.dumps(meta), ex=self._ttl)  # type: ignore[arg-type]
+            _keep_task(
+                loop.create_task(
+                    self._client.set(self._key(request_id), json.dumps(meta), ex=self._ttl)  # type: ignore[arg-type]
+                )
             )
         except RuntimeError:
             pass
@@ -202,12 +210,10 @@ class RedisQueryTracker:
         return success
 
     def unregister_query(self, request_id: str) -> None:
-        import asyncio
-
         self._db_conns.pop(request_id, None)
         try:
             loop = asyncio.get_event_loop()
-            loop.create_task(self._client.delete(self._key(request_id)))  # type: ignore[arg-type]
+            _keep_task(loop.create_task(self._client.delete(self._key(request_id))))  # type: ignore[arg-type]
         except RuntimeError:
             pass
         logger.debug(f"Unregistered query {request_id[:8]}...")

@@ -15,6 +15,7 @@ handler closes the pool to prevent leaks.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import secrets
@@ -32,6 +33,14 @@ logger = logging.getLogger(__name__)
 # Populated/cleared in both implementations so the rest of the code always finds
 # the db_connection here regardless of which backend is active.
 _local_session_objects: dict[str, dict] = {}
+
+# Keeps fire-and-forget tasks alive until completion so GC can't collect them.
+_background_tasks: set[asyncio.Task] = set()
+
+
+def _keep_task(task: asyncio.Task) -> None:
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
 
 
 class InMemorySessionManager:
@@ -55,7 +64,7 @@ class InMemorySessionManager:
         logger.info(f"Created session {session_id[:8]}... for user {user_id}")
         return session_id
 
-    def get_session(self, session_id: str) -> Optional[dict]:
+    async def get_session(self, session_id: str) -> Optional[dict]:
         session = self._sessions.get(session_id)
         if not session:
             return None
@@ -85,8 +94,8 @@ class InMemorySessionManager:
             logger.info(f"Deleted session {session_id[:8]}...")
             del self._sessions[session_id]
 
-    def get_user_id(self, session_id: str) -> Optional[str]:
-        session = self.get_session(session_id)
+    async def get_user_id(self, session_id: str) -> Optional[str]:
+        session = await self.get_session(session_id)
         return session["user_id"] if session else None
 
 
@@ -104,6 +113,7 @@ class RedisSessionManager:
         "connection_config",
         "graph_context",
         "csrf_token",
+        "role",
     }
 
     def __init__(self, redis_url: str):
@@ -137,8 +147,6 @@ class RedisSessionManager:
         return data
 
     def create_session(self, user_id: str, connection_config: Optional[dict] = None) -> str:
-        import asyncio
-
         session_id = secrets.token_urlsafe(32)
         csrf_token = secrets.token_urlsafe(32)
         now = datetime.now(timezone.utc)
@@ -152,7 +160,7 @@ class RedisSessionManager:
         }
         try:
             loop = asyncio.get_event_loop()
-            loop.create_task(self._async_set(session_id, session))
+            _keep_task(loop.create_task(self._async_set(session_id, session)))
         except RuntimeError:
             pass
         logger.info(f"Created session {session_id[:8]}... for user {user_id}")
@@ -168,18 +176,8 @@ class RedisSessionManager:
         except Exception as exc:
             logger.warning("RedisSessionManager.set failed: %s", exc)
 
-    def get_session(self, session_id: str) -> Optional[dict]:
-        import asyncio
-
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-
-                future = asyncio.run_coroutine_threadsafe(self._async_get(session_id), loop)
-                return future.result(timeout=1.0)
-        except Exception as exc:
-            logger.warning("RedisSessionManager.get failed: %s", exc)
-        return None
+    async def get_session(self, session_id: str) -> Optional[dict]:
+        return await self._async_get(session_id)
 
     async def _async_get(self, session_id: str) -> Optional[dict]:
         try:
@@ -201,8 +199,6 @@ class RedisSessionManager:
             return None
 
     def update_session(self, session_id: str, updates: dict) -> None:
-        import asyncio
-
         # Non-serialisable keys go to local dict; serialisable go to Redis
         local_updates = {k: v for k, v in updates.items() if k not in self._SERIALISABLE}
         redis_updates = {k: v for k, v in updates.items() if k in self._SERIALISABLE}
@@ -211,7 +207,7 @@ class RedisSessionManager:
         if redis_updates:
             try:
                 loop = asyncio.get_event_loop()
-                loop.create_task(self._async_update(session_id, redis_updates))
+                _keep_task(loop.create_task(self._async_update(session_id, redis_updates)))
             except RuntimeError:
                 pass
 
@@ -225,18 +221,16 @@ class RedisSessionManager:
         await self._async_set(session_id, session)
 
     def delete_session(self, session_id: str) -> None:
-        import asyncio
-
         _local_session_objects.pop(session_id, None)
         try:
             loop = asyncio.get_event_loop()
-            loop.create_task(self._client.delete(self._key(session_id)))  # type: ignore[arg-type]
+            _keep_task(loop.create_task(self._client.delete(self._key(session_id))))  # type: ignore[arg-type]
         except RuntimeError:
             pass
         logger.info(f"Deleted session {session_id[:8]}...")
 
-    def get_user_id(self, session_id: str) -> Optional[str]:
-        session = self.get_session(session_id)
+    async def get_user_id(self, session_id: str) -> Optional[str]:
+        session = await self.get_session(session_id)
         return session["user_id"] if session else None
 
 
@@ -262,7 +256,7 @@ async def get_session(request: Request) -> dict:
             status_code=status.HTTP_401_UNAUTHORIZED,
         )
 
-    session = session_manager.get_session(session_id)
+    session = await session_manager.get_session(session_id)
     if not session:
         raise APIException(
             code=ErrorCode.AUTH_SESSION_EXPIRED,

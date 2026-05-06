@@ -118,6 +118,8 @@ async def import_csv(
             )
         # Strip BOM / whitespace from field names
         header = [f.strip().lstrip("﻿") for f in reader.fieldnames]
+        # Case-insensitive lookup: lowercase → original header name
+        header_lower_map = {h.lower(): h for h in header}
         if not header:
             raise APIException(
                 code=ErrorCode.IMPORT_INVALID_FILE,
@@ -238,22 +240,24 @@ async def import_csv(
                 edge_batch: list[dict] = []
 
                 for line_num, properties in enumerate(batch_rows, start=batch_start + 2):
+                    source_col = header_lower_map.get("source")
+                    target_col = header_lower_map.get("target")
                     if label_kind == "v":
                         node_batch.append(properties)
                     else:
-                        if "source" not in properties or "target" not in properties:
+                        if source_col not in properties or target_col not in properties:
                             rejected += 1
                             errors.append(f"Row {line_num}: missing source or target")
                             continue
                         try:
-                            source_id = int(properties["source"])
-                            target_id = int(properties["target"])
+                            source_id = int(properties[source_col])
+                            target_id = int(properties[target_col])
                         except (ValueError, TypeError):
                             rejected += 1
                             errors.append(f"Row {line_num}: source and target must be integers")
                             continue
                         props = {
-                            k: v for k, v in properties.items() if k not in {"source", "target"}
+                            k: v for k, v in properties.items() if k not in {source_col, target_col}
                         }
                         edge_batch.append(
                             {
@@ -282,22 +286,25 @@ async def import_csv(
                     inserted += len(node_batch)
 
                 if edge_batch:
-                    for edge in edge_batch:
-                        props_json = json.dumps(edge["props"]).replace("'", "''")
-                        cypher = (
-                            f"MATCH (a), (b) "
-                            f"WHERE id(a) = {edge['source']} AND id(b) = {edge['target']} "
-                            f"CREATE (a)-[r:{validated_label_name}]->(b) "
-                            f"SET r = {props_json}::jsonb"
-                        )
-                        batch_query = """
-                            SELECT * FROM ag_catalog.cypher(%(graph_name)s::text, %(cypher)s::text) AS (result agtype)
-                        """
-                        await db_conn.execute_query(
-                            batch_query,
-                            {"graph_name": validated_graph_name, "cypher": cypher},
-                            conn=conn,
-                        )
+                    # UNWIND with parameterized JSON — no user data interpolated via f-strings.
+                    edges_json = json.dumps(
+                        [{"s": e["source"], "t": e["target"], "p": e["props"]} for e in edge_batch]
+                    ).replace("'", "''")
+                    cypher = (
+                        f"UNWIND {edges_json}::jsonb AS row "
+                        f"MATCH (a), (b) "
+                        f"WHERE id(a) = toInteger(row.s) AND id(b) = toInteger(row.t) "
+                        f"CREATE (a)-[r:{validated_label_name}]->(b) "
+                        f"SET r = row.p"
+                    )
+                    batch_query = """
+                        SELECT * FROM ag_catalog.cypher(%(graph_name)s::text, %(cypher)s::text) AS (result agtype)
+                    """
+                    await db_conn.execute_query(
+                        batch_query,
+                        {"graph_name": validated_graph_name, "cypher": cypher},
+                        conn=conn,
+                    )
                     inserted += len(edge_batch)
 
         job_status.status = "completed"

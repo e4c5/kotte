@@ -39,7 +39,7 @@ async def create_user(
 ) -> UserInfo:
     """Create a new user. Admin only."""
     actor_id = session.get("user_id")
-    if actor_id != "admin" and actor_id != "1":
+    if session.get("role") != "admin":
         raise APIException(
             code=ErrorCode.AUTH_REQUIRED,
             message="Admin privileges required",

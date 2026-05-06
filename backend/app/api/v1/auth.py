@@ -54,12 +54,14 @@ async def login(request: LoginRequest, http_request: Request) -> LoginResponse:
         )
 
     # Create session
+    role = "admin" if user["username"] == "admin" else "user"
     session_id = session_manager.create_session(user["user_id"], {"username": user["username"]})
+    session_manager.update_session(session_id, {"role": role})
 
     # Set session cookie and CSRF token
     http_request.session["session_id"] = session_id
     # CSRF token is stored in session manager, also store in cookie session for middleware
-    session_data = session_manager.get_session(session_id)
+    session_data = await session_manager.get_session(session_id)
     if session_data:
         http_request.session["csrf_token"] = session_data.get("csrf_token")
 
@@ -207,7 +209,7 @@ async def get_csrf_token(http_request: Request) -> dict:
     # Try to get from session_manager and sync to cookie
     session_id = http_request.session.get("session_id")
     if session_id:
-        session_data = session_manager.get_session(session_id)
+        session_data = await session_manager.get_session(session_id)
         if session_data and session_data.get("csrf_token"):
             csrf_token = session_data["csrf_token"]
             http_request.session["csrf_token"] = csrf_token

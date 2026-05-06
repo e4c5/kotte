@@ -10,6 +10,7 @@ tests and single-developer local runs continue to work without a running DB.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from datetime import datetime, timezone
@@ -27,7 +28,7 @@ from fastapi import status
 logger = logging.getLogger(__name__)
 
 _pool: Optional[AsyncConnectionPool] = None
-_pool_unavailable = False  # set after first failed open; avoids per-request retries
+_pool_lock: Optional[asyncio.Lock] = None
 
 
 def _hash_password(password: str) -> str:
@@ -60,35 +61,42 @@ def _get_admin_fallback() -> dict:
     return _admin_fallback
 
 
+def _get_pool_lock() -> asyncio.Lock:
+    global _pool_lock
+    if _pool_lock is None:
+        _pool_lock = asyncio.Lock()
+    return _pool_lock
+
+
 async def _get_pool() -> Optional[AsyncConnectionPool]:
-    global _pool, _pool_unavailable
+    global _pool
     if settings.environment == "test":
-        return None
-    if _pool_unavailable:
         return None
     if _pool is not None and not _pool.closed:
         return _pool
-    try:
-        conninfo = (
-            f"host={settings.db_host} port={settings.db_port} "
-            f"dbname={settings.db_name} user={settings.db_user} "
-            f"password={settings.db_password} "
-            f"connect_timeout=2"  # fast fail; graceful fallback handles the rest
-        )
-        p = AsyncConnectionPool(
-            conninfo,
-            min_size=1,
-            max_size=5,
-            kwargs={"row_factory": dict_row, "autocommit": True},
-            open=False,
-        )
-        await p.open(wait=True, timeout=3)
-        _pool = p
-        return _pool
-    except Exception as exc:
-        logger.debug("UserService: DB pool unavailable, using in-memory fallback (%s)", exc)
-        _pool_unavailable = True
-        return None
+    async with _get_pool_lock():
+        if _pool is not None and not _pool.closed:
+            return _pool
+        try:
+            conninfo = (
+                f"host={settings.db_host} port={settings.db_port} "
+                f"dbname={settings.db_name} user={settings.db_user} "
+                f"password={settings.db_password} "
+                f"connect_timeout=2"  # fast fail; graceful fallback handles the rest
+            )
+            p = AsyncConnectionPool(
+                conninfo,
+                min_size=1,
+                max_size=5,
+                kwargs={"row_factory": dict_row, "autocommit": True},
+                open=False,
+            )
+            await p.open(wait=True, timeout=3)
+            _pool = p
+            return _pool
+        except Exception as exc:
+            logger.debug("UserService: DB pool unavailable, using in-memory fallback (%s)", exc)
+            return None
 
 
 class UserService:

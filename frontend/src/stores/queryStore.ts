@@ -387,7 +387,11 @@ export const useQueryStore = create<QueryState>()(
             const message = error instanceof Error ? error.message : 'Streaming failed'
             get().updateTab(tabId, { error: message, loading: false, requestId: null })
           } finally {
-            _streamAbortControllers.delete(tabId)
+            // Only delete if this controller is still the active one — a new stream
+            // may have started and set a fresh controller while we were cleaning up.
+            if (_streamAbortControllers.get(tabId) === controller) {
+              _streamAbortControllers.delete(tabId)
+            }
           }
         },
 
