@@ -70,6 +70,7 @@ export default function GraphMinimap({
       // World bounding box from live node positions (mutated in-place by d3-force).
       const valid = nodes.filter((n) => n.x != null && n.y != null)
       if (!valid.length) {
+        mappingRef.current = null
         // Border only
         ctx.strokeStyle = 'rgba(113,113,122,0.4)'
         ctx.lineWidth = 1

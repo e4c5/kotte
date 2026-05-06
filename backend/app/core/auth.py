@@ -159,7 +159,13 @@ class RedisSessionManager:
                 try:
                     from app.core.database.pool_registry import pool_registry
 
-                    conn = pool_registry._pools.get((host, int(port), database, user))
+                    # Item 15: PoolKey now includes password/sslmode; scan by partial key.
+                    target = (host, int(port), database, user)
+                    conn = None
+                    for key, pool in pool_registry._pools.items():
+                        if key[:4] == target:
+                            conn = pool
+                            break
                     if conn is not None:
                         data["db_connection"] = conn
                         _local_session_objects.setdefault(session_id, {})["db_connection"] = conn

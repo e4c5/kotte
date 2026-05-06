@@ -105,11 +105,8 @@ def fire_and_forget(
 ) -> None:
     """Schedule an audit write without blocking the caller."""
     try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            loop.create_task(
-                record(event, actor_id=actor_id, request_id=request_id, payload=payload)
-            )
+        loop = asyncio.get_running_loop()
+        loop.create_task(record(event, actor_id=actor_id, request_id=request_id, payload=payload))
     except RuntimeError:
         pass
 

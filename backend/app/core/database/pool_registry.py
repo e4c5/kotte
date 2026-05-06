@@ -34,7 +34,9 @@ from app.core.database.connection import DatabaseConnection
 
 logger = logging.getLogger(__name__)
 
-PoolKey = tuple[str, int, str, str]  # (host, port, database, user)
+PoolKey = tuple[
+    str, int, str, str, str, Optional[str]
+]  # (host, port, database, user, password, sslmode)
 
 
 class PoolRegistry:
@@ -45,8 +47,16 @@ class PoolRegistry:
         self._last_used: dict[PoolKey, datetime] = {}
         self._lock = asyncio.Lock()
 
-    def _make_key(self, host: str, port: int, database: str, user: str) -> PoolKey:
-        return (host, port, database, user)
+    def _make_key(
+        self,
+        host: str,
+        port: int,
+        database: str,
+        user: str,
+        password: str,
+        sslmode: Optional[str] = None,
+    ) -> PoolKey:
+        return (host, port, database, user, password, sslmode)
 
     async def get_or_create(
         self,
@@ -58,7 +68,7 @@ class PoolRegistry:
         sslmode: Optional[str] = None,
     ) -> DatabaseConnection:
         """Return the shared pool for this tuple, creating it if needed."""
-        key = self._make_key(host, port, database, user)
+        key = self._make_key(host, port, database, user, password, sslmode)
         now = datetime.now(timezone.utc)
 
         # Fast path: pool already exists and is connected.
@@ -121,9 +131,17 @@ class PoolRegistry:
             self._pools.clear()
             self._last_used.clear()
 
-    def touch(self, host: str, port: int, database: str, user: str) -> None:
+    def touch(
+        self,
+        host: str,
+        port: int,
+        database: str,
+        user: str,
+        password: str,
+        sslmode: Optional[str] = None,
+    ) -> None:
         """Update last-used timestamp without acquiring the async lock."""
-        key = self._make_key(host, port, database, user)
+        key = self._make_key(host, port, database, user, password, sslmode)
         if key in self._pools:
             self._last_used[key] = datetime.now(timezone.utc)
 
