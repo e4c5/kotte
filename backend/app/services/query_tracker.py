@@ -263,7 +263,9 @@ class RedisQueryTracker:
 
     async def _async_cleanup_stale(self) -> None:
         stale = []
-        for request_id in list(self._db_conns):
+        for request_id in list(
+            self._db_conns
+        ):  # NOSONAR: snapshot required because await yields control
             try:
                 exists = await self._client.exists(self._key(request_id))
                 if not exists:
