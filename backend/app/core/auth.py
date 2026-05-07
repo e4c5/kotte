@@ -91,6 +91,7 @@ class InMemorySessionManager:
         return session
 
     async def update_session(self, session_id: str, updates: dict) -> None:
+        await asyncio.sleep(0)
         if session_id in self._sessions:
             self._sessions[session_id].update(updates)
             self._sessions[session_id]["last_activity"] = datetime.now(timezone.utc)
@@ -160,8 +161,8 @@ class RedisSessionManager:
                 if key[:4] == target:
                     _local_session_objects.setdefault(session_id, {})["db_connection"] = pool
                     return pool
-        except Exception:
-            pass
+        except (ValueError, KeyError) as exc:
+            logger.debug("Failed to reconstruct db_connection for %s: %s", session_id, exc)
         return None
 
     def _deserialise(self, raw: str, session_id: str) -> dict:

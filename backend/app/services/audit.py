@@ -56,26 +56,30 @@ async def _get_pool() -> Optional[AsyncConnectionPool]:
         now = datetime.now(timezone.utc)
         if _pool_retry_after is not None and now < _pool_retry_after:
             return None
+        conninfo = make_conninfo(
+            host=settings.db_host,
+            port=settings.db_port,
+            dbname=settings.db_name,
+            user=settings.db_user,
+            password=settings.db_password,
+            connect_timeout=2,
+        )
+        p = AsyncConnectionPool(
+            conninfo,
+            min_size=1,
+            max_size=3,
+            kwargs={"row_factory": dict_row, "autocommit": True},
+            open=False,
+        )
         try:
-            conninfo = make_conninfo(
-                host=settings.db_host,
-                port=settings.db_port,
-                dbname=settings.db_name,
-                user=settings.db_user,
-                password=settings.db_password,
-                connect_timeout=2,
-            )
-            p = AsyncConnectionPool(
-                conninfo,
-                min_size=1,
-                max_size=3,
-                kwargs={"row_factory": dict_row, "autocommit": True},
-                open=False,
-            )
             await asyncio.wait_for(p.open(wait=True, timeout=3), timeout=4)
             _pool = p
             _pool_retry_after = None
         except Exception as exc:
+            try:
+                await p.close()
+            except Exception:
+                pass
             _pool_retry_after = datetime.now(timezone.utc) + timedelta(
                 seconds=_RETRY_BACKOFF_SECONDS
             )
