@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from psycopg.conninfo import make_conninfo
@@ -31,6 +32,8 @@ logger = logging.getLogger(__name__)
 
 _pool: Optional[AsyncConnectionPool] = None
 _pool_lock = asyncio.Lock()
+_pool_retry_after: Optional[datetime] = None  # time-based circuit breaker
+_RETRY_BACKOFF_SECONDS = 60
 
 _INSERT = """
     INSERT INTO kotte_audit_events (event, actor_id, request_id, payload)
@@ -39,14 +42,20 @@ _INSERT = """
 
 
 async def _get_pool() -> Optional[AsyncConnectionPool]:
-    global _pool
+    global _pool, _pool_retry_after
     if settings.environment == "test":
         return None
     if _pool is not None and not _pool.closed:
         return _pool
+    now = datetime.now(timezone.utc)
+    if _pool_retry_after is not None and now < _pool_retry_after:
+        return None
     async with _pool_lock:
         if _pool is not None and not _pool.closed:
             return _pool
+        now = datetime.now(timezone.utc)
+        if _pool_retry_after is not None and now < _pool_retry_after:
+            return None
         try:
             conninfo = make_conninfo(
                 host=settings.db_host,
@@ -63,10 +72,16 @@ async def _get_pool() -> Optional[AsyncConnectionPool]:
                 kwargs={"row_factory": dict_row, "autocommit": True},
                 open=False,
             )
-            await p.open(wait=True, timeout=3)
+            await asyncio.wait_for(p.open(wait=True, timeout=3), timeout=4)
             _pool = p
+            _pool_retry_after = None
         except Exception as exc:
-            logger.debug("audit: DB pool unavailable, audit writes will be skipped (%s)", exc)
+            _pool_retry_after = datetime.now(timezone.utc) + timedelta(
+                seconds=_RETRY_BACKOFF_SECONDS
+            )
+            logger.debug(
+                "audit: DB pool unavailable, retrying in %ds (%s)", _RETRY_BACKOFF_SECONDS, exc
+            )
     return _pool
 
 
@@ -109,6 +124,12 @@ def fire_and_forget(
         loop.create_task(record(event, actor_id=actor_id, request_id=request_id, payload=payload))
     except RuntimeError:
         pass
+
+
+def reset_pool() -> None:
+    """Clear the circuit breaker so the next call to _get_pool() retries immediately."""
+    global _pool_retry_after
+    _pool_retry_after = None
 
 
 async def close() -> None:

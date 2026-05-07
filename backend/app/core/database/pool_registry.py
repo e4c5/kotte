@@ -99,15 +99,27 @@ class PoolRegistry:
             return conn
 
     async def cleanup_idle(self, max_idle_seconds: int = 1800) -> None:
-        """Close and evict pools that have been idle for ``max_idle_seconds``."""
+        """Close and evict pools that have been idle for ``max_idle_seconds``.
+
+        Snapshot candidates outside the lock, then re-verify each inside the lock
+        before evicting. This prevents a TOCTOU race where the fast path in
+        get_or_create() hands out pool X between the snapshot and the pop: without
+        the re-check, cleanup_idle would disconnect a pool that was just returned to
+        a caller.
+        """
         now = datetime.now(timezone.utc)
+        candidates = [
+            k
+            for k, last in self._last_used.items()
+            if (now - last).total_seconds() > max_idle_seconds
+        ]
         async with self._lock:
-            idle_keys = [
-                k
-                for k, last in self._last_used.items()
-                if (now - last).total_seconds() > max_idle_seconds
-            ]
-            for key in idle_keys:
+            for key in candidates:
+                last = self._last_used.get(key)
+                if last is None:
+                    continue
+                if (now - last).total_seconds() <= max_idle_seconds:
+                    continue
                 pool = self._pools.pop(key, None)
                 self._last_used.pop(key, None)
                 if pool is not None:
