@@ -54,6 +54,7 @@ class InMemorySessionManager:
         self._sessions: dict[str, dict] = {}
 
     async def create_session(self, user_id: str, connection_config: Optional[dict] = None) -> str:
+        await asyncio.sleep(0)
         session_id = secrets.token_urlsafe(32)
         csrf_token = secrets.token_urlsafe(32)
         now = datetime.now(timezone.utc)
@@ -69,6 +70,7 @@ class InMemorySessionManager:
         return session_id
 
     async def get_session(self, session_id: str) -> Optional[dict]:
+        await asyncio.sleep(0)
         session = self._sessions.get(session_id)
         if not session:
             return None
@@ -94,6 +96,7 @@ class InMemorySessionManager:
             self._sessions[session_id]["last_activity"] = datetime.now(timezone.utc)
 
     async def delete_session(self, session_id: str) -> None:
+        await asyncio.sleep(0)
         if session_id in self._sessions:
             logger.info(f"Deleted session {session_id[:8]}...")
             del self._sessions[session_id]
@@ -140,6 +143,27 @@ class RedisSessionManager:
                 safe[k] = v
         return json.dumps(safe)
 
+    @staticmethod
+    def _reconstruct_db_connection(connection_config: dict, session_id: str) -> Optional[Any]:
+        """Try to recover a live pool from pool_registry for the given config."""
+        host = connection_config.get("host")
+        port = connection_config.get("port")
+        database = connection_config.get("database")
+        user = connection_config.get("user") or connection_config.get("username")
+        if not (host and port and database and user):
+            return None
+        try:
+            from app.core.database.pool_registry import pool_registry
+
+            target = (host, int(port), database, user)
+            for key, pool in pool_registry._pools.items():
+                if key[:4] == target:
+                    _local_session_objects.setdefault(session_id, {})["db_connection"] = pool
+                    return pool
+        except Exception:
+            pass
+        return None
+
     def _deserialise(self, raw: str, session_id: str) -> dict:
         data = json.loads(raw)
         for field in ("created_at", "last_activity"):
@@ -151,26 +175,9 @@ class RedisSessionManager:
         # Item 2: if db_connection is absent, try to reconstruct from pool_registry
         if "db_connection" not in data:
             cfg = data.get("connection_config") or {}
-            host = cfg.get("host")
-            port = cfg.get("port")
-            database = cfg.get("database")
-            user = cfg.get("user") or cfg.get("username")
-            if host and port and database and user:
-                try:
-                    from app.core.database.pool_registry import pool_registry
-
-                    # Item 15: PoolKey now includes password/sslmode; scan by partial key.
-                    target = (host, int(port), database, user)
-                    conn = None
-                    for key, pool in pool_registry._pools.items():
-                        if key[:4] == target:
-                            conn = pool
-                            break
-                    if conn is not None:
-                        data["db_connection"] = conn
-                        _local_session_objects.setdefault(session_id, {})["db_connection"] = conn
-                except Exception:
-                    pass
+            conn = self._reconstruct_db_connection(cfg, session_id)
+            if conn is not None:
+                data["db_connection"] = conn
         return data
 
     async def create_session(self, user_id: str, connection_config: Optional[dict] = None) -> str:

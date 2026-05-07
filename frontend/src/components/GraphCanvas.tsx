@@ -197,7 +197,11 @@ export default function GraphCanvas({
         filters.propertyFilters.every((f) => {
           if (f.label && f.label !== node.label) return true
           const rawProp = node.properties[f.property]
-          const pv = rawProp != null && typeof rawProp !== 'object' ? String(rawProp) : ''
+          const pv =
+            rawProp != null &&
+            (typeof rawProp === 'string' || typeof rawProp === 'number' || typeof rawProp === 'boolean')
+              ? String(rawProp)
+              : ''
           const fv = f.value.toLowerCase()
           switch (f.operator) {
             case 'equals': return pv.toLowerCase() === fv

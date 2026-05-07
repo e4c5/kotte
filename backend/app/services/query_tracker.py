@@ -98,6 +98,7 @@ class QueryTracker:
             logger.debug(f"Unregistered query {request_id[:8]}...")
 
     async def get_query_info(self, request_id: str) -> Optional[Dict]:
+        await asyncio.sleep(0)
         return self._active_queries.get(request_id)
 
     def cleanup_stale_queries(self, max_age_seconds: int = 3600) -> None:
@@ -262,7 +263,7 @@ class RedisQueryTracker:
 
     async def _async_cleanup_stale(self) -> None:
         stale = []
-        for request_id in list(self._db_conns):
+        for request_id in self._db_conns:
             try:
                 exists = await self._client.exists(self._key(request_id))
                 if not exists:

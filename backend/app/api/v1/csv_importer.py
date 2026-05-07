@@ -272,7 +272,7 @@ async def import_csv(
                     # Items 5+12: use Cypher $rows parameter — no ::jsonb cast, no f-string injection.
                     # Item 10: no .replace("'", "''") — parameterised queries make that unnecessary.
                     node_cypher = (
-                        f"UNWIND $rows AS row " f"CREATE (n:{validated_label_name}) " f"SET n = row"
+                        f"UNWIND $rows AS row CREATE (n:{validated_label_name}) SET n = row"
                     )
                     await db_conn.execute_cypher(
                         validated_graph_name,
