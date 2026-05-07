@@ -16,6 +16,8 @@ class JSONFormatter(logging.Formatter):
 
     def format(self, record: logging.LogRecord) -> str:
         """Format the log record as a JSON string."""
+        from app.core.telemetry import get_trace_id
+
         log_data: Dict[str, Any] = {
             "timestamp": datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat(),
             "level": record.levelname,
@@ -24,6 +26,7 @@ class JSONFormatter(logging.Formatter):
             "module": record.module,
             "line": record.lineno,
             "request_id": getattr(record, "request_id", None),
+            "trace_id": get_trace_id(),
         }
 
         # Add exception info if present

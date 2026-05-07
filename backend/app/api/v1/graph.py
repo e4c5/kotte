@@ -108,10 +108,24 @@ async def get_graph_metadata(
                 count = await MetadataService.get_exact_counts(
                     db_conn, validated_graph_name, validated_label_name, "v"
                 )
-            properties = await MetadataService.discover_properties(
-                db_conn, validated_graph_name, validated_label_name, "v"
+            properties, property_types, indexed_properties = await asyncio.gather(
+                MetadataService.discover_properties(
+                    db_conn, validated_graph_name, validated_label_name, "v"
+                ),
+                MetadataService.infer_property_types(
+                    db_conn, validated_graph_name, validated_label_name, "v"
+                ),
+                MetadataService.get_indexed_properties(
+                    db_conn, validated_graph_name, validated_label_name
+                ),
             )
-            return NodeLabel(label=label_name, count=int(count), properties=properties)
+            return NodeLabel(
+                label=label_name,
+                count=int(count),
+                properties=properties,
+                property_types=property_types,
+                indexed_properties=indexed_properties,
+            )
 
         node_labels: list[NodeLabel] = list(
             await asyncio.gather(*[build_node_label(row) for row in node_label_rows])
@@ -141,8 +155,16 @@ async def get_graph_metadata(
                     db_conn, validated_graph_name, validated_label_name, "e"
                 )
 
-            properties = await MetadataService.discover_properties(
-                db_conn, validated_graph_name, validated_label_name, "e"
+            properties, property_types, indexed_properties = await asyncio.gather(
+                MetadataService.discover_properties(
+                    db_conn, validated_graph_name, validated_label_name, "e"
+                ),
+                MetadataService.infer_property_types(
+                    db_conn, validated_graph_name, validated_label_name, "e"
+                ),
+                MetadataService.get_indexed_properties(
+                    db_conn, validated_graph_name, validated_label_name
+                ),
             )
 
             numeric_stats = await MetadataService.get_numeric_property_statistics_for_label(
@@ -164,6 +186,8 @@ async def get_graph_metadata(
                 label=label_name,
                 count=int(count),
                 properties=properties,
+                property_types=property_types,
+                indexed_properties=indexed_properties,
                 property_statistics=property_stats,
             )
 
@@ -324,11 +348,28 @@ async def expand_node_neighborhood(
         # neighbourhoods can't blow up the result set.
         depth = request.depth
         limit = request.limit
+        direction = request.direction
 
-        # depth is validated by Pydantic (1..5); inline it in the variable-length
-        # pattern because AGE doesn't support parameter binding inside `[*..]`.
+        # Build relationship pattern.
+        # depth is validated by Pydantic (1..5); inline it because AGE doesn't
+        # support parameter binding inside `[*..]`.
+        # edge_labels are validated via validate_label_name before inlining.
+        if request.edge_labels:
+            validated_labels = [validate_label_name(lbl) for lbl in request.edge_labels]
+            rel_type_filter = "|".join(validated_labels)
+            rel_pattern = f"[:{rel_type_filter}*1..{depth}]"
+        else:
+            rel_pattern = f"[*1..{depth}]"
+
+        if direction == "out":
+            path_pattern = f"(n)-{rel_pattern}->(m)"
+        elif direction == "in":
+            path_pattern = f"(n)<-{rel_pattern}-(m)"
+        else:
+            path_pattern = f"(n)-{rel_pattern}-(m)"
+
         cypher_query = f"""
-            MATCH path = (n)-[*1..{depth}]-(m)
+            MATCH path = {path_pattern}
             WHERE id(n) = $node_id
             WITH n, path
             LIMIT $limit
@@ -337,14 +378,45 @@ async def expand_node_neighborhood(
             RETURN DISTINCT n, pn, rel
         """
 
-        # Execute via execute_cypher (literal SQL) to avoid cypher() overload issues
-        params = {
-            "node_id": node_id_int,
-            "limit": limit,
-        }
-        raw_rows = await db_conn.execute_cypher(validated_graph_name, cypher_query, params=params)
+        # Count query: cheap scalar — same direction/label filters, uses same depth as main query.
+        # Item 1: rel_type_filter is already built from validate_label_name()-sanitised labels above.
+        # Item 17: use *1..{depth} to match the same traversal depth as the main expansion query.
+        if request.edge_labels:
+            count_rel = f"[:{rel_type_filter}*1..{depth}]"
+        else:
+            count_rel = f"[*1..{depth}]"
 
-        # Parse results and extract nodes/edges
+        if direction == "out":
+            count_pattern = f"(n)-{count_rel}->(m)"
+        elif direction == "in":
+            count_pattern = f"(n)<-{count_rel}-(m)"
+        else:
+            count_pattern = f"(n)-{count_rel}-(m)"
+
+        count_query = f"""
+            MATCH {count_pattern}
+            WHERE id(n) = $node_id
+            RETURN count(DISTINCT m) as total
+        """
+
+        # Execute both queries; run them concurrently to minimise latency.
+        params = {"node_id": node_id_int, "limit": limit}
+        count_params = {"node_id": node_id_int}
+        raw_rows, count_rows = await asyncio.gather(
+            db_conn.execute_cypher(validated_graph_name, cypher_query, params=params),
+            db_conn.execute_cypher(validated_graph_name, count_query, params=count_params),
+        )
+
+        # Extract total_neighbours from count result.
+        total_neighbours = 0
+        for row in count_rows:
+            for val in row.values():
+                parsed = AgTypeParser.parse(val)
+                if isinstance(parsed, (int, float)):
+                    total_neighbours = int(parsed)
+                    break
+
+        # Parse expand results and extract nodes/edges
         all_nodes = {}
         all_edges = []
         edge_ids = set()
@@ -386,6 +458,8 @@ async def expand_node_neighborhood(
             edges=all_edges,
             node_count=len(nodes_list),
             edge_count=len(all_edges),
+            truncated=total_neighbours > len(nodes_list),
+            total_neighbours=total_neighbours,
         )
 
     except APIException:

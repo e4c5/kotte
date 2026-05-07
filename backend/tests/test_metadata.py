@@ -124,6 +124,140 @@ class TestMetadataService:
         assert stats == {}
 
 
+class TestInferPropertyTypes:
+    """Tests for MetadataService.infer_property_types."""
+
+    @pytest.mark.asyncio
+    async def test_infers_basic_types(self, mock_db_connection):
+        await metadata_cache.clear()
+        # AGE returns the full vertex as agtype; AgTypeParser returns a dict with 'properties'
+        mock_db_connection.execute_cypher = AsyncMock(
+            return_value=[
+                {
+                    "n": {
+                        "id": 1,
+                        "label": "Person",
+                        "properties": {"name": "Alice", "age": 30, "score": 9.5, "active": True},
+                    }
+                },
+                {
+                    "n": {
+                        "id": 2,
+                        "label": "Person",
+                        "properties": {"name": "Bob", "age": 25, "score": 8.1, "active": False},
+                    }
+                },
+            ]
+        )
+        with patch("app.services.metadata.AgTypeParser") as mock_parser:
+            mock_parser.parse.side_effect = lambda v: v  # already a dict
+
+            types = await MetadataService.infer_property_types(
+                mock_db_connection, "test_graph", "Person", "v"
+            )
+
+        assert types["name"] == "string"
+        assert types["age"] == "integer"
+        assert types["score"] == "float"
+        assert types["active"] == "boolean"
+
+    @pytest.mark.asyncio
+    async def test_infers_list_and_map_types(self, mock_db_connection):
+        await metadata_cache.clear()
+        mock_db_connection.execute_cypher = AsyncMock(
+            return_value=[
+                {
+                    "n": {
+                        "id": 1,
+                        "label": "Item",
+                        "properties": {"tags": ["a", "b"], "meta": {"k": 1}},
+                    }
+                },
+            ]
+        )
+        with patch("app.services.metadata.AgTypeParser") as mock_parser:
+            mock_parser.parse.side_effect = lambda v: v
+
+            types = await MetadataService.infer_property_types(
+                mock_db_connection, "test_graph", "Item", "v"
+            )
+
+        assert types["tags"] == "list"
+        assert types["meta"] == "map"
+
+    @pytest.mark.asyncio
+    async def test_returns_empty_on_error(self, mock_db_connection):
+        await metadata_cache.clear()
+        mock_db_connection.execute_cypher = AsyncMock(side_effect=Exception("db error"))
+        types = await MetadataService.infer_property_types(
+            mock_db_connection, "test_graph", "Person", "v"
+        )
+        assert types == {}
+
+    @pytest.mark.asyncio
+    async def test_uses_cache(self, mock_db_connection):
+        await metadata_cache.clear()
+        await metadata_cache.set("types:test_graph:Person:v", {"name": "string"})
+        mock_db_connection.execute_cypher = AsyncMock()
+
+        types = await MetadataService.infer_property_types(
+            mock_db_connection, "test_graph", "Person", "v"
+        )
+
+        assert types == {"name": "string"}
+        mock_db_connection.execute_cypher.assert_not_called()
+
+
+class TestGetIndexedProperties:
+    """Tests for MetadataService.get_indexed_properties."""
+
+    @pytest.mark.asyncio
+    async def test_extracts_property_keys_from_indexdef(self, mock_db_connection):
+        await metadata_cache.clear()
+        mock_db_connection.execute_query = AsyncMock(
+            return_value=[
+                {
+                    "indexdef": "CREATE INDEX idx1 ON mygraph.person USING btree (((properties ->> 'name')))"
+                },
+                {
+                    "indexdef": "CREATE INDEX idx2 ON mygraph.person (((properties->>'age')::integer))"
+                },
+                {"indexdef": "CREATE INDEX idx3 ON mygraph.person (id)"},  # not a property index
+            ]
+        )
+        indexed = await MetadataService.get_indexed_properties(
+            mock_db_connection, "mygraph", "person"
+        )
+        assert "name" in indexed
+        assert "age" in indexed
+        assert len(indexed) == 2  # 'id' column index should not match
+
+    @pytest.mark.asyncio
+    async def test_returns_empty_when_no_indexes(self, mock_db_connection):
+        await metadata_cache.clear()
+        mock_db_connection.execute_query = AsyncMock(return_value=[])
+        indexed = await MetadataService.get_indexed_properties(mock_db_connection, "g", "label")
+        assert indexed == []
+
+    @pytest.mark.asyncio
+    async def test_returns_empty_on_error(self, mock_db_connection):
+        await metadata_cache.clear()
+        mock_db_connection.execute_query = AsyncMock(side_effect=Exception("db error"))
+        indexed = await MetadataService.get_indexed_properties(mock_db_connection, "g", "label")
+        assert indexed == []
+
+    @pytest.mark.asyncio
+    async def test_uses_cache(self, mock_db_connection):
+        await metadata_cache.clear()
+        await metadata_cache.set("idx:g:label", ["name"])
+        mock_db_connection.execute_query = AsyncMock()
+
+        indexed = await MetadataService.get_indexed_properties(mock_db_connection, "g", "label")
+
+        assert indexed == ["name"]
+        mock_db_connection.execute_query.assert_not_called()
+
+
 class TestInvalidatePropertyMetadataCache:
     """Lock-safe invalidation uses metadata_cache APIs."""
 
@@ -139,16 +273,20 @@ class TestInvalidatePropertyMetadataCache:
         assert await metadata_cache.get("props:g:Other:v") is not None
 
     @pytest.mark.asyncio
-    async def test_clears_props_counts_stats_prefixes_when_graph_only(self):
+    async def test_clears_props_counts_stats_types_idx_prefixes_when_graph_only(self):
         await metadata_cache.clear()
         await metadata_cache.set("props:g:Person:v", [], ttl_seconds=3600)
         await metadata_cache.set("counts:g:v", {}, ttl_seconds=600)
         await metadata_cache.set("stats:g:L:v:age", {}, ttl_seconds=3600)
+        await metadata_cache.set("types:g:Person:v", {}, ttl_seconds=3600)
+        await metadata_cache.set("idx:g:Person", [], ttl_seconds=3600)
         await metadata_cache.set("props:other:Person:v", [], ttl_seconds=3600)
         await invalidate_property_metadata_cache("g")
         assert await metadata_cache.get("props:g:Person:v") is None
         assert await metadata_cache.get("counts:g:v") is None
         assert await metadata_cache.get("stats:g:L:v:age") is None
+        assert await metadata_cache.get("types:g:Person:v") is None
+        assert await metadata_cache.get("idx:g:Person") is None
         assert await metadata_cache.get("props:other:Person:v") is not None
 
     @pytest.mark.asyncio

@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, Request, status
 from app.core.auth import get_session, session_manager
 from app.core.errors import APIException, ErrorCode, ErrorCategory
 from app.models.auth import LoginRequest, LoginResponse, LogoutResponse, UserInfo
+from app.services import audit
 from app.services.user import user_service
 
 logger = logging.getLogger(__name__)
@@ -27,7 +28,8 @@ async def login(request: LoginRequest, http_request: Request) -> LoginResponse:
     client_ip = http_request.client.host if http_request.client else "unknown"
 
     # Authenticate user
-    user = user_service.authenticate(request.username, request.password)
+    request_id = getattr(http_request.state, "request_id", None)
+    user = await user_service.authenticate(request.username, request.password)
     if not user:
         # Log failed authentication attempt
         logger.warning(
@@ -39,6 +41,11 @@ async def login(request: LoginRequest, http_request: Request) -> LoginResponse:
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             },
         )
+        audit.fire_and_forget(
+            "auth_failed",
+            request_id=request_id,
+            payload={"username": request.username, "ip": client_ip},
+        )
         raise APIException(
             code=ErrorCode.AUTH_INVALID_SESSION,
             message="Invalid username or password",
@@ -47,12 +54,16 @@ async def login(request: LoginRequest, http_request: Request) -> LoginResponse:
         )
 
     # Create session
-    session_id = session_manager.create_session(user["user_id"], {"username": user["username"]})
+    role = "admin" if user["username"] == "admin" else "user"
+    session_id = await session_manager.create_session(
+        user["user_id"], {"username": user["username"]}
+    )
+    await session_manager.update_session(session_id, {"role": role})
 
     # Set session cookie and CSRF token
     http_request.session["session_id"] = session_id
     # CSRF token is stored in session manager, also store in cookie session for middleware
-    session_data = session_manager.get_session(session_id)
+    session_data = await session_manager.get_session(session_id)
     if session_data:
         http_request.session["csrf_token"] = session_data.get("csrf_token")
 
@@ -66,6 +77,12 @@ async def login(request: LoginRequest, http_request: Request) -> LoginResponse:
             "ip": client_ip,
             "timestamp": datetime.now(timezone.utc).isoformat(),
         },
+    )
+    audit.fire_and_forget(
+        "auth_success",
+        actor_id=user["user_id"],
+        request_id=request_id,
+        payload={"username": user["username"], "ip": client_ip},
     )
 
     return LoginResponse(
@@ -87,7 +104,9 @@ async def logout(
     """
     session_id = http_request.session.get("session_id")
     user_id = session.get("user_id")
-    username = session.get("connection_config", {}).get("username", "unknown")
+    username = session.get("username") or session.get("connection_config", {}).get(
+        "username", "unknown"
+    )
 
     db_conn = session.get("db_connection")
     if db_conn:
@@ -102,7 +121,7 @@ async def logout(
 
     # Delete session
     if session_id:
-        session_manager.delete_session(session_id)
+        await session_manager.delete_session(session_id)
 
     # Clear session cookie
     http_request.session.clear()
@@ -117,6 +136,13 @@ async def logout(
             "timestamp": datetime.now(timezone.utc).isoformat(),
         },
     )
+    request_id = getattr(http_request.state, "request_id", None)
+    audit.fire_and_forget(
+        "auth_logout",
+        actor_id=str(user_id) if user_id else None,
+        request_id=request_id,
+        payload={"username": username},
+    )
 
     return LogoutResponse(logged_out=True)
 
@@ -130,9 +156,11 @@ async def get_current_user(
     user_id = session.get("user_id")
     if not isinstance(user_id, str) or not user_id:
         client_ip = http_request.client.host if http_request.client else "unknown"
+        me_request_id = getattr(http_request.state, "request_id", None)
         logger.warning(
             "SECURITY: Invalid session user_id while resolving current user",
             extra={
+                "request_id": me_request_id,
                 "event": "auth_invalid_session",
                 "reason": "missing_or_invalid_user_id",
                 "error_code": ErrorCode.AUTH_INVALID_SESSION,
@@ -143,6 +171,11 @@ async def get_current_user(
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             },
         )
+        audit.fire_and_forget(
+            "auth_invalid_session",
+            request_id=me_request_id,
+            payload={"reason": "missing_or_invalid_user_id", "ip": client_ip},
+        )
         raise APIException(
             code=ErrorCode.AUTH_INVALID_SESSION,
             message="Invalid session",
@@ -150,7 +183,7 @@ async def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
         )
 
-    user = user_service.get_user(user_id)
+    user = await user_service.get_user(user_id)
     if not user:
         raise APIException(
             code=ErrorCode.AUTH_INVALID_SESSION,
@@ -180,7 +213,7 @@ async def get_csrf_token(http_request: Request) -> dict:
     # Try to get from session_manager and sync to cookie
     session_id = http_request.session.get("session_id")
     if session_id:
-        session_data = session_manager.get_session(session_id)
+        session_data = await session_manager.get_session(session_id)
         if session_data and session_data.get("csrf_token"):
             csrf_token = session_data["csrf_token"]
             http_request.session["csrf_token"] = csrf_token
@@ -195,7 +228,7 @@ async def get_csrf_token(http_request: Request) -> dict:
             )
         # Session exists but missing token – generate and store
         csrf_token = secrets.token_urlsafe(32)
-        session_manager.update_session(session_id, {"csrf_token": csrf_token})
+        await session_manager.update_session(session_id, {"csrf_token": csrf_token})
         http_request.session["csrf_token"] = csrf_token
         return {"csrf_token": csrf_token}
 

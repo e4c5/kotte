@@ -1,16 +1,294 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { graphAPI, type GraphInfo } from '../services/graph'
+import { graphAPI, type GraphInfo, type NodeLabel, type EdgeLabel } from '../services/graph'
+import { queryAPI, type QueryTemplate } from '../services/query'
 import { useGraphStore } from '../stores/graphStore'
 import { getNodeLabelColor } from '../utils/nodeColors'
 
 interface MetadataSidebarProps {
-  currentGraph?: string
-  onGraphSelect: (graphName: string) => void
-  onQueryTemplate: (query: string) => void
+  readonly currentGraph?: string
+  readonly onGraphSelect: (graphName: string) => void
+  /** Second arg carries the template's default params JSON when invoked from the Library. */
+  readonly onQueryTemplate: (query: string, params?: string) => void
   /** Controlled: whether the sidebar is collapsed. Parent is the source of truth. */
-  collapsed: boolean
-  onCollapsedChange: (collapsed: boolean) => void
+  readonly collapsed: boolean
+  readonly onCollapsedChange: (collapsed: boolean) => void
 }
+
+function formatStat(v: string | number | boolean | null | undefined): string {
+  if (v == null) return '?'
+  if (typeof v === 'object') return JSON.stringify(v)
+  return String(v)
+}
+
+function quoteCypherIdentifier(value: string): string {
+  return `\`${value.replace(/`/g, '``')}\``
+}
+
+function buildLabelSelector(label: string): string {
+  const trimmed = label.trim()
+  return trimmed ? `:${quoteCypherIdentifier(trimmed)}` : ''
+}
+
+// ---- LabelPropertiesPanel (shared by NodeLabelRow and EdgeLabelRow) ----------
+
+interface LabelPropertiesPanelProps {
+  readonly properties: string[]
+  readonly property_types?: Record<string, string>
+  readonly indexed_properties?: string[]
+  readonly property_statistics?: Array<{ property: string; min?: string | number | boolean | null; max?: string | number | boolean | null }>
+  readonly sampleQuery: string
+  readonly matchAllQuery: string
+  readonly sampleTitle: string
+  readonly matchAllTitle: string
+  readonly onQueryTemplate: (q: string) => void
+}
+
+function LabelPropertiesPanel({
+  properties,
+  property_types,
+  indexed_properties,
+  property_statistics,
+  sampleQuery,
+  matchAllQuery,
+  sampleTitle,
+  matchAllTitle,
+  onQueryTemplate,
+}: LabelPropertiesPanelProps) {
+  return (
+    <div className="mx-3 mb-2 rounded-md bg-zinc-900/60 border border-zinc-700/60 text-xs">
+      {properties.length > 0 ? (
+        <div className="px-2 pt-2 pb-1 flex flex-wrap gap-1">
+          {properties.map((p) => (
+            <span
+              key={p}
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-zinc-700 text-zinc-300 font-mono"
+            >
+              {p}
+              {property_types?.[p] && (
+                <span className="text-zinc-500 font-sans text-[10px]">{property_types[p]}</span>
+              )}
+              {indexed_properties?.includes(p) && (
+                <span
+                  className="text-[9px] px-0.5 rounded bg-amber-900/60 text-amber-400 font-sans leading-none"
+                  title="Indexed"
+                >
+                  idx
+                </span>
+              )}
+            </span>
+          ))}
+        </div>
+      ) : (
+        <p className="px-2 pt-2 pb-1 text-zinc-500 italic">No properties</p>
+      )}
+      {property_statistics && property_statistics.length > 0 && (
+        <div className="px-2 pb-1 flex flex-col gap-0.5">
+          {property_statistics.map((s) => (
+            <span key={s.property} className="text-zinc-500">
+              <span className="font-mono text-zinc-400">{s.property}</span>:{' '}
+              {formatStat(s.min)} – {formatStat(s.max)}
+            </span>
+          ))}
+        </div>
+      )}
+      <div className="flex gap-1 px-2 pb-2 pt-1 border-t border-zinc-700/60">
+        <button
+          type="button"
+          onClick={() => onQueryTemplate(sampleQuery)}
+          className="flex-1 rounded border border-zinc-600 bg-zinc-800 px-2 py-1 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 transition-colors"
+          title={sampleTitle}
+        >
+          Sample 5
+        </button>
+        <button
+          type="button"
+          onClick={() => onQueryTemplate(matchAllQuery)}
+          className="flex-1 rounded border border-zinc-600 bg-zinc-800 px-2 py-1 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 transition-colors"
+          title={matchAllTitle}
+        >
+          Match all
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ---- NodeLabelRow ------------------------------------------------------------
+
+interface NodeLabelRowProps {
+  readonly label: NodeLabel
+  readonly onQueryTemplate: (q: string) => void
+}
+
+function NodeLabelRow({ label, onQueryTemplate }: NodeLabelRowProps) {
+  const [open, setOpen] = useState(false)
+  const color = getNodeLabelColor(label.label)
+  const labelSelector = buildLabelSelector(label.label)
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-zinc-700/50 transition-colors group"
+        aria-expanded={open}
+      >
+        <span
+          className="shrink-0 w-2.5 h-2.5 rounded-full"
+          style={{ backgroundColor: color }}
+          aria-hidden="true"
+        />
+        <span className="flex-1 text-sm text-zinc-200 truncate">{label.label || '(no label)'}</span>
+        {label.count > 0 && (
+          <span className="shrink-0 text-[10px] text-zinc-500 tabular-nums">
+            {label.count.toLocaleString()}
+          </span>
+        )}
+        <span className="shrink-0 text-[10px] text-zinc-500 group-hover:text-zinc-400">
+          {open ? '▲' : '▼'}
+        </span>
+      </button>
+      {open && (
+        <LabelPropertiesPanel
+          properties={label.properties}
+          property_types={label.property_types}
+          indexed_properties={label.indexed_properties}
+          sampleQuery={`MATCH (n${labelSelector}) RETURN n LIMIT 5`}
+          matchAllQuery={`MATCH (n${labelSelector}) RETURN n LIMIT 100`}
+          sampleTitle="Sample 5 nodes with this label"
+          matchAllTitle="Generate MATCH query for all nodes with this label"
+          onQueryTemplate={onQueryTemplate}
+        />
+      )}
+    </div>
+  )
+}
+
+// ---- EdgeLabelRow ------------------------------------------------------------
+
+interface EdgeLabelRowProps {
+  readonly label: EdgeLabel
+  readonly onQueryTemplate: (q: string) => void
+}
+
+function EdgeLabelRow({ label, onQueryTemplate }: EdgeLabelRowProps) {
+  const [open, setOpen] = useState(false)
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-zinc-700/50 transition-colors group"
+        aria-expanded={open}
+      >
+        <span className="shrink-0 text-zinc-500 text-[10px]" aria-hidden="true">─▶</span>
+        <span className="flex-1 text-sm text-zinc-300 truncate">{label.label || '(no label)'}</span>
+        {label.count > 0 && (
+          <span className="shrink-0 text-[10px] text-zinc-500 tabular-nums">
+            {label.count.toLocaleString()}
+          </span>
+        )}
+        <span className="shrink-0 text-[10px] text-zinc-500 group-hover:text-zinc-400">
+          {open ? '▲' : '▼'}
+        </span>
+      </button>
+      {open && (
+        <LabelPropertiesPanel
+          properties={label.properties}
+          property_types={label.property_types}
+          indexed_properties={label.indexed_properties}
+          property_statistics={label.property_statistics}
+          sampleQuery={`MATCH (a)-[r${buildLabelSelector(label.label)}]->(b) RETURN a, r, b LIMIT 5`}
+          matchAllQuery={`MATCH (a)-[r${buildLabelSelector(label.label)}]->(b) RETURN a, r, b LIMIT 100`}
+          sampleTitle="Sample 5 edges with this label"
+          matchAllTitle="Generate MATCH query for all edges with this label"
+          onQueryTemplate={onQueryTemplate}
+        />
+      )}
+    </div>
+  )
+}
+
+// ---- LibraryPanel -----------------------------------------------------------
+
+interface LibraryPanelProps {
+  readonly onQueryTemplate: (query: string, params?: string) => void
+}
+
+function LibraryPanel({ onQueryTemplate }: LibraryPanelProps) {
+  const [templates, setTemplates] = useState<QueryTemplate[]>([])
+  const [open, setOpen] = useState<string | null>(null)
+
+  useEffect(() => {
+    queryAPI.listTemplates().then(setTemplates).catch((err) => {
+      console.error('Failed to load query templates:', err)
+    })
+  }, [])
+
+  if (templates.length === 0) return null
+
+  const handleUse = (t: QueryTemplate) => {
+    const paramsJson = Object.keys(t.params).length > 0 ? JSON.stringify(t.params, null, 2) : undefined
+    onQueryTemplate(t.cypher, paramsJson)
+  }
+
+  return (
+    <div>
+      <div className="border-t border-zinc-700/60" />
+      <p className="px-3 pt-2 pb-1 text-xs font-semibold text-zinc-400 uppercase tracking-wide">
+        Library
+      </p>
+      <div className="mb-1">
+        {templates.map((t) => (
+          <div key={t.id}>
+            <button
+              type="button"
+              onClick={() => setOpen(open === t.id ? null : t.id)}
+              className="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-zinc-700/50 transition-colors group"
+              aria-expanded={open === t.id}
+            >
+              <span className="flex-1 text-sm text-zinc-200 truncate">{t.name}</span>
+              <span className="shrink-0 text-[10px] text-zinc-500 group-hover:text-zinc-400">
+                {open === t.id ? '▲' : '▼'}
+              </span>
+            </button>
+            {open === t.id && (
+              <div className="mx-3 mb-2 rounded-md bg-zinc-900/60 border border-zinc-700/60 text-xs">
+                <p className="px-2 pt-2 pb-1 text-zinc-400">{t.description}</p>
+                {Object.keys(t.param_schema).length > 0 && (
+                  <div className="px-2 pb-1 flex flex-wrap gap-1">
+                    {Object.entries(t.param_schema).map(([key, schema]) => (
+                      <span
+                        key={key}
+                        className="px-1.5 py-0.5 rounded bg-zinc-700 text-zinc-300 font-mono"
+                        title={schema.description}
+                      >
+                        ${key}
+                        {schema.default === undefined ? '' : `=${String(schema.default)}`}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <div className="px-2 pb-2 pt-1 border-t border-zinc-700/60">
+                  <button
+                    type="button"
+                    onClick={() => handleUse(t)}
+                    className="w-full rounded border border-zinc-600 bg-zinc-800 px-2 py-1 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 transition-colors"
+                  >
+                    Use template
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ---- MetadataSidebar --------------------------------------------------------
 
 export default function MetadataSidebar({
   currentGraph,
@@ -84,13 +362,6 @@ export default function MetadataSidebar({
     }
   }
 
-  const generateQuery = (type: 'node' | 'edge', label: string) => {
-    if (type === 'node') {
-      return `MATCH (n:${label}) RETURN n LIMIT 100`
-    }
-    return `MATCH (a)-[r:${label}]->(b) RETURN a, r, b LIMIT 100`
-  }
-
   if (collapsed) {
     return (
       <div className="fixed left-0 top-0 h-full w-12 bg-zinc-800 border-r border-zinc-700 flex flex-col items-center py-4 z-30 transition-all duration-300">
@@ -143,61 +414,72 @@ export default function MetadataSidebar({
         )}
 
         {metadata && !loading && (
-          <div className="space-y-1">
-            {/* Node Labels accordion */}
+          <div>
+            {/* Node Labels section */}
             <button
               type="button"
               onClick={() => setNodeLabelsOpen(!nodeLabelsOpen)}
-              className="w-full flex items-center justify-between px-3 py-2 text-left text-sm font-semibold text-zinc-300 hover:bg-zinc-700/50 transition-colors"
+              className="w-full flex items-center justify-between px-3 py-2 text-left text-xs font-semibold text-zinc-400 uppercase tracking-wide hover:bg-zinc-700/50 transition-colors"
               aria-expanded={nodeLabelsOpen}
             >
-              Node Labels
-              <span className="text-zinc-500 text-[10px]">{nodeLabelsOpen ? '▲' : '▼'}</span>
+              <span>
+                Node Labels{' '}
+                <span className="ml-1.5 normal-case font-normal text-zinc-500">
+                  ({metadata.node_labels.length})
+                </span>
+              </span>
+              <span className="text-[10px]">{nodeLabelsOpen ? '▲' : '▼'}</span>
             </button>
             {nodeLabelsOpen && (
-              <div className="flex flex-wrap gap-1.5 px-2 pb-3">
-                {metadata.node_labels.map((label) => (
-                  <button
-                    key={label.label}
-                    type="button"
-                    onClick={() => onQueryTemplate(generateQuery('node', label.label))}
-                    className="rounded-full px-3 py-1 text-xs font-semibold text-white transition-opacity hover:opacity-90"
-                    style={{ backgroundColor: getNodeLabelColor(label.label) }}
-                    title={`${label.label}${label.count > 0 ? ` (${label.count.toLocaleString()} nodes)` : ''} — Click to generate query`}
-                  >
-                    {label.label || '(no label)'}
-                  </button>
-                ))}
+              <div className="mb-1">
+                {metadata.node_labels.length === 0 ? (
+                  <p className="px-3 py-2 text-xs text-zinc-500 italic">No node labels</p>
+                ) : (
+                  metadata.node_labels.map((label) => (
+                    <NodeLabelRow
+                      key={label.label}
+                      label={label}
+                      onQueryTemplate={onQueryTemplate}
+                    />
+                  ))
+                )}
               </div>
             )}
 
-            {/* Edge Labels accordion */}
+            {/* Edge Labels section */}
             <button
               type="button"
               onClick={() => setEdgeLabelsOpen(!edgeLabelsOpen)}
-              className="w-full flex items-center justify-between px-3 py-2 text-left text-sm font-semibold text-zinc-300 hover:bg-zinc-700/50 transition-colors"
+              className="w-full flex items-center justify-between px-3 py-2 text-left text-xs font-semibold text-zinc-400 uppercase tracking-wide hover:bg-zinc-700/50 transition-colors border-t border-zinc-700/60"
               aria-expanded={edgeLabelsOpen}
             >
-              Edge Labels
-              <span className="text-zinc-500 text-[10px]">{edgeLabelsOpen ? '▲' : '▼'}</span>
+              <span>
+                Edge Labels{' '}
+                <span className="ml-1.5 normal-case font-normal text-zinc-500">
+                  ({metadata.edge_labels.length})
+                </span>
+              </span>
+              <span className="text-[10px]">{edgeLabelsOpen ? '▲' : '▼'}</span>
             </button>
             {edgeLabelsOpen && (
-              <div className="flex flex-wrap gap-1.5 px-2 pb-3">
-                {metadata.edge_labels.map((label) => (
-                  <button
-                    key={label.label}
-                    type="button"
-                    onClick={() => onQueryTemplate(generateQuery('edge', label.label))}
-                    className="rounded px-2.5 py-1 text-xs font-medium text-zinc-200 bg-zinc-700 hover:bg-zinc-600 transition-colors"
-                    title={`${label.label}${label.count > 0 ? ` (${label.count.toLocaleString()} edges)` : ''} — Click to generate query`}
-                  >
-                    [{label.label || '(no label)'}]
-                  </button>
-                ))}
+              <div className="mb-1">
+                {metadata.edge_labels.length === 0 ? (
+                  <p className="px-3 py-2 text-xs text-zinc-500 italic">No edge labels</p>
+                ) : (
+                  metadata.edge_labels.map((label) => (
+                    <EdgeLabelRow
+                      key={label.label}
+                      label={label}
+                      onQueryTemplate={onQueryTemplate}
+                    />
+                  ))
+                )}
               </div>
             )}
           </div>
         )}
+
+        <LibraryPanel onQueryTemplate={onQueryTemplate} />
       </div>
     </div>
   )

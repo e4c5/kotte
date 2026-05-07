@@ -1,9 +1,9 @@
 """Application configuration."""
 
 import secrets
-from typing import List
+from typing import List, Union
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -38,8 +38,27 @@ class Settings(BaseSettings):
     db_pool_max_size: int = Field(default=10, ge=1)
     db_pool_max_idle: int = Field(default=300, ge=0)  # seconds
 
-    # CORS
-    cors_origins: List[str] = ["http://localhost:5173", "http://localhost:3000"]
+    # CORS — accepts either a JSON array or a comma-separated string so both
+    # the documented form ("http://a,http://b") and the pydantic-settings native
+    # form ('["http://a","http://b"]') work without operator confusion.
+    # Union[List[str], str] sets allow_parse_failure=True in EnvSettingsSource so
+    # a non-JSON string is passed through to the field_validator rather than
+    # raising a SettingsError.
+    cors_origins: Union[List[str], str] = ["http://localhost:5173", "http://localhost:3000"]
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def _parse_cors_origins(cls, v: object) -> List[str]:
+        if isinstance(v, str):
+            stripped = v.strip()
+            if stripped.startswith("["):
+                import json
+
+                return json.loads(stripped)
+            return [origin.strip() for origin in stripped.split(",") if origin.strip()]
+        if isinstance(v, list):
+            return v
+        return list(v)  # type: ignore[call-overload]
 
     # Query Limits
     query_timeout: int = 300  # 5 minutes
@@ -66,11 +85,21 @@ class Settings(BaseSettings):
     credential_storage_path: str = "./data/connections.json"  # Default to local data directory
     master_encryption_key: str = ""  # Must be set from environment
 
+    # Redis (optional, for Milestone D multi-user)
+    redis_enabled: bool = False  # Set to True to use Redis for sessions and query tracking
+    redis_url: str = "redis://localhost:6379"  # Redis connection URL
+
+    # OpenTelemetry (optional, for Milestone D4 observability)
+    otel_enabled: bool = False  # Set to True to enable OpenTelemetry tracing
+    otel_service_name: str = "kotte-backend"
+    otel_exporter_otlp_endpoint: str = "http://localhost:4317"  # gRPC endpoint
+
     # Security
     csrf_enabled: bool = True
     rate_limit_enabled: bool = True
     rate_limit_per_minute: int = 60  # Requests per minute per IP
     rate_limit_per_user: int = 100  # Requests per minute per user
+    allow_admin_fallback: bool = False  # Allow in-memory admin auth when DB is unreachable
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)

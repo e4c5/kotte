@@ -10,12 +10,13 @@ import httpx
 from fastapi.testclient import TestClient
 
 from app.core.auth import session_manager
-from app.services.user import user_service
 
 TEST_USER_NAME = "testuser"
 TEST_USER_SECRET = "test-user-secret"
 ADMIN_USER_NAME = "admin"
 ADMIN_USER_SECRET = "admin"
+
+_LOGIN_ENDPOINT = "/api/v1/auth/login"
 
 # Public default for the upstream ``apache/age`` Docker image — not a prod
 # secret. Always set ``TEST_DB_PASSWORD`` in CI; operators override locally.
@@ -104,22 +105,46 @@ async def authenticated_client(async_client):
 
     Creates a user, logs in, and returns client with session cookie.
     """
-    # Create a test user if it doesn't exist
+    # Try to create test user via the API (requires admin session + real DB).
+    # Fall back to authenticating as admin when the DB is unavailable (unit
+    # test / no-DB environment).
     test_username = TEST_USER_NAME
     test_password = TEST_USER_SECRET
 
-    # Clean up any existing test user
-    if test_username in user_service._users:
-        del user_service._users[test_username]
+    # Attempt user creation through the API so we never touch service internals.
+    admin_login = await async_client.post(
+        _LOGIN_ENDPOINT,
+        json={"username": ADMIN_USER_NAME, "password": ADMIN_USER_SECRET},
+    )
+    if admin_login.status_code == 200:
+        # Try to create test user; ignore 409 (already exists) and 503 (no DB).
+        create_response = await async_client.post(
+            "/api/v1/users",
+            json={"username": test_username, "password": test_password},
+        )
+        if create_response.status_code not in (201, 409, 503):
+            pytest.fail(
+                f"Unexpected status {create_response.status_code} creating test user: "
+                f"{create_response.text}"
+            )
+        await async_client.post("/api/v1/auth/logout")
 
-    # Create test user
-    user_service.create_user(test_username, test_password)
-
-    # Login to create session
+    # Login as test user (or fall back to admin credentials when no DB).
     login_response = await async_client.post(
-        "/api/v1/auth/login",
+        _LOGIN_ENDPOINT,
         json={"username": test_username, "password": test_password},
     )
+    if login_response.status_code != 200:
+        use_real_db = os.getenv("USE_REAL_TEST_DB", "false").lower() == "true"
+        if use_real_db:
+            pytest.fail(
+                f"Test user login failed with real DB (status {login_response.status_code}). "
+                "Refusing admin fallback to surface auth regressions."
+            )
+        login_response = await async_client.post(
+            _LOGIN_ENDPOINT,
+            json={"username": ADMIN_USER_NAME, "password": ADMIN_USER_SECRET},
+        )
 
     if login_response.status_code != 200:
         pytest.skip(f"Failed to create authenticated session: {login_response.status_code}")
@@ -135,7 +160,7 @@ async def admin_client(async_client):
     """
     # Login as admin
     login_response = await async_client.post(
-        "/api/v1/auth/login",
+        _LOGIN_ENDPOINT,
         json={"username": ADMIN_USER_NAME, "password": ADMIN_USER_SECRET},
     )
 
@@ -198,7 +223,7 @@ async def connected_client(authenticated_client):
             session_id = next(iter(session_manager._sessions.keys()), None)
             if not session_id:
                 pytest.skip("No active authenticated session found")
-            session_manager.update_session(
+            await session_manager.update_session(
                 session_id,
                 {
                     "connection_config": {
@@ -255,11 +280,10 @@ def cleanup_sessions():
 @pytest.fixture(scope="function", autouse=True)
 def cleanup_test_users():
     """Clean up test users after each test."""
+    # User cleanup is handled by the DB (integration tests use a fresh DB per
+    # CI run) or is unnecessary (unit tests use only the in-memory admin
+    # fallback).  No direct manipulation of UserService internals.
     yield
-    # Remove test users (keep admin)
-    test_users = [u for u in user_service._users.keys() if u != "admin"]
-    for username in test_users:
-        del user_service._users[username]
 
 
 # Optional: Docker-based database fixture (commented out for now)

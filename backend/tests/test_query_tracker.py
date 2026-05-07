@@ -136,7 +136,8 @@ class TestQueryTracker:
 
         assert result is False
 
-    def test_get_query_info(self):
+    @pytest.mark.asyncio
+    async def test_get_query_info(self):
         """Test getting query information."""
         tracker = QueryTracker()
         request_id = "test-request-id"
@@ -149,16 +150,17 @@ class TestQueryTracker:
             user_id="test_user",
         )
 
-        info = tracker.get_query_info(request_id)
+        info = await tracker.get_query_info(request_id)
 
         assert info is not None
         assert info["user_id"] == "test_user"
         assert info["query_text"] == "SELECT 1"
 
-    def test_get_query_info_not_found(self):
+    @pytest.mark.asyncio
+    async def test_get_query_info_not_found(self):
         """Test getting info for non-existent query."""
         tracker = QueryTracker()
-        info = tracker.get_query_info("nonexistent-id")
+        info = await tracker.get_query_info("nonexistent-id")
 
         assert info is None
 

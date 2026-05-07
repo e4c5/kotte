@@ -33,6 +33,25 @@ Configuration is done via environment variables. Create a `.env` file in the `ba
 | `RATE_LIMIT_PER_MINUTE` | `60` | Requests per minute per IP |
 | `RATE_LIMIT_PER_USER` | `100` | Requests per minute per user |
 
+## Redis (Optional, Milestone D)
+
+Redis is **optional** and enables multi-user session and query tracking. When disabled, the backend uses in-memory stores and runs without external dependencies.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `REDIS_ENABLED` | `false` | Set to `true` to use Redis for `SessionManager` and `QueryTracker`. When `false` (default), uses in-memory dictionaries. Graceful fallback allows single-instance deployments to skip Redis. |
+| `REDIS_URL` | `redis://localhost:6379` | Redis connection URL (only used when `REDIS_ENABLED=true`). Format: `redis://[user:password@]host[:port][/db]` |
+
+**When to enable:**
+- Multi-user or multi-instance deployments (sessions need to be shared across workers)
+- Production environments with persistence requirements
+- Kubernetes deployments using pods that need to share session state
+
+**When to disable (development/single-instance):**
+- Local development
+- Single-instance deployments
+- Testing without external services
+
 ## Query & Visualization Limits
 
 | Variable | Default | Description |

@@ -60,6 +60,7 @@ vi.mock('d3', async (importOriginal) => {
       enter: vi.fn(),
       exit: vi.fn(),
       node: vi.fn(),
+      join: vi.fn(),
       transition: vi.fn(),
       duration: vi.fn(),
       styleTo: vi.fn(),
@@ -78,6 +79,7 @@ vi.mock('d3', async (importOriginal) => {
     selection.enter.mockReturnValue(selection)
     selection.exit.mockReturnValue(selection)
     selection.node.mockReturnValue({})
+    selection.join.mockReturnValue(selection)
     selection.transition.mockReturnValue(selection)
     selection.duration.mockReturnValue(selection)
     selection.tick.mockReturnValue(selection)
@@ -91,6 +93,7 @@ vi.mock('d3', async (importOriginal) => {
     select: vi.fn().mockReturnValue(mockSelection),
     zoom: vi.fn().mockReturnValue({
       scaleExtent: vi.fn().mockReturnThis(),
+      filter: vi.fn().mockReturnThis(),
       on: vi.fn().mockReturnThis(),
       transform: vi.fn().mockReturnThis(),
       scaleTo: vi.fn().mockReturnThis(),

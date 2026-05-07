@@ -4,7 +4,17 @@ export interface NodeContextMenuProps {
   x: number
   y: number
   nodeId: string
+  /**
+   * Legacy single-step expand (no options). Kept for backwards compatibility;
+   * prefer `onExpandOptions` when the popover is available.
+   */
   onExpand?: (nodeId: string) => void
+  /**
+   * ROADMAP C7 — opens the ExpandOptionsPopover at (x, y) so the user can
+   * configure depth, direction, limit, and relationship-type filters before
+   * expanding. When present, this replaces the direct `onExpand` call.
+   */
+  onExpandOptions?: (nodeId: string, x: number, y: number) => void
   onDelete?: (nodeId: string) => void
   onPin?: (nodeId: string) => void
   onHide?: (nodeId: string) => void
@@ -25,6 +35,7 @@ export default function NodeContextMenu({
   y,
   nodeId,
   onExpand,
+  onExpandOptions,
   onDelete,
   onPin,
   onHide,
@@ -58,8 +69,14 @@ export default function NodeContextMenu({
   }, [onClose])
 
   const handleExpand = () => {
-    onExpand?.(nodeId)
-    onClose()
+    if (onExpandOptions) {
+      // Open the options popover; the caller manages closing the menu.
+      onExpandOptions(nodeId, x, y)
+      onClose()
+    } else {
+      onExpand?.(nodeId)
+      onClose()
+    }
   }
 
   const handleDelete = () => {
@@ -135,7 +152,7 @@ export default function NodeContextMenu({
         }
       }}
     >
-      {onExpand && (
+      {(onExpand || onExpandOptions) && (
         <button
           onClick={handleExpand}
           role="menuitem"
@@ -163,7 +180,7 @@ export default function NodeContextMenu({
             e.currentTarget.style.backgroundColor = 'transparent'
           }}
         >
-          Expand Neighborhood
+          Expand Neighborhood{onExpandOptions ? ' ▸' : ''}
         </button>
       )}
       {onPin && (
@@ -180,7 +197,7 @@ export default function NodeContextMenu({
             backgroundColor: 'transparent',
             cursor: 'pointer',
             fontSize: '14px',
-            borderTop: onExpand ? '1px solid #eee' : 'none',
+            borderTop: (onExpand || onExpandOptions) ? '1px solid #eee' : 'none',
             outline: 'none',
           }}
           onMouseEnter={(e) => {

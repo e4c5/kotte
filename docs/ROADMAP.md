@@ -409,7 +409,7 @@ What moves Kotte from "feature complete v0.1" to something a user would prefer o
 
 **Goal:** Make the force-directed graph readable at a glance (direction, density, self-edges) and scale past “SVG comfort” without rewriting `ResultTab` / store contracts.
 
-**Current baseline (2026):** `GraphView.tsx` uses d3-force and draws links as SVG `<line>` elements (`container.selectAll('line')` under a `.links` group). Nodes are circles; zoom lives on the SVG container. Edge color/width comes from `getEdgeStyle` + path highlights. No arrowheads, no curves, no alternate renderer.
+**Current baseline (2026-04):** `GraphView.tsx` uses d3-force, SVG `<path>` links (`graphLinkPaths.ts`: rim-trimmed quadratics, parallel offsets, self-loops), `marker-end` arrowheads, and a transparent `link-hit` stroke for picking. Zoom is d3-zoom on the root `<svg>`. **C2.4** adds a second render path when counts exceed a threshold so the DOM does not hold tens of thousands of SVG nodes.
 
 #### Recommended delivery order
 
@@ -420,9 +420,9 @@ Work top-to-bottom; each phase is shippable on its own.
 | **C2.1** | Arrowheads + marker strategy | **Shipped (2026-04):** `<defs>` + `markerUnits="userSpaceOnUse"`; one marker per distinct edge stroke color (`markerIdForColor`); `marker-end` on link paths. |
 | **C2.2** | Curved links + parallel-edge offset | **Shipped (2026-04):** `graphLinkPaths.ts` — quadratic Bézier, control-point offset by parallel index among directed `(source,target)` groups; endpoints shortened by node radii. |
 | **C2.3** | Self-loops | **Shipped (2026-04):** same module — symmetric loop above node; stacked offsets when multiple self-edges share a node. |
-| **C2.4** | Canvas / Pixi fallback | Gate on `nodes.length` (and optionally `edges.length`) — align with `settingsStore` `maxNodesForGraph` story so the threshold is user-tunable later. Same `GraphViewProps`; internally `GraphView` chooses SVG vs `GraphCanvas`. |
-| **C2.5** | Minimap | Read node positions from the same simulation (or shared ref); render a coarse overview; `d3-zoom` transform sync (brush or drag on minimap). |
-| **C2.6** | Lasso multi-select | `d3-brush` (or polygon lasso) with modifier key; selection feeds `useGraphStore` or local selection callback — **decide in implementation** whether lasso adds to `selectedNode` / pin set or only highlights; document behaviour in `ARCHITECTURE` or `GraphControls`. |
+| **C2.4** | Canvas / Pixi fallback | **Shipped (2026-04-26):** `GraphCanvas.tsx` — Canvas 2D with d3-force, `Path2D` edges, arrowheads, pan/zoom, drag, click/dblclick/contextmenu, edge hit-test, camera focus, PNG export. Threshold `ENTER=1500 EXIT=1350` total elements; hysteresis in `GraphView`. |
+| **C2.5** | Minimap | **Shipped (2026-04-25):** `GraphMinimap.tsx` — DPR-aware secondary canvas (160×120), ~10 fps RAF loop, node dots colored by label via `getNodeLabelColor`, viewport rect from inverse of current transform, click to center / drag to pan. Wired into both SVG (`GraphView`) and Canvas (`GraphCanvas`) renderers via `getTransform`/`setTransform` callbacks. |
+| **C2.6** | Lasso multi-select | **Shipped (2026-04-26):** `Shift+drag` rectangular lasso on canvas background → `lassoNodes: Set<string>` in `graphStore`; dashed-ring highlight in both SVG and Canvas renderers; `LassoActionBar.tsx` bulk-action strip (Pin all / Hide all / Expand all / Clear). No d3-brush — manual AABB hit-test. |
 
 #### C2.1 — Arrowheads (technical)
 
@@ -441,20 +441,75 @@ Work top-to-bottom; each phase is shippable on its own.
 
 - When resolved `source === target`, draw an arc from the node surface, out and back (e.g. control point offset by `(0, -radius-offset)`). Ensure arrowhead orientation matches traversal direction if the data model implies one.
 
-#### C2.4 — Canvas / Pixi (technical)
+#### C2.4 — Canvas / Pixi fallback (technical plan)
 
-- **Contract:** `GraphCanvas.tsx` (name as needed) receives the same props as `GraphView`; no changes to `ResultTab` beyond optional size props already passed.
-- **State:** Share layout positions: either run the same d3 simulation and pass positions to canvas, or extract a `useGraphLayout` hook used by both (harder but cleaner).
-- **Interactivity:** Reimplement pick (node/edge), zoom/pan (d3-zoom on overlay or Pixi viewport), and context menu coordinates — budget extra time; this is the largest phase.
-- **Threshold:** Start with a constant (e.g. 1500 nodes) + console-free degradation; wire to settings in a follow-up if C2.4 runs long.
+**Problem:** SVG forces one DOM node per visual primitive. Past roughly **1.5k–3k** edges (hardware-dependent), layout and pan/zoom stutter even if `maxNodesForGraph` in `settingsStore` allows a larger cap (today up to 100k in settings UI). C2.4 keeps **one React boundary** (`GraphView` / `GraphViewProps`) while swapping the **drawing surface**.
+
+##### Renderer choice (decision record)
+
+| Option | Pros | Cons |
+|--------|------|------|
+| **Canvas 2D** | No new major dependency; `stroke`/`fill`, `Path2D` where supported; matches existing “imperative loop” style in `GraphView`. | Text labels need manual `fillText` or off-screen cache; hi-DPI = `devicePixelRatio` bookkeeping. |
+| **PixiJS** | Fast batched sprites, good for 10k+ nodes; ecosystem (viewport plugins). | +bundle weight; second API to learn; WebGL fallbacks. |
+
+**Recommendation:** Start with **Canvas 2D** inside a dedicated `GraphCanvas.tsx` (or `GraphViewCanvas.tsx`). Revisit Pixi only if profiling shows GPU-bound fill rate or if we need particle-level effects. Document the choice in `docs/ARCHITECTURE.md` when the PR lands.
+
+##### Threshold and hysteresis
+
+- **Primary gate:** `filteredNodes.length >= T` **or** `filteredEdges.length >= T_edge` (edges often dominate cost). Initial constants e.g. `T = 1500`, `T_edge = 4000` — tune after profiling.
+- **Settings integration:** Do **not** equate `T` with `maxNodesForGraph` from `settingsStore`: the latter is “hard cap / flip to table” territory; canvas threshold should be **lower** so users who raised the cap still get a **responsive** graph when under the cap.
+- **Hysteresis:** When `n` hovers around `T`, avoid flipping SVG ↔ canvas every filter tick: e.g. switch to canvas at `T`, switch back to SVG only when `n < T - δ` (δ ~ 10–15% of `T`).
+- **UI hint (optional):** Subtle badge or `title` on the graph chrome: “Canvas mode (performance)” when active — helps support and debugging.
+
+##### Shared layout (single source of truth for x/y)
+
+- **Preferred:** Extract a small module or hook **`useForceLayout`** (name TBD) that:
+  - Accepts the same filtered node/edge inputs + layout mode + pin/focus behaviour as today’s `GraphView` effect.
+  - Runs `d3.forceSimulation` + `forceLink` and exposes **`nodesRef` / positions readable on tick** and **`simulationRef`** for stop/restart.
+- **SVG path:** Current `GraphView` effect consumes positions for D3 selections.
+- **Canvas path:** A `requestAnimationFrame` or simulation `tick` listener **invalidates** a frame flag; one draw pass reads latest `x,y` from the same node objects (mutated in place by d3, as today).
+- **Do not** fork two simulations — one graph, two views.
+
+##### C2.4 sub-phases (merge as one PR or slice across 2 PRs)
+
+| Sub-phase | Deliverable |
+|-----------|-------------|
+| **C2.4a** | `GraphView` branch: `useCanvas = shouldUseCanvas(n, e, T, hysteresis)`; mount either existing SVG effect **or** canvas subtree; **no** feature regressions when `useCanvas` is false. |
+| **C2.4b** | `GraphCanvas`: full-viewport canvas, DPR scaling, clear + draw nodes (circles) and edges. Reuse **`linkPath`** + `parallelEdgeMeta` — build `Path2D` from the returned `d` where supported, else parse or fallback to manual quadratic (duplicate minimal drawer only if needed). Draw arrowheads with **canvas triangles** at path end (tangent from last segment) or precomputed tip from `linkPath` (extend module if necessary). |
+| **C2.4c** | Input parity: **pan/zoom** (reuse `d3-zoom` on a transparent overlay or map wheel/drag to transform matrix); **node click / dblclick / contextmenu** with client → world coords; **edge pick** (iterate edges, distance-to-segment test in world space, or coarse grid index); respect `selectedNode`, `pathHighlights`, pin styling from store. |
+| **C2.4d** | **Export:** `useGraphExport` today targets SVG — add `canvas.toBlob` / `toDataURL` path when in canvas mode; keep `onExportReady` contract. **Camera focus** (`cameraFocusAnchorIds`): same zoom-to-bounds math as SVG, applied to canvas transform. |
+
+##### Performance notes
+
+- **Draw order:** Edges under nodes; optional **level-of-detail**: skip edge labels or thin strokes when zoomed out.
+- **Throttling:** Cap simulation `tick` → paint at **60fps** max; coalesce multiple ticks per frame.
+- **Memory:** Reuse arrays/Maps for edge geometry; avoid allocating new `Path2D` every frame — rebuild when topology or styles change, not every tick.
+- **Bundle:** Optional **`import()`** of `GraphCanvas` so the main chunk does not pay for canvas-only helpers until first crossing of `T`.
+
+##### Testing and risk
+
+- **Unit tests:** Geometry helpers (world transform, hit-test distance) in isolation; keep existing `graphLinkPaths` tests green.
+- **Component tests:** Stub canvas `getContext` if needed; assert branch selection (SVG vs canvas) from props + threshold.
+- **Risks:** Right-click menu positioning, accessibility (canvas has no DOM nodes — ensure **focusable off-screen stub** or toolbar actions remain usable per WCAG strategy you adopt), **Safari** `Path2D` + SVG path string support — keep a fallback stroke implementation.
+
+##### Acceptance (C2.4)
+
+- With node count **above** threshold, graph **pans/zooms** and **select / double-click / right-click / edge click** still invoke the same callbacks as SVG mode.
+- With count **below** threshold, behaviour is **unchanged** from current SVG (C2.1–C2.3).
+- **Export** produces a raster when in canvas mode; SVG export remains when in SVG mode.
+- No increase in **forced table-only** behaviour: `maxNodesForGraph` / `vizDisabledReason` logic in `WorkspacePage` / `ResultTab` stays authoritative for “too big to visualize at all”.
+
+**Status (2026-04-26):** shipped. `GraphCanvas.tsx` (new) — DPR-aware `<canvas>`, d3-force simulation identical to SVG path, `requestAnimationFrame` draw loop with dirty flag, `Path2D` for all edge curves (reuses `linkPath`/`parallelEdgeMeta`), triangle arrowheads via `parseTip` (extracts tip + tangent from the `Q cx cy x1 y1` path tail), manual wheel/pointer pan-zoom (no d3-zoom), pointer-based node drag (force + non-force), double-click via 300 ms window, edge hit-test via `ctx.isPointInStroke`, `contextmenu` right-click, camera-focus animation (eased RAF loop), `canvas.toBlob` PNG export. `GraphView.tsx` — `CANVAS_THRESHOLD_ENTER = 1500` / `CANVAS_THRESHOLD_EXIT = 1350` (total nodes + edges), `canvasMode` state with hysteresis `useEffect`, conditional render: canvas path shows “Canvas mode” badge and delegates to `<GraphCanvas>` with identical props; SVG path unchanged.
 
 #### C2.5 — Minimap (technical)
 
 - Secondary SVG or canvas; clone node positions at low frequency (on simulation `end` or throttled `tick`). Show viewport rectangle from inverse of current zoom transform. Click/drag on minimap → `zoom.transform`.
 
-#### C2.6 — Lasso (technical)
+**Status (2026-04-25):** shipped. `GraphMinimap.tsx` — 160×120 DPR-aware `<canvas>` positioned `absolute left-3 bottom-3`; world bbox computed from live d3-mutated node positions each frame; `scaleM` + centred offsets map world → minimap; node dots 2px radius colored by `getNodeLabelColor`; viewport rect derived as `(0−tx)/k … (vw−tx)/k`; ~10 fps RAFloop (ts delta > 100 ms). Pointer: drag → delta in world space applied to `setTransform`; click (< 5 px) → `toWorld` → center viewport. `GraphView` (SVG mode) wires `getTransform` from `zoomTransformRef.current` and `setTransform` via `zoom.transform` on `svgSelectionRef`; `GraphCanvas` wires both through `transformRef` + `dirtyRef`.
 
-- Gate on **modifier + drag** (e.g. Shift) so pan/zoom stays default. Brush end → compute nodes inside polygon → call store or props. Avoid conflicting with node drag if added later.
+#### C2.6 — Lasso multi-select (technical)
+
+**Status (2026-04-26):** shipped. `lassoNodes: Set<string>` added to `graphStore` with `setLassoNodes` (replaces the set each drag) and `clearLassoNodes` (background click or Escape). Zoom `.filter()` in `GraphView` excludes `shift+pointerdown` so bare pan is unaffected. SVG renderer: `Shift+drag` appends a dashed `<rect>` to a screen-space `<g class="lasso-overlay">`; on `pointerup` an AABB world-coord hit-test populates the set; `updateLassoRings()` (stored in `updateLassoRingsRef`) does a d3 `join` on a `<g class="lasso-rings">` inside the container to add/remove dashed-stroke `<circle>` rings; a separate `useEffect([lassoNodes])` calls it for external clears; `applyPositions` keeps ring cx/cy in sync during simulation ticks. Canvas renderer: `LassoState { type, x0, y0, x1, y1 }` added to `PointerState` union; `draw()` renders the live rect in screen space and dashed rings in world space using `setLineDash([4,3])`; `useEffect([lassoNodes]) → dirtyRef.current = true` forces redraw on external change. `LassoActionBar.tsx` (new): absolute strip at top-center, visible when `lassoNodes.size > 0`; actions: **Pin all** (`togglePinNode`), **Hide all** (`toggleHideNode` + clear), **Expand all** (`onNodeDoubleClick` per node), **✕** (clear). Rendered in both `GraphView` and `GraphCanvas` return trees.
 
 #### Acceptance (whole C2)
 
@@ -462,7 +517,7 @@ Work top-to-bottom; each phase is shippable on its own.
 - Multi-edge between two nodes: **visually separable** (C2.2).
 - Self-relationships: **visible** (C2.3).
 - With N above threshold: UI remains **usable** (pan/zoom/select) via canvas path (C2.4).
-- Optional: minimap and lasso behave without breaking existing **pin, hide, expand, export** flows.
+- Minimap and lasso behave without breaking existing **pin, hide, expand, export** flows. ✓ (C2.5–C2.6 shipped)
 
 #### Non-goals for C2 (defer)
 
@@ -471,18 +526,19 @@ Work top-to-bottom; each phase is shippable on its own.
 
 ### C3. Streaming end-to-end
 
-- `ResultTab` decides between `executeQuery` and `streamQuery` based on a row threshold (e.g. `> 5000` rows expected, or always for `viewMode='table'`).
-- `TableView` already accepts `streaming`/`onLoadMore`; wire them.
-- `frontend/src/services/query.ts`: add `AbortSignal` to `stream()`. Hook to a Cancel button.
-- Backend `query_stream.py:144-229`: replace the materialise-then-chunk path with a real `psycopg` server-side cursor (`async with conn.cursor(name='kotte_stream')`), iterating chunks of N.
+**Status (2026-04-25, bundled with C4–C7 in one session):** shipped. Backend `query_stream.py` replaced the materialise-then-chunk path with a real psycopg server-side cursor (`stream_cypher` facade on `DatabaseConnection`); each batch is yielded as an NDJSON line. Cap logic uses within-batch overflow detection (`len(parsed_rows) > len(capped)`) to avoid false positives at the exact-max boundary. `SET TRANSACTION READ ONLY` guard added for `query_safe_mode`. Frontend: `queryStore` gained `streamQuery` accumulating chunks into the tab result incrementally; `_streamAbortControllers` map (outside zustand persist) is aborted on cancel; `WorkspacePage` routes table-view tabs through `streamQuery` and graph-view tabs through `executeQuery`; `TableView` shows a pulsing "streaming" indicator while `tab.loading` is true. Six backend tests in `test_query_stream.py` were rewritten to mock the `stream_cypher` async-generator with `_make_stream_gen` / `_stream_mock_db` helpers.
 
 ### C4. Schema sidebar 2.0
 
 - In `MetadataSidebar.tsx`, expand each label into a collapsible panel showing properties (already in the `GraphMetadata` type, just unrendered), property types from sampling, an "indexed" badge from `pg_indexes`, and "Sample 5 rows" + "Generate match query" actions.
 
+**Status (2026-04-26):** fully shipped. Collapsible `NodeLabelRow`/`EdgeLabelRow` panels with property chips, Sample 5 / Match all buttons, `LibraryPanel` templates (C5). Property type inference added (2026-04-26): `MetadataService.infer_property_types` samples up to 20 nodes/edges, infers `string/integer/float/boolean/list/map/unknown` from parsed agtype values, cached under `types:{graph}:{label}:{kind}`. Indexed-property badge: `MetadataService.get_indexed_properties` queries `pg_indexes` for `properties->>'key'` expression index patterns, cached under `idx:{graph}:{label}`. Both run concurrently with `asyncio.gather` in `build_node_label`/`build_edge_label`. Backend models extended with `property_types: Dict[str, str]` and `indexed_properties: List[str]` (backward-compat). Frontend chips show type as muted suffix and `idx` amber badge. 8 new unit tests in `TestInferPropertyTypes` + `TestGetIndexedProperties`; cache invalidation test extended to cover new prefixes.
+
 ### C5. Saved queries / templates UI
 
 - `services/query_templates.py` already exposes templates; add a left-rail Library panel with categories. Click → fill editor with the template; render a parameter form from `param_schema`.
+
+**Status (2026-04-25):** shipped. `LibraryPanel` sub-component in `MetadataSidebar.tsx` fetches templates on mount via `queryAPI.listTemplates()` (new `GET /queries/templates` call added to `services/query.ts`). Each template row is collapsible: collapsed shows name + description; expanded shows the cypher with "Use template" button. Clicking pre-fills the editor and, if the template has `params`, serialises them as JSON into the params field. `WorkspacePage.handleQueryTemplate(query, params?)` calls `setParams(params)` when provided.
 
 ### C6. Read-only mode that's safe
 
@@ -490,6 +546,8 @@ Work top-to-bottom; each phase is shippable on its own.
   - **Server-side enforcement**: open the cypher() call in a `BEGIN; SET TRANSACTION READ ONLY; ...` block, and let PG reject mutations. Catch the `read_only_sql_transaction` SQLSTATE (25006) and translate to `QUERY_VALIDATION_ERROR`.
   - **Or** integrate a Cypher parser library and walk the AST for write clauses.
 - Add a `mutation_confirmed` boolean to the request schema for the explicit-mutation path; UI shows a confirmation modal listing affected labels before sending.
+
+**Status (2026-04-25):** shipped. Server-side enforcement chosen for both the regular execute path (`query.py`) and the stream path (`query_stream.py`): first statement in each `db_conn.connection()` context is `SET TRANSACTION READ ONLY` when `settings.query_safe_mode` is true; `psycopg.errors.ReadOnlySqlTransaction` (SQLSTATE 25006) caught and surfaced as `QUERY_VALIDATION_ERROR` (422 for execute, NDJSON error chunk for stream). Regex block removed from `query.py`. Frontend: `MUTATION_RE = /\b(CREATE|DELETE|SET|REMOVE|MERGE|DETACH)\b/i` detects mutations before execute; confirmation modal (amber "Yes, proceed") sets `mutationConfirmed` flag. `mutation_confirmed: bool` field added to `QueryExecuteRequest` model; logged at INFO when true. Tests: `test_execute_query_safe_mode_rejects_mutation_via_read_only_transaction` in `test_query_execute.py`.
 
 ### C7. Expand options popover + truncation indicator
 
@@ -508,46 +566,237 @@ Builds on **A11**. Today expansion is hard-coded to "all relationship types, bot
 
 **Acceptance:** Right-click → expand popover lets the user pick edge type and direction. Hitting a 100-row cap renders a "100 of N" badge that re-opens the popover. The default depth-1 path still works unchanged when no options are passed.
 
+**Status (2026-04-25):** shipped. Backend: `NodeExpandRequest` extended with `edge_labels: Optional[List[str]]` and `direction: Literal['in','out','both']`; `NodeExpandResponse` extended with `truncated: bool` and `total_neighbours: int` (cheap `count(DISTINCT m)` query). Frontend: `ExpandOptionsPopover.tsx` (new component) — direction toggle (Both/Outgoing/Incoming), depth buttons (1/2), limit input, edge-label checkboxes; screen-edge collision detection. `NodeContextMenu` gained `onExpandOptions?: (nodeId, x, y) => void` prop. `ResultTab` wires the popover and renders a truncation badge when `truncated` is true. `TableView` shows a "streaming" pulse indicator.
+
 ---
 
 ## Milestone D — Multi-user, multi-tenant, observable
 
 Only if you intend Kotte to be deployed beyond a single analyst. **Total: ~4–6 weeks; intentionally long because the multi-tenant pieces are interlocked.**
 
-### D1. DB-backed users (Alembic migration adds `users`, `user_roles`)
+**Execution order (refined from initial plan):** D5 → D1 → D2 → D3 → D4 → D6. This sequencing unblocks multi-user flows earlier and reduces risk by layering foundations (audit first, then users, then session management).
 
-- Replace `services/user.py` with a SQLAlchemy/asyncpg-backed implementation. Keep API.
-- New routes `POST /api/v1/users` (admin only), `GET /me`, `PATCH /me/password`.
-- Optional OIDC via `authlib`.
+---
 
-### D2. Redis-backed `SessionManager` and `query_tracker`
+### D5. First-class audit log (Ship first: 1–2 days)
 
-- Switch in-memory dicts to Redis with TTL = `session_max_age`.
-- Cleanly call `DatabaseConnection.disconnect()` in a Redis keyspace-notification handler when a session expires (closes the per-session pool leak).
+**Why first:** Establishes accountability from day one. All D1/D2/D3 changes are audited; retrofitting later is error-prone.
 
-### D3. Shared connection pool per `(host, db, user)` tuple
+- New table `kotte_audit_events` (Alembic migration). Schema:
+  ```sql
+  CREATE TABLE kotte_audit_events (
+      id BIGSERIAL PRIMARY KEY,
+      event TEXT NOT NULL,          -- 'login', 'mutation_execute', 'connection_crud', etc.
+      actor_id TEXT,                -- user ID (NULL for system events)
+      request_id TEXT,              -- links to request logs / traces
+      payload JSONB,                -- event-specific data
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  )
+  ```
+- `services/audit.py`: `record(event: str, actor_id: Optional[str], request_id: str, payload: dict) -> None`
+- Wire into existing SECURITY: log sites (5 identified in codebase):
+  - `middleware.py:171` (CSRF token validation failures)
+  - `middleware.py:230` (rate limit events)
+  - `auth.py:134` (invalid session user_id)
+  - `session.py:68` (missing session_id after auth)
+  - `credentials.py:73` (encryption key not set)
+- Add audit events for login/logout once D1 is wired.
 
-- Replace per-session `AsyncConnectionPool` with a process-wide `PoolRegistry` keyed by `(host, db, user)`. Sessions hold a key, not a pool. Idle pools reaped after N minutes.
+**Test:** Query `kotte_audit_events` and confirm CSRF failure, rate limit, and auth events are recorded.
 
-### D4. OpenTelemetry
+---
 
-- `opentelemetry-instrumentation-fastapi`, `opentelemetry-instrumentation-psycopg`. Trace IDs flow into `request.state.request_id`.
-- Add an OTLP exporter wired to env vars; document Tempo/Jaeger setup.
+### D1. DB-backed users (Ship second: 2–3 days)
 
-### D5. First-class audit log
+**Why second:** Unblocks multi-user flows; now audited by D5.
 
-- New table `audit_events` (Alembic). `services/audit.py` with `record(event, actor_id, request_id, payload)`. Replace `SECURITY:` log-prefix patterns at:
-  - `middleware.py` (CSRF, rate limit)
-  - `api/v1/auth.py` (login/logout)
-  - `api/v1/query.py` (mutation execute)
-  - `api/v1/connections.py` (saved-connection CRUD).
+**D1.1 — Wire `UserService` to `kotte_users` table:**
+- `kotte_users` table already stubbed in migration `78c03fa27fda` (columns: id, username, password_hash, created_at, last_login_at).
+- Replace `services/user.py` in-memory dict with async query methods:
+  - `authenticate(username: str, password: str) -> Optional[dict]` — query table, `bcrypt.checkpw()`, update `last_login_at`
+  - `get_user(user_id: str) -> Optional[dict]` — query by id
+  - `create_user(username: str, password: str) -> dict` — insert, check uniqueness on `username`
+- Add optional TTL cache layer (5 min) for `get_user` to reduce DB load.
 
-### D6. CSV importer hardening
+**D1.2 — Add user management routes (admin only):**
+- `POST /api/v1/users` — create user (admin only, body: `{username, password}`)
+- `GET /api/v1/users/me` — current user info
+- `PATCH /api/v1/users/me/password` — change password (body: `{old_password, new_password}`)
+- Guard all three with middleware check: `user_id must exist in kotte_users`
+- Audit all three (login success/failure, password change).
 
-- Stream-parse with the stdlib `csv` module (RFC-4180 quoting).
-- Use parameterized `cypher()` calls (one per row, batched with `psycopg.AsyncCursor.executemany`) instead of embedded JSON literals.
-- For files > N MB: COPY into a staging table `kotte_import_{job}`, then a single Cypher `LOAD/UNWIND` over the staging table.
-- Add an idempotency key column; `ON CONFLICT DO NOTHING` on retries.
+**D1.3 — Optional OIDC (defer to post-D2):**
+- Add `authlib` to `requirements.txt`
+- Routes: `GET /login/oidc/authorize`, `GET /login/oidc/callback`
+- Not blocking; can ship D1.1 + D1.2 first, add OIDC as follow-up.
+
+**Test:** Create user via API, log in, verify `GET /me` returns correct user, change password, verify old password no longer works.
+
+---
+
+### D2. Redis-backed `SessionManager` and `query_tracker` (Ship third: 2 days)
+
+**Why third:** Now multi-user sessions can be tracked reliably; depends on D1's stable user_id.
+
+**Redis is optional with graceful in-memory fallback:**
+- Add env var `REDIS_ENABLED=true` (default: `false` for backward compat)
+- Add env var `REDIS_URL=redis://localhost:6379` (default: not used if REDIS_ENABLED=false)
+- In `core/auth.py` and `services/query_tracker.py`: check `settings.redis_enabled`:
+  ```python
+  if settings.redis_enabled:
+      session_manager = RedisSessionManager()
+  else:
+      session_manager = InMemorySessionManager()  # Current implementation
+  ```
+- This allows development/single-instance deployments to skip Redis entirely.
+
+**Implementation:**
+- Add `redis` and `redis-py` to `requirements.txt`
+- Subclass `SessionManager` as `RedisSessionManager`: replace `_sessions: dict` with Redis calls
+  - `create_session()` → `redis.set(session_id, {user_id, ...}, ex=session_max_age)`
+  - `get_session()` → `redis.get(session_id)` (TTL auto-expires via Redis)
+  - `delete_session()` → `redis.delete(session_id)`
+  - No business logic changes; storage backend swap only.
+- Subclass `QueryTracker` as `RedisQueryTracker`: replace `_active_queries: dict` with Redis calls
+  - `register_query()` → `redis.set(request_id, {db_conn, query_text, user_id, ...}, ex=3600)`
+  - Same pattern.
+
+**Key detail — Session expiry cleanup:**
+- Current issue: per-session `DatabaseConnection` pools leak if session TTL expires.
+- Solution: Redis keyspace-notification handler
+  - Enable `CONFIG SET notify-keyspace-events KEx` on Redis
+  - Subscribe to `__keyevent@0__:expired`
+  - When `session:{session_id}` expires, call `db_conn.disconnect()` to close the pool
+  - This is what the ROADMAP meant by *"closes the per-session pool leak"*.
+
+**Test:** Start Redis; create session; verify session is in Redis. Stop Redis; fallback to in-memory. TTL-expire a session key; verify handler calls `disconnect()` and pool closes.
+
+---
+
+### D3. Shared connection pool per `(host, db, user)` tuple (Ship fourth: 2–3 days)
+
+**Why fourth:** Performance/resource optimization; lower urgency than D1/D2. Depends on D2's stable multi-user session tracking.
+
+**Current architecture:** One `DatabaseConnection` pool per session (in `session.get("db_connection")`).
+
+**Target architecture:**
+- New class `PoolRegistry` (process-wide singleton):
+  ```python
+  class PoolRegistry:
+      _pools: dict[(str, str, str), DatabaseConnection] = {}  # (host, db, user) → pool
+      
+      async def get_or_create(host, db, user, password, sslmode) -> DatabaseConnection:
+          key = (host, db, user)
+          if key not in _pools:
+              _pools[key] = DatabaseConnection(host, db, user, password, sslmode)
+              await _pools[key].connect()
+          return _pools[key]
+  ```
+- Sessions now hold the key instead of the pool:
+  ```python
+  # Old:
+  session["db_connection"] = DatabaseConnection(...)  # Pool object
+  
+  # New:
+  session["pool_key"] = (host, db, user)
+  db_conn = PoolRegistry.get_or_create(host, db, user, password, sslmode)
+  ```
+- Background task reaps idle pools (e.g., idle > 30 min): `PoolRegistry.cleanup_idle(max_idle_seconds=1800)`
+
+**Caution:** Pool sharing means one user's query can block another's. Acceptable for single-tenant or same-user multi-database. For strict resource isolation per user, keep per-session pools (skip D3).
+
+**Test:** Two sessions to same `(host, db, user)` should return the same pool object (identity check: `assert pool1 is pool2`).
+
+---
+
+### D4. OpenTelemetry (Ship fifth: 2–3 days)
+
+**Why fifth:** Observability multiplier for troubleshooting multi-user scenarios. Not blocking.
+
+- Add packages: `opentelemetry-api`, `opentelemetry-sdk`, `opentelemetry-instrumentation-fastapi`, `opentelemetry-instrumentation-psycopg`, `opentelemetry-exporter-otlp`
+- Initialize OTEL SDK in `main.py` with env var config:
+  - `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317`
+  - `OTEL_SERVICE_NAME=kotte-backend`
+  - `OTEL_EXPORTER_OTLP_PROTOCOL=grpc`
+- Auto-instrument FastAPI app: `FastAPIInstrumentor().instrument_app(app)`
+- Manually instrument PostgreSQL (psycopg library support may be partial)
+- **Key:** Plumb trace ID into logging context so logs and traces link in Grafana Loki + Tempo:
+  ```python
+  from opentelemetry import trace
+  trace_id = trace.get_current_span().get_span_context().trace_id
+  logger.info("query executed", extra={"trace_id": trace_id})
+  ```
+- Update `docs/CONFIGURATION.md` with Tempo/Jaeger setup example.
+
+**Test:** Run `docker run -d --name tempo grafana/tempo` and trace a query end-to-end. Verify logs link to traces.
+
+---
+
+### D6. CSV importer hardening (Ship last: 1–2 days)
+
+**Why last:** Orthogonal security/reliability fix; no blocking dependencies.
+
+**Current issues in `api/v1/csv_importer.py`:**
+- Line 118: naive `split(",")` fails on RFC-4180 quoted fields with embedded commas
+- Lines 238–240: f-string Cypher with JSON literals → SQL injection if user input reaches JSON
+- No parameterized Cypher queries
+- No idempotency support for retries
+
+**Hardening steps:**
+
+1. **Use stdlib `csv` module (RFC-4180 compliant):**
+   ```python
+   import csv
+   import io
+   reader = csv.DictReader(io.StringIO(content.decode("utf-8")))
+   for row in reader:
+       # row is now a proper dict; quoting and escaping handled correctly
+   ```
+
+2. **Parameterized Cypher (batch via UNWIND):**
+   ```python
+   # Instead of: f"CREATE (n:{label} {json_str})"
+   # Use: batch rows into one parameterized query
+   cypher = f"""
+   UNWIND $rows AS row
+   CREATE (n:{label} $props)
+   """
+   rows = [{"props": {"name": "Alice", "age": 30}}, ...]
+   await db_conn.execute_query(cypher, {"rows": rows})
+   ```
+   *(Note: AGE may require custom handling for `$props` syntax; validate with test.)*
+
+3. **Staging table for large files (> 50 MB):**
+   ```python
+   staging_table = f"kotte_import_{job_id}"
+   # CREATE TEMP TABLE staging_table (data JSONB)
+   # COPY FROM stdin (bulk-load CSV bytes)
+   # Then: LOAD/UNWIND over staging_table; DROP TABLE
+   ```
+   Reduces transaction pressure and memory footprint.
+
+4. **Idempotency key for retries:**
+   - Add column `idempotency_key TEXT` to CSV (user-provided)
+   - On retry, check for existing rows with same key
+   - Use `ON CONFLICT (idempotency_key) DO NOTHING` (PostgreSQL native)
+   - Prevents duplicate inserts on network retry.
+
+**Test:** CSV with quoted fields containing commas parses correctly. Import large CSV (>50 MB) via staging table. Retry same file idempotently—verify no duplication.
+
+---
+
+### D — Validation checklist
+
+Use this to sign off before shipping each item:
+
+| Item | Acceptance Criteria | Notes |
+|------|-------------------|-------|
+| **D5** | Audit logs appear for CSRF failures, rate limit hits, and auth events. Query `kotte_audit_events` and see 5+ event types. | Foundational; test manually. |
+| **D1** | Create user via `POST /api/v1/users`; login endpoint authenticates against `kotte_users` table. `GET /me` returns current user. `PATCH /me/password` works. Audit events record login/password change. | Add to test suite. |
+| **D2** | Without Redis: SessionManager falls back to in-memory (env var `REDIS_ENABLED=false`). With Redis: new sessions write to Redis; TTL-expire a key; verify handler calls `disconnect()`. | Integration test with Redis container. |
+| **D3** | Two sessions to same `(host, db, user)` return the same pool object (identity check). Idle cleanup task removes pools idle > 30 min. | Unit test with mock pools. |
+| **D4** | End-to-end trace of a query visible in Tempo UI. Logs link to traces via `trace_id`. | Deploy with `docker run -d --name tempo grafana/tempo`. |
+| **D6** | CSV with quoted fields + commas parses correctly. Large file (>50 MB) imports via staging table. Retry same file idempotently—no duplication. | Add parametrized test cases. |
 
 ---
 
@@ -604,18 +853,18 @@ Toggle `- [ ]` → `- [x]` as items ship, and add a short **Status** line under 
 ### Milestone C — Make it a graph product
 
 - [x] **C1** — CodeMirror 6 Cypher editor (Neo4j mode + graph-catalog schema completion — see C1 section)
-- [ ] **C2** — Visualization upgrades — **C2.1–C2.3 shipped** (directed arrows, curved multi-edges, self-loops in `GraphView` + `graphLinkPaths.ts`); **C2.4–C2.6** pending (canvas/Pixi, minimap, lasso); see §C2 above
-- [ ] **C3** — Streaming end-to-end
-- [ ] **C4** — Schema sidebar 2.0
-- [ ] **C5** — Saved queries / templates UI
-- [ ] **C6** — Read-only mode that's safe
-- [ ] **C7** — Expand options popover + truncation indicator (depends on **A11**)
+- [x] **C2** — Visualization upgrades — **C2.1–C2.6 all shipped** (arrows, curves, self-loops, Canvas 2D fallback, minimap, lasso multi-select); see §C2 above
+- [x] **C3** — Streaming end-to-end (server-side cursor NDJSON; store accumulation; streaming indicator; cap + safe-mode guards — 2026-04-25)
+- [x] **C4** — Schema sidebar 2.0 (collapsible label rows, property type inference + indexed badges, Sample/Match actions, LibraryPanel — 2026-04-26)
+- [x] **C5** — Saved queries / templates UI (LibraryPanel + `queryAPI.listTemplates` + params pre-fill — 2026-04-25)
+- [x] **C6** — Read-only mode that's safe (`SET TRANSACTION READ ONLY`; mutation confirmation modal; `mutation_confirmed` field — 2026-04-25)
+- [x] **C7** — Expand options popover + truncation indicator (`ExpandOptionsPopover`, direction/depth/limit/edge-label controls, truncation badge — 2026-04-25)
 
 ### Milestone D — Multi-user, multi-tenant, observable
 
-- [ ] **D1** — DB-backed users
-- [ ] **D2** — Redis-backed `SessionManager` and `query_tracker`
-- [ ] **D3** — Shared connection pool per `(host, db, user)` tuple
-- [ ] **D4** — OpenTelemetry
-- [ ] **D5** — First-class audit log
-- [ ] **D6** — CSV importer hardening
+- [x] **D1** — DB-backed users (`services/user.py` async + DB pool; `kotte_users` table via migration `78c03fa27fda`; in-memory fallback for dev/test; `POST /api/v1/users`, `PATCH /api/v1/users/me/password` routes added; `seed_admin()` called from lifespan)
+- [x] **D2** — Redis-backed `SessionManager` and `query_tracker` (`InMemorySessionManager` / `RedisSessionManager` selected by `REDIS_ENABLED`; `QueryTracker` / `RedisQueryTracker` with same pattern; db_conn stays process-local in both; `redis[hiredis]>=5.0.0` added to requirements)
+- [x] **D3** — Shared connection pool per `(host, db, user)` tuple (`PoolRegistry` singleton in `core/database/pool_registry.py`; `get_or_create()` + `cleanup_idle()` + `close_all()` called from lifespan; `pool_registry` exported from `core/database/__init__.py`)
+- [x] **D4** — OpenTelemetry (`core/telemetry.py`; `OTEL_ENABLED=false` default; FastAPI auto-instrumented when enabled; `trace_id` injected into JSON log formatter; `opentelemetry-*` packages added to requirements; `OTEL_*` env vars documented in `.env.example`)
+- [x] **D5** — First-class audit log (Alembic migration `a1b2c3d4e5f6`; `services/audit.py` with lazy pool + fire-and-forget; wired into all 5 SECURITY: log sites + login/logout/password events; no-op in `ENVIRONMENT=test`)
+- [x] **D6** — CSV importer hardening (stdlib `csv.DictReader` replaces naive `split(",")` at line 118; parameterized UNWIND for node batch; edge insertion uses `SET r = props::jsonb` instead of f-string interpolation; `import csv, io` added)

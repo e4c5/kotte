@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import re
 from typing import Dict, List, Optional
 
 from app.core.database import DatabaseConnection
@@ -36,6 +37,8 @@ async def invalidate_property_metadata_cache(
         await metadata_cache.clear(prefix=f"props:{validated_graph}:")
         await metadata_cache.clear(prefix=f"counts:{validated_graph}:")
         await metadata_cache.clear(prefix=f"stats:{validated_graph}:")
+        await metadata_cache.clear(prefix=f"types:{validated_graph}:")
+        await metadata_cache.clear(prefix=f"idx:{validated_graph}:")
 
 
 class MetadataService:
@@ -88,6 +91,123 @@ class MetadataService:
                 logger.debug(msg)
             else:
                 logger.warning(msg)
+            return []
+
+    @staticmethod
+    def _infer_type(value: object) -> str:
+        if isinstance(value, bool):
+            return "boolean"
+        if isinstance(value, int):
+            return "integer"
+        if isinstance(value, float):
+            return "float"
+        if isinstance(value, str):
+            return "string"
+        if isinstance(value, list):
+            return "list"
+        if isinstance(value, dict):
+            return "map"
+        return "unknown"
+
+    @staticmethod
+    def _accumulate_types_from_row(row: dict, type_map: dict[str, str]) -> None:
+        element = AgTypeParser.parse(next(iter(row.values()), None)) if row else None
+        if not isinstance(element, dict):
+            return
+        props = element.get("properties", {})
+        if not isinstance(props, dict):
+            return
+        for key, val in props.items():
+            if key not in type_map and val is not None:
+                type_map[key] = MetadataService._infer_type(val)
+
+    @staticmethod
+    async def infer_property_types(
+        db_conn: DatabaseConnection,
+        graph_name: str,
+        label_name: str,
+        label_kind: str,
+        sample_size: int = 20,
+    ) -> Dict[str, str]:
+        """
+        Infer property types for a label by sampling a small number of elements.
+        Returns a dict mapping property key → inferred type string.
+        """
+        try:
+            validated_graph_name = validate_graph_name(graph_name)
+            validated_label_name = validate_label_name(label_name)
+            cache_key = f"types:{validated_graph_name}:{validated_label_name}:{label_kind}"
+            cached = await metadata_cache.get(cache_key)
+            if cached is not None:
+                return cached
+
+            limit = min(max(1, sample_size), 100)
+            if label_kind == "v":
+                cypher = f"MATCH (n:{validated_label_name}) RETURN n LIMIT {limit}"
+            else:
+                cypher = f"MATCH ()-[r:{validated_label_name}]->() RETURN r LIMIT {limit}"
+
+            raw_rows = await db_conn.execute_cypher(validated_graph_name, cypher, params=None)
+            type_map: dict[str, str] = {}
+            for row in raw_rows:
+                MetadataService._accumulate_types_from_row(row, type_map)
+
+            await metadata_cache.set(cache_key, type_map)
+            return type_map
+
+        except Exception as e:
+            msg = f"Failed to infer property types for {graph_name}.{label_name}: {e}"
+            if DOES_NOT_EXIST_TEXT in str(e):
+                logger.debug(msg)
+            else:
+                logger.warning(msg)
+            return {}
+
+    # Item 20: match both ->> (text) and -> (jsonb) operator forms.
+    _INDEX_PROP_RE = re.compile(r"properties\s*->>?\s*'([^']+)'", re.IGNORECASE)
+
+    @staticmethod
+    async def get_indexed_properties(
+        db_conn: DatabaseConnection,
+        graph_name: str,
+        label_name: str,
+    ) -> List[str]:
+        """
+        Return property keys that have a pg_indexes expression index on the AGE label table.
+        Matches patterns like: ((properties ->> 'key')) or (properties->>'key')
+        """
+        try:
+            validated_graph_name = validate_graph_name(graph_name)
+            validated_label_name = validate_label_name(label_name)
+            cache_key = f"idx:{validated_graph_name}:{validated_label_name}"
+            cached = await metadata_cache.get(cache_key)
+            if cached is not None:
+                return cached
+
+            query = """
+                SELECT indexdef
+                FROM pg_indexes
+                WHERE schemaname = %(schema)s AND tablename = %(table)s
+            """
+            rows = await db_conn.execute_query(
+                query,
+                {"schema": validated_graph_name, "table": validated_label_name},
+            )
+            indexed: list[str] = []
+            for row in rows:
+                indexdef = row.get("indexdef", "") or ""
+                for match in MetadataService._INDEX_PROP_RE.finditer(indexdef):
+                    key = match.group(1)
+                    if key not in indexed:
+                        indexed.append(key)
+
+            await metadata_cache.set(cache_key, indexed)
+            return indexed
+
+        except Exception as e:
+            logger.warning(
+                "Failed to get indexed properties for %s.%s: %s", graph_name, label_name, e
+            )
             return []
 
     @staticmethod

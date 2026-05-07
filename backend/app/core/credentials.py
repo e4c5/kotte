@@ -13,6 +13,7 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 from app.core.config import settings
+from app.services import audit
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +77,10 @@ class CredentialEncryption:
                             "event": "dev_encryption_key_fallback",
                             "environment": settings.environment,
                         },
+                    )
+                    audit.fire_and_forget(
+                        "dev_encryption_key_fallback",
+                        payload={"environment": settings.environment},
                     )
                     warnings.warn(
                         "MASTER_ENCRYPTION_KEY not set, using persisted dev key. "

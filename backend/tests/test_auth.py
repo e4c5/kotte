@@ -168,103 +168,106 @@ class TestCSRFToken:
 class TestUserService:
     """Tests for user service directly."""
 
-    def test_authenticate_success(self):
-        """Test successful authentication."""
-        user = user_service.authenticate("admin", "admin")
+    @pytest.mark.asyncio
+    async def test_authenticate_success(self):
+        """Test successful authentication (in-memory fallback in test env)."""
+        user = await user_service.authenticate("admin", "admin")
         assert user is not None
         assert user["username"] == "admin"
         assert user["user_id"] == "admin"
 
-    def test_authenticate_invalid_username(self):
+    @pytest.mark.asyncio
+    async def test_authenticate_invalid_username(self):
         """Test authentication with invalid username."""
-        user = user_service.authenticate("nonexistent", "password")
+        user = await user_service.authenticate("nonexistent", "password")
         assert user is None
 
-    def test_authenticate_invalid_password(self):
+    @pytest.mark.asyncio
+    async def test_authenticate_invalid_password(self):
         """Test authentication with invalid password."""
-        user = user_service.authenticate("admin", "wrongpassword")
+        user = await user_service.authenticate("admin", "wrongpassword")
         assert user is None
 
-    def test_get_user(self):
-        """Test getting user by ID."""
-        user = user_service.get_user("admin")
+    @pytest.mark.asyncio
+    async def test_get_user(self):
+        """Test getting user by ID (in-memory fallback in test env)."""
+        user = await user_service.get_user("admin")
         assert user is not None
         assert user["username"] == "admin"
 
-    def test_get_user_not_found(self):
+    @pytest.mark.asyncio
+    async def test_get_user_not_found(self):
         """Test getting non-existent user."""
-        user = user_service.get_user("nonexistent")
+        user = await user_service.get_user("nonexistent")
         assert user is None
 
-    def test_create_user(self):
-        """Test creating a new user."""
-        # Create a test user
-        user = user_service.create_user("testuser", "testpass")
-        assert user["username"] == "testuser"
-        assert user["user_id"] == "testuser"
+    @pytest.mark.asyncio
+    async def test_create_user(self):
+        """In test env (no DB), create_user raises 503."""
+        from fastapi import status as http_status
+        from app.core.errors import APIException
 
-        # Verify can authenticate
-        authenticated = user_service.authenticate("testuser", "testpass")
-        assert authenticated is not None
+        with pytest.raises(APIException) as exc_info:
+            await user_service.create_user("testuser", "testpass123")
+        assert exc_info.value.status_code == http_status.HTTP_503_SERVICE_UNAVAILABLE
 
-        # Cleanup - remove test user
-        if "testuser" in user_service._users:
-            del user_service._users["testuser"]
+    @pytest.mark.asyncio
+    async def test_create_duplicate_user(self):
+        """In test env (no DB), create_user raises 503 regardless of username."""
+        from app.core.errors import APIException
 
-    def test_create_duplicate_user(self):
-        """Test creating duplicate user."""
-        with pytest.raises(Exception):  # Should raise APIException
-            user_service.create_user("admin", "password")
+        with pytest.raises(APIException):
+            await user_service.create_user("admin", "password123")
 
 
 class TestSessionManager:
     """Tests for session manager."""
 
-    def test_create_session(self):
+    async def test_create_session(self):
         """Test creating a session."""
-        session_id = session_manager.create_session("user1")
+        session_id = await session_manager.create_session("user1")
         assert session_id is not None
         assert len(session_id) > 0
 
         # Verify session exists
-        session = session_manager.get_session(session_id)
+        session = await session_manager.get_session(session_id)
         assert session is not None
         assert session["user_id"] == "user1"
 
-    def test_get_session(self):
+    async def test_get_session(self):
         """Test getting a session."""
-        session_id = session_manager.create_session("user1")
-        session = session_manager.get_session(session_id)
+        session_id = await session_manager.create_session("user1")
+        session = await session_manager.get_session(session_id)
 
         assert session is not None
         assert session["user_id"] == "user1"
         assert "created_at" in session
         assert "last_activity" in session
 
-    def test_get_invalid_session(self):
+    async def test_get_invalid_session(self):
         """Test getting non-existent session."""
-        session = session_manager.get_session("invalid-session-id")
+        session = await session_manager.get_session("invalid-session-id")
         assert session is None
 
-    def test_update_session(self):
+    async def test_update_session(self):
         """Test updating a session."""
-        session_id = session_manager.create_session("user1")
-        session_manager.update_session(session_id, {"graph_context": "test_graph"})
+        session_id = await session_manager.create_session("user1")
+        await session_manager.update_session(session_id, {"graph_context": "test_graph"})
 
-        session = session_manager.get_session(session_id)
+        session = await session_manager.get_session(session_id)
         assert session["graph_context"] == "test_graph"
 
-    def test_delete_session(self):
+    async def test_delete_session(self):
         """Test deleting a session."""
-        session_id = session_manager.create_session("user1")
-        session_manager.delete_session(session_id)
+        session_id = await session_manager.create_session("user1")
+        await session_manager.delete_session(session_id)
 
-        session = session_manager.get_session(session_id)
+        session = await session_manager.get_session(session_id)
         assert session is None
 
-    def test_get_user_id(self):
+    async def test_get_user_id(self):
         """Test getting user ID from session."""
-        session_id = session_manager.create_session("user1")
-        user_id = session_manager.get_user_id(session_id)
+        session_id = await session_manager.create_session("user1")
+        user_id = await session_manager.get_user_id(session_id)
 
         assert user_id == "user1"

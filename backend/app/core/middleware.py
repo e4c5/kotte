@@ -4,14 +4,17 @@ import logging
 import time
 import uuid
 from collections import defaultdict
+from datetime import datetime, timezone
 from typing import Callable
 
 from fastapi import Request, Response, status
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import JSONResponse
 
 from app.core.config import settings
 from app.core.errors import APIException, ErrorCode, ErrorCategory
 from app.core.metrics import metrics
+from app.services import audit
 
 logger = logging.getLogger(__name__)
 
@@ -160,20 +163,34 @@ class CSRFMiddleware(BaseHTTPMiddleware):
         if not session_csrf and session_id:
             from app.core.auth import session_manager
 
-            session_data = session_manager.get_session(session_id)
+            session_data = await session_manager.get_session(session_id)
             if session_data:
                 session_csrf = session_data.get("csrf_token")
 
         if not csrf_token or csrf_token != session_csrf:
+            request_id = getattr(request.state, "request_id", None)
+            client_ip = request.client.host if request.client else "unknown"
             logger.warning(
-                f"SECURITY: CSRF token validation failed for {request.method} {request.url.path} from IP {request.client.host if request.client else 'unknown'}",
+                f"SECURITY: CSRF token validation failed for {request.method} {request.url.path} from IP {client_ip}",
                 extra={
-                    "request_id": getattr(request.state, "request_id", None),
+                    "request_id": request_id,
                     "event": "csrf_failure",
                     "path": request.url.path,
                     "method": request.method,
-                    "ip": request.client.host if request.client else "unknown",
+                    "ip": client_ip,
                 },
+            )
+            session_id = request.session.get("session_id")
+            actor_id = None
+            if session_id:
+                from app.core.auth import session_manager
+
+                actor_id = await session_manager.get_user_id(session_id)
+            audit.fire_and_forget(
+                "csrf_failure",
+                actor_id=actor_id,
+                request_id=request_id,
+                payload={"method": request.method, "path": request.url.path, "ip": client_ip},
             )
             raise APIException(
                 code=ErrorCode.INTERNAL_ERROR,
@@ -217,6 +234,45 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         self._last_cleanup = now
 
+    def _rate_limit_response(self, request: Request, *, event: str, extra: dict) -> JSONResponse:
+        """Return a 429 JSONResponse matching the APIError envelope.
+
+        BaseHTTPMiddleware swallows raised exceptions and converts them to 500s
+        before FastAPI's exception handlers can intercept them, so we must
+        return a Response directly instead of raising APIException.
+        """
+        request_id = getattr(request.state, "request_id", None)
+        logger.warning(
+            f"SECURITY: {event} on {request.method} {request.url.path}",
+            extra={
+                "request_id": request_id,
+                "event": event,
+                "path": request.url.path,
+                **extra,
+            },
+        )
+        actor_id = extra.get("user_id")
+        audit.fire_and_forget(
+            event,
+            actor_id=actor_id,
+            request_id=request_id,
+            payload={"method": request.method, "path": request.url.path, **extra},
+        )
+        return JSONResponse(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            content={
+                "error": {
+                    "code": ErrorCode.RATE_LIMITED,
+                    "category": ErrorCategory.RATE_LIMIT,
+                    "message": "Rate limit exceeded. Please try again later.",
+                    "details": None,
+                    "request_id": getattr(request.state, "request_id", str(uuid.uuid4())),
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "retryable": True,
+                }
+            },
+        )
+
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         if not settings.rate_limit_enabled:
             return await call_next(request)
@@ -242,7 +298,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if session_id:
             from app.core.auth import session_manager
 
-            user_id = session_manager.get_user_id(session_id)
+            user_id = await session_manager.get_user_id(session_id)
 
         now = time.time()
         cutoff = now - 60  # Last minute
@@ -253,21 +309,10 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self._ip_requests[client_ip] = ip_requests
 
         if len(ip_requests) >= settings.rate_limit_per_minute:
-            logger.warning(
-                f"SECURITY: Rate limit exceeded for IP {client_ip} on {request.method} {request.url.path}",
-                extra={
-                    "request_id": getattr(request.state, "request_id", None),
-                    "event": "rate_limit_exceeded_ip",
-                    "ip": client_ip,
-                    "path": request.url.path,
-                },
-            )
-            raise APIException(
-                code=ErrorCode.RATE_LIMITED,
-                message="Rate limit exceeded. Please try again later.",
-                category=ErrorCategory.RATE_LIMIT,
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                retryable=True,
+            return self._rate_limit_response(
+                request,
+                event="rate_limit_exceeded_ip",
+                extra={"ip": client_ip},
             )
 
         # Check user rate limit (if authenticated)
@@ -277,22 +322,10 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             self._user_requests[user_id] = user_requests
 
             if len(user_requests) >= settings.rate_limit_per_user:
-                logger.warning(
-                    f"SECURITY: Rate limit exceeded for user {user_id} from IP {client_ip} on {request.method} {request.url.path}",
-                    extra={
-                        "request_id": getattr(request.state, "request_id", None),
-                        "event": "rate_limit_exceeded_user",
-                        "user_id": user_id,
-                        "ip": client_ip,
-                        "path": request.url.path,
-                    },
-                )
-                raise APIException(
-                    code=ErrorCode.RATE_LIMITED,
-                    message="Rate limit exceeded. Please try again later.",
-                    category=ErrorCategory.RATE_LIMIT,
-                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                    retryable=True,
+                return self._rate_limit_response(
+                    request,
+                    event="rate_limit_exceeded_user",
+                    extra={"user_id": user_id, "ip": client_ip},
                 )
 
         # Record request

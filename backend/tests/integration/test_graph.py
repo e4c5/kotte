@@ -321,7 +321,9 @@ class TestNeighborhoodExpansion:
             {"n": n_node, "pn": m_node, "rel": r1},
             {"n": n_node, "pn": m_node, "rel": r2},
         ]
-        mock_db.execute_cypher = AsyncMock(return_value=mock_rows)
+        # execute_cypher is called twice concurrently: expand query then count query.
+        # Return the mock rows for the expand call; an empty list suffices for the count.
+        mock_db.execute_cypher = AsyncMock(side_effect=[mock_rows, []])
 
         response = await connected_client.post(
             "/api/v1/graphs/test_graph/nodes/1/expand",
@@ -341,11 +343,17 @@ class TestNeighborhoodExpansion:
         assert edge_ids == [10, 11]
         assert data["edge_count"] == 2
 
-        # And confirm the production query actually expands paths the right way.
-        call_args = mock_db.execute_cypher.call_args
-        cypher_sent = call_args.args[1] if len(call_args.args) > 1 else call_args.kwargs["query"]
-        params_sent = call_args.kwargs.get("params") or (
-            call_args.args[2] if len(call_args.args) > 2 else {}
+        # New C7 fields: 3 nodes < limit of 100, so not truncated.
+        assert data["truncated"] is False
+        assert data["total_neighbours"] == 0  # count query returned empty
+
+        # Confirm the expand query (first call) uses the right Cypher constructs.
+        expand_call = mock_db.execute_cypher.call_args_list[0]
+        cypher_sent = (
+            expand_call.args[1] if len(expand_call.args) > 1 else expand_call.kwargs["query"]
+        )
+        params_sent = expand_call.kwargs.get("params") or (
+            expand_call.args[2] if len(expand_call.args) > 2 else {}
         )
         assert "[*1..2]" in cypher_sent, "depth must be inlined into the variable-length pattern"
         assert "nodes(path)" in cypher_sent, "must surface intermediate nodes via nodes(path)"
@@ -355,11 +363,62 @@ class TestNeighborhoodExpansion:
         assert params_sent.get("limit") == 100
 
     @pytest.mark.asyncio
+    async def test_expand_node_direction_and_edge_labels(self, connected_client: httpx.AsyncClient):
+        """C7: direction and edge_labels are reflected in the Cypher pattern."""
+        mock_db = connected_client._mock_db
+        mock_db.execute_scalar = AsyncMock(return_value=1)
+        mock_db.execute_cypher = AsyncMock(side_effect=[[], []])
+
+        response = await connected_client.post(
+            "/api/v1/graphs/test_graph/nodes/1/expand",
+            json={"depth": 1, "limit": 50, "direction": "out", "edge_labels": ["KNOWS", "LIKES"]},
+        )
+
+        assert response.status_code == 200
+        expand_call = mock_db.execute_cypher.call_args_list[0]
+        cypher_sent = (
+            expand_call.args[1] if len(expand_call.args) > 1 else expand_call.kwargs["query"]
+        )
+        assert ":KNOWS|LIKES*1..1" in cypher_sent, "edge types must appear in rel pattern"
+        assert "->" in cypher_sent, "outgoing direction must use ->"
+        assert "<-" not in cypher_sent, "outgoing must not use <-"
+
+    @pytest.mark.asyncio
+    async def test_expand_node_truncated_flag(self, connected_client: httpx.AsyncClient):
+        """C7: truncated=True when returned node count equals the limit."""
+        mock_db = connected_client._mock_db
+        mock_db.execute_scalar = AsyncMock(return_value=1)
+        # Return exactly `limit` node entries to trigger truncated=True.
+        node = {"id": 1, "type": "node", "label": "X", "properties": {}}
+        edge = {"id": 1, "type": "edge", "label": "Y", "start_id": 1, "end_id": 1, "properties": {}}
+        limit = 3
+        mock_rows = [
+            {"n": node, "pn": {**node, "id": i}, "rel": {**edge, "id": i}}
+            for i in range(1, limit + 1)
+        ]
+        # Count query returns a higher number to validate total_neighbours.
+        count_row = {"total": 10}
+        mock_db.execute_cypher = AsyncMock(side_effect=[mock_rows, [count_row]])
+
+        response = await connected_client.post(
+            "/api/v1/graphs/test_graph/nodes/1/expand",
+            json={"depth": 1, "limit": limit},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        # node count >= limit → truncated
+        assert data["truncated"] is True
+        # total_neighbours from the count row (AgTypeParser.parse returns the raw value)
+        assert data["total_neighbours"] == 10
+
+    @pytest.mark.asyncio
     async def test_expand_node_default_params(self, connected_client: httpx.AsyncClient):
         """Test expanding node with default parameters."""
         mock_db = connected_client._mock_db
         mock_db.execute_scalar = AsyncMock(return_value=1)  # Graph exists
-        mock_db.execute_cypher = AsyncMock(return_value=[])
+        # execute_cypher is called twice concurrently: expand query + count query.
+        mock_db.execute_cypher = AsyncMock(side_effect=[[], []])
 
         response = await connected_client.post(
             "/api/v1/graphs/test_graph/nodes/1/expand",
@@ -371,6 +430,8 @@ class TestNeighborhoodExpansion:
         data = response.json()
         assert "nodes" in data
         assert "edges" in data
+        assert "truncated" in data
+        assert "total_neighbours" in data
 
 
 class TestNodeDeletion:

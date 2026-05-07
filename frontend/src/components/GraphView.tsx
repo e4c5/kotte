@@ -1,10 +1,20 @@
-import { useEffect, useRef, useMemo, useState } from 'react'
+import { useEffect, useRef, useMemo, useState, useCallback } from 'react'
 import * as d3 from 'd3'
 import { useGraphStore } from '../stores/graphStore'
+import type { LabelStyle } from '../stores/graphStore'
 import { initializeLayout } from '../utils/graphLayouts'
 import { getNodeStyle, getEdgeStyle, getNodeCaption, getEdgeCaption } from '../utils/graphStyles'
 import { linkPath, markerIdForColor, parallelEdgeMeta, type LinkPathResult } from '../utils/graphLinkPaths'
 import { useGraphExport } from '../hooks/useGraphExport'
+import GraphCanvas from './GraphCanvas'
+import GraphMinimap from './GraphMinimap'
+import LassoActionBar from './LassoActionBar'
+
+// Switch to Canvas 2D renderer above this threshold (total nodes + edges).
+// Lower than maxNodesForGraph so users with a raised cap still get a
+// responsive canvas before the hard result limit kicks in.
+const CANVAS_THRESHOLD_ENTER = 1500
+const CANVAS_THRESHOLD_EXIT = 1350
 
 export interface GraphNode {
   id: string
@@ -52,6 +62,33 @@ function applyLinkPathD(
   sel.attr('d', (d) => pathByEdgeId.get(d.id)?.d ?? '')
 }
 
+function applyLassoRings(
+  group: d3.Selection<SVGGElement, unknown, d3.BaseType, unknown>,
+  nodes: GraphNode[],
+  lasso: Set<string>,
+  nodeStyles: Record<string, LabelStyle>,
+  centerX: number,
+  centerY: number,
+): void {
+  group
+    .selectAll<SVGCircleElement, GraphNode>('circle')
+    .data(nodes.filter((n) => lasso.has(n.id)), (d) => d.id)
+    .join(
+      (enter) =>
+        enter
+          .append('circle')
+          .attr('r', (d) => getNodeStyle(d, nodeStyles).size + 5)
+          .attr('fill', 'none')
+          .attr('stroke', '#60a5fa')
+          .attr('stroke-width', 1.5)
+          .attr('stroke-dasharray', '4 2'),
+      (update) => update,
+      (exit) => exit.remove(),
+    )
+    .attr('cx', (d) => d.x ?? centerX)
+    .attr('cy', (d) => d.y ?? centerY)
+}
+
 export default function GraphView({
   nodes,
   edges,
@@ -71,6 +108,7 @@ export default function GraphView({
   const svgSelectionRef = useRef<SvgSelection | null>(null)
   const zoomBehaviorRef = useRef<d3.ZoomBehavior<SVGSVGElement, unknown> | null>(null)
   const fitToViewRef = useRef<(() => void) | null>(null)
+  const updateLassoRingsRef = useRef<(() => void) | null>(null)
   const zoomTransformRef = useRef(d3.zoomIdentity)
   const userZoomedRef = useRef(false)
   const applyingAutoTransformRef = useRef(false)
@@ -90,6 +128,7 @@ export default function GraphView({
   const onEdgeClickRef = useRef<typeof onEdgeClick>(onEdgeClick)
   const [debugFitScale, setDebugFitScale] = useState<number | null>(null)
   const [resolvedSize, setResolvedSize] = useState({ width, height })
+  const [canvasMode, setCanvasMode] = useState(false)
   const {
     layout,
     nodeStyles,
@@ -99,6 +138,7 @@ export default function GraphView({
     selectedNode,
     pinnedNodes,
     hiddenNodes,
+    lassoNodes,
     cameraFocusAnchorIds,
     clearCameraFocusAnchorIds,
   } = useGraphStore()
@@ -154,6 +194,14 @@ export default function GraphView({
       return visibleNodeIds.has(sourceId) && visibleNodeIds.has(targetId)
     })
   }, [edges, filters, hiddenNodes, filteredNodes])
+
+  // Canvas-mode hysteresis: switch to canvas above ENTER threshold, back to SVG only when
+  // count drops below EXIT threshold. Avoids oscillation when count hovers around the boundary.
+  useEffect(() => {
+    const total = filteredNodes.length + filteredEdges.length
+    if (!canvasMode && total >= CANVAS_THRESHOLD_ENTER) setCanvasMode(true)
+    if (canvasMode && total < CANVAS_THRESHOLD_EXIT) setCanvasMode(false)
+  }, [filteredNodes.length, filteredEdges.length, canvasMode])
 
   useEffect(() => {
     userZoomedRef.current = false
@@ -225,20 +273,102 @@ export default function GraphView({
     })
 
     const container = svg.append('g')
-    const zoom = d3.zoom<SVGSVGElement, unknown>().scaleExtent([0.05, 20]).on('zoom', (event) => {
-      zoomTransformRef.current = event.transform
-      if (!applyingAutoTransformRef.current) userZoomedRef.current = true
-      container.attr('transform', event.transform)
-    })
+    const zoom = d3.zoom<SVGSVGElement, unknown>()
+      .scaleExtent([0.05, 20])
+      // Exclude shift+pointerdown from zoom/pan so the lasso can take it.
+      .filter((event) => event.type !== 'pointerdown' || !(event as PointerEvent).shiftKey)
+      .on('zoom', (event) => {
+        zoomTransformRef.current = event.transform
+        if (!applyingAutoTransformRef.current) userZoomedRef.current = true
+        container.attr('transform', event.transform)
+      })
     svg.call(zoom)
     svgSelectionRef.current = svg
     zoomBehaviorRef.current = zoom
+
+    // ── lasso ────────────────────────────────────────────────────────────────────
+    const lassoOverlay = svg.append('g').attr('class', 'lasso-overlay').style('pointer-events', 'none')
+    let lassoStart: { sx: number; sy: number } | null = null
+    let lassoRectEl: d3.Selection<SVGRectElement, unknown, null, undefined> | null = null
+
+    function getSvgPt(e: PointerEvent): [number, number] {
+      const r = svgEl.getBoundingClientRect()
+      return [e.clientX - r.left, e.clientY - r.top]
+    }
+
+    function onLassoDown(e: PointerEvent) {
+      if (e.button !== 0 || !e.shiftKey) return
+      svgEl.setPointerCapture(e.pointerId)
+      const [sx, sy] = getSvgPt(e)
+      lassoStart = { sx, sy }
+      lassoRectEl = lassoOverlay.append('rect')
+        .attr('x', sx).attr('y', sy).attr('width', 0).attr('height', 0)
+        .attr('fill', 'rgba(96,165,250,0.08)')
+        .attr('stroke', '#60a5fa')
+        .attr('stroke-dasharray', '4 2')
+        .attr('stroke-width', 1)
+    }
+
+    function onLassoMove(e: PointerEvent) {
+      if (!lassoStart || !lassoRectEl) return
+      const [sx, sy] = getSvgPt(e)
+      lassoRectEl
+        .attr('x', Math.min(lassoStart.sx, sx))
+        .attr('y', Math.min(lassoStart.sy, sy))
+        .attr('width', Math.abs(sx - lassoStart.sx))
+        .attr('height', Math.abs(sy - lassoStart.sy))
+    }
+
+    function onLassoUp(e: PointerEvent) {
+      if (!lassoStart || !lassoRectEl) return
+      const [sx, sy] = getSvgPt(e)
+      const t = zoomTransformRef.current
+      const x0 = Math.min(lassoStart.sx, sx), y0 = Math.min(lassoStart.sy, sy)
+      const x1 = Math.max(lassoStart.sx, sx), y1 = Math.max(lassoStart.sy, sy)
+      const wx0 = (x0 - t.x) / t.k, wy0 = (y0 - t.y) / t.k
+      const wx1 = (x1 - t.x) / t.k, wy1 = (y1 - t.y) / t.k
+      const hitSet = new Set<string>()
+      for (const n of nodesWithPositions) {
+        const nx = n.x ?? 0, ny = n.y ?? 0
+        if (nx >= wx0 && nx <= wx1 && ny >= wy0 && ny <= wy1) hitSet.add(n.id)
+      }
+      useGraphStore.getState().setLassoNodes(hitSet)
+      lassoRectEl.remove()
+      lassoRectEl = null
+      lassoStart = null
+    }
+
+    function onLassoCancel(e: PointerEvent) {
+      if (!lassoStart || !lassoRectEl) return
+      try { svgEl.releasePointerCapture(e.pointerId) } catch { /* ignore: pointer may already be released */ }
+      lassoRectEl.remove()
+      lassoRectEl = null
+      lassoStart = null
+    }
+
+    function onBgClick(e: MouseEvent) {
+      if (e.target === svgEl) useGraphStore.getState().clearLassoNodes()
+    }
+
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') useGraphStore.getState().clearLassoNodes()
+    }
 
     const nodesWithPositions = initializeLayout(filteredNodes, layout, viewportWidth, viewportHeight)
     if (nodesWithPositions.length === 0) {
       fitToViewRef.current = null
       return
     }
+
+    // ── lasso ring group (inside container = world space) ─────────────────────
+    const lassoRingGroup = container.append('g').attr('class', 'lasso-rings').style('pointer-events', 'none')
+
+    svgEl.addEventListener('pointerdown', onLassoDown)
+    svgEl.addEventListener('pointermove', onLassoMove)
+    svgEl.addEventListener('pointerup', onLassoUp)
+    svgEl.addEventListener('pointercancel', onLassoCancel)
+    svg.on('click.lasso', onBgClick)
+    globalThis.addEventListener('keydown', onKeyDown)
 
     const hasEdges = filteredEdges.length > 0
     let simulation: d3.Simulation<GraphNode, GraphEdge>
@@ -395,6 +525,11 @@ export default function GraphView({
     const nodeById = new Map(nodesWithPositions.map((n) => [n.id, n]))
     const getNode = (endpoint: string | GraphNode) => typeof endpoint === 'string' ? nodeById.get(endpoint) : endpoint
 
+    // updateLassoRings: rebuilds the dashed-ring selection for lasso-selected nodes.
+    // Also called from a separate useEffect when lassoNodes changes externally (e.g. Escape).
+    updateLassoRingsRef.current = () =>
+      applyLassoRings(lassoRingGroup, nodesWithPositions, useGraphStore.getState().lassoNodes, nodeStyles, centerX, centerY)
+
     let didAutoStop = false
     const pathByEdgeId = new Map<string, LinkPathResult>()
     function applyPositions() {
@@ -412,6 +547,11 @@ export default function GraphView({
       edgeLabels
         .attr('x', (d) => pathByEdgeId.get(d.id)?.lx ?? centerX)
         .attr('y', (d) => pathByEdgeId.get(d.id)?.ly ?? centerY)
+      // Keep ring positions in sync during force simulation ticks.
+      lassoRingGroup
+        .selectAll<SVGCircleElement, GraphNode>('circle')
+        .attr('cx', (d) => d.x ?? centerX)
+        .attr('cy', (d) => d.y ?? centerY)
     }
     simulation.on('tick', applyPositions)
     applyPositions()
@@ -421,6 +561,7 @@ export default function GraphView({
 
     return () => {
       fitToViewRef.current = null;
+      updateLassoRingsRef.current = null;
       simulation.stop();
       // Explicitly release references
       simulation.nodes([]);
@@ -434,7 +575,13 @@ export default function GraphView({
         if (linkForce && 'links' in linkForce) (linkForce as any).links([]);
       }
       // Remove all elements and event listeners
+      svgEl.removeEventListener('pointerdown', onLassoDown);
+      svgEl.removeEventListener('pointermove', onLassoMove);
+      svgEl.removeEventListener('pointerup', onLassoUp);
+      svgEl.removeEventListener('pointercancel', onLassoCancel);
+      globalThis.removeEventListener('keydown', onKeyDown);
       svg.on('.zoom', null);
+      svg.on('click.lasso', null);
       svg.selectAll('*').remove();
     }
   }, [filteredNodes, filteredEdges, pathNodeIds, pathEdgeIds, width, height, layout, nodeStyles, edgeStyles, selectedNode, pinnedNodes, edgeWidthScale, edgeWidthMapping.property])
@@ -595,6 +742,11 @@ export default function GraphView({
     }
   }, [])
 
+  // Redraw lasso rings whenever the lasso selection changes externally (Escape, clear, etc.)
+  useEffect(() => {
+    updateLassoRingsRef.current?.()
+  }, [lassoNodes])
+
   const zoomBy = (factor: number) => {
     const svg = svgSelectionRef.current, zoom = zoomBehaviorRef.current
     if (!svg || !zoom) return
@@ -604,6 +756,49 @@ export default function GraphView({
     svg.call(zoom.scaleTo, nextScale, [resolvedSize.width / 2, resolvedSize.height / 2])
   }
 
+  const getTransform = useCallback(
+    () => ({
+      x: zoomTransformRef.current.x,
+      y: zoomTransformRef.current.y,
+      k: zoomTransformRef.current.k,
+    }),
+    [],
+  )
+
+  const setTransform = useCallback((t: { x: number; y: number; k: number }) => {
+    const svg = svgSelectionRef.current
+    const zoom = zoomBehaviorRef.current
+    if (!svg || !zoom) return
+    applyingAutoTransformRef.current = true
+    svg.call(zoom.transform, d3.zoomIdentity.translate(t.x, t.y).scale(t.k))
+    applyingAutoTransformRef.current = false
+  }, [])
+
+  if (canvasMode) {
+    return (
+      <div className="w-full h-full bg-zinc-950 relative">
+        <div
+          className="absolute left-2 top-2 z-10 pointer-events-none rounded border border-zinc-600/60 bg-zinc-800/70 px-2 py-0.5 text-[10px] text-zinc-400 font-mono"
+          title="Canvas renderer active for performance"
+        >
+          Canvas mode
+        </div>
+        <GraphCanvas
+          nodes={nodes}
+          edges={edges}
+          width={width}
+          height={height}
+          pathHighlights={pathHighlights}
+          onNodeClick={onNodeClick}
+          onNodeDoubleClick={onNodeDoubleClick}
+          onNodeRightClick={onNodeRightClick}
+          onEdgeClick={onEdgeClick}
+          onExportReady={onExportReady}
+        />
+      </div>
+    )
+  }
+
   return (
     <div className="w-full h-full bg-zinc-950 relative">
       {import.meta.env.DEV && (
@@ -611,6 +806,14 @@ export default function GraphView({
           GraphView marker: 2026-04-21-c2-v4 | prop:{width}x{height} | view:{resolvedSize.width}x{resolvedSize.height} | fit:{debugFitScale?.toFixed(2) ?? 'n/a'}
         </div>
       )}
+      <LassoActionBar filteredNodes={filteredNodes} onNodeDoubleClick={onNodeDoubleClick} />
+      <GraphMinimap
+        nodes={filteredNodes}
+        viewportWidth={resolvedSize.width}
+        viewportHeight={resolvedSize.height}
+        getTransform={getTransform}
+        setTransform={setTransform}
+      />
       <div className="absolute right-3 bottom-3 z-20 flex items-center gap-1 rounded border border-zinc-700 bg-zinc-900/85 p-1">
         <button type="button" onClick={() => zoomBy(1.2)} className="h-8 w-8 rounded bg-zinc-800 text-zinc-200 hover:bg-zinc-700" aria-label="Zoom in" title="Zoom in">+</button>
         <button type="button" onClick={() => zoomBy(0.8)} className="h-8 w-8 rounded bg-zinc-800 text-zinc-200 hover:bg-zinc-700" aria-label="Zoom out" title="Zoom out">-</button>

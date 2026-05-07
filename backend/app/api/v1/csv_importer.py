@@ -1,5 +1,7 @@
 """CSV import endpoints."""
 
+import csv
+import io
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -105,17 +107,19 @@ async def import_csv(
                 status_code=422,
             )
 
-        lines = content.decode("utf-8").split("\n")
-        if not lines or not lines[0].strip():
+        text = content.decode("utf-8")
+        reader = csv.DictReader(io.StringIO(text))
+        if reader.fieldnames is None:
             raise APIException(
                 code=ErrorCode.IMPORT_INVALID_FILE,
-                message="CSV file is empty",
+                message="CSV file is empty or has no header",
                 category=ErrorCategory.VALIDATION,
                 status_code=422,
             )
-
-        # Parse header
-        header = [col.strip() for col in lines[0].split(",")]
+        # Strip BOM then whitespace from field names (BOM must come off before strip)
+        header = [f.lstrip("﻿").strip() for f in reader.fieldnames]
+        # Case-insensitive lookup: lowercase → original header name
+        header_lower_map = {h.lower(): h for h in header}
         if not header:
             raise APIException(
                 code=ErrorCode.IMPORT_INVALID_FILE,
@@ -124,8 +128,22 @@ async def import_csv(
                 status_code=422,
             )
 
-        # Enforce maximum row limit
-        row_count = max(0, len(lines) - 1)
+        # Read all rows now so we can enforce limits and re-iterate later.
+        # Item 11: use (row.get(f) or "") to handle None for missing cells in short rows.
+        try:
+            all_rows: list[dict] = [
+                {h: (row.get(f) or "").strip() for h, f in zip(header, (reader.fieldnames or []))}
+                for row in reader
+            ]
+        except csv.Error as exc:
+            raise APIException(
+                code=ErrorCode.IMPORT_INVALID_FILE,
+                message=f"CSV parse error: {exc}",
+                category=ErrorCategory.VALIDATION,
+                status_code=422,
+            ) from exc
+
+        row_count = len(all_rows)
         if row_count > settings.import_max_rows:
             raise APIException(
                 code=ErrorCode.IMPORT_INVALID_FILE,
@@ -149,7 +167,7 @@ async def import_csv(
         # Basic structural validation for edge CSV
         if label_kind == "e":
             required_edge_columns = {"source", "target"}
-            missing = required_edge_columns - set(header)
+            missing = required_edge_columns - {h.lower() for h in header}
             if missing:
                 raise APIException(
                     code=ErrorCode.IMPORT_INVALID_FILE,
@@ -207,76 +225,83 @@ async def import_csv(
                 SELECT * FROM ag_catalog.create_label({graph_lit}, {label_lit}, {label_kind == 'v'})
             """
             try:
-                await db_conn.execute_query(create_label_query, conn=conn)
+                # Use a savepoint so an "already exists" error doesn't abort the outer transaction
+                async with conn.transaction():
+                    await db_conn.execute_query(create_label_query, conn=conn)
                 job_status.created_labels.append(validated_label_name)
             except Exception as e:
                 if "already exists" not in str(e).lower():
                     raise
 
-            # Batch insertion for better performance
-            import json
-
-            data_rows = [
-                (line_num, line) for line_num, line in enumerate(lines[1:], start=2) if line.strip()
-            ]
-
+            # Batch insertion using parameterized UNWIND — no string interpolation of user data.
             batch_size = 1000
-            for batch_start in range(0, len(data_rows), batch_size):
-                batch = data_rows[batch_start : batch_start + batch_size]
-                cypher_statements: list[str] = []
+            for batch_start in range(0, len(all_rows), batch_size):
+                batch_rows = all_rows[batch_start : batch_start + batch_size]
+                node_batch: list[dict] = []
+                edge_batch: list[dict] = []
 
-                for line_num, line in batch:
-                    values = [v.strip() for v in line.split(",")]
-                    if len(values) != len(header):
-                        rejected += 1
-                        errors.append(f"Row {line_num}: column count mismatch")
-                        continue
-
-                    properties = {header[i]: values[i] for i in range(len(header))}
-
+                for line_num, properties in enumerate(batch_rows, start=batch_start + 2):
+                    source_col = header_lower_map.get("source")
+                    target_col = header_lower_map.get("target")
                     if label_kind == "v":
-                        props_json = json.dumps(properties).replace("'", "''")
-                        cypher_statements.append(
-                            f"CREATE (n:{validated_label_name} {props_json}::jsonb)"
-                        )
+                        node_batch.append(properties)
                     else:
-                        # For edges, ensure required IDs are present
-                        if "source" not in properties or "target" not in properties:
+                        if source_col not in properties or target_col not in properties:
                             rejected += 1
                             errors.append(f"Row {line_num}: missing source or target")
                             continue
-
-                        props = {
-                            k: v for k, v in properties.items() if k not in {"source", "target"}
-                        }
-                        props_json = json.dumps(props).replace("'", "''")
                         try:
-                            source_id = int(properties["source"])
-                            target_id = int(properties["target"])
+                            source_id = int(properties[source_col])
+                            target_id = int(properties[target_col])
                         except (ValueError, TypeError):
                             rejected += 1
                             errors.append(f"Row {line_num}: source and target must be integers")
                             continue
-                        cypher_statements.append(
-                            f"MATCH (a), (b) "
-                            f"WHERE id(a) = {source_id} AND id(b) = {target_id} "
-                            f"CREATE (a)-[r:{validated_label_name} {props_json}::jsonb]->(b)"
+                        props = {
+                            k: v for k, v in properties.items() if k not in {source_col, target_col}
+                        }
+                        edge_batch.append(
+                            {
+                                "source": source_id,
+                                "target": target_id,
+                                "props": props,
+                            }
                         )
 
-                if not cypher_statements:
-                    continue
+                if node_batch:
+                    # Items 5+12: use Cypher $rows parameter — no ::jsonb cast, no f-string injection.
+                    # Item 10: no .replace("'", "''") — parameterised queries make that unnecessary.
+                    node_cypher = (
+                        f"UNWIND $rows AS row CREATE (n:{validated_label_name}) SET n = row"
+                    )
+                    await db_conn.execute_cypher(
+                        validated_graph_name,
+                        node_cypher,
+                        params={"rows": node_batch},
+                        conn=conn,
+                    )
+                    inserted += len(node_batch)
 
-                batch_cypher = "\n".join(cypher_statements)
-                batch_query = """
-                    SELECT * FROM ag_catalog.cypher(%(graph_name)s::text, %(cypher)s::text) AS (result agtype)
-                """
-                await db_conn.execute_query(
-                    batch_query,
-                    {"graph_name": validated_graph_name, "cypher": batch_cypher},
-                    conn=conn,
-                )
-
-                inserted += len(cypher_statements)
+                if edge_batch:
+                    # Items 5+12: use Cypher $rows parameter — no ::jsonb cast, no f-string injection.
+                    # Item 10: no .replace("'", "''") — parameterised queries make that unnecessary.
+                    edge_rows = [
+                        {"s": e["source"], "t": e["target"], "p": e["props"]} for e in edge_batch
+                    ]
+                    edge_cypher = (
+                        f"UNWIND $rows AS row "
+                        f"MATCH (a), (b) "
+                        f"WHERE id(a) = toInteger(row.s) AND id(b) = toInteger(row.t) "
+                        f"CREATE (a)-[r:{validated_label_name}]->(b) "
+                        f"SET r = row.p"
+                    )
+                    await db_conn.execute_cypher(
+                        validated_graph_name,
+                        edge_cypher,
+                        params={"rows": edge_rows},
+                        conn=conn,
+                    )
+                    inserted += len(edge_batch)
 
         job_status.status = "completed"
         job_status.inserted_rows = inserted

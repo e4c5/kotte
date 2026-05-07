@@ -1,21 +1,39 @@
-"""Query tracking service for cancellation support."""
+"""Query tracking service for cancellation support.
 
+Two implementations selected by ``settings.redis_enabled``:
+- ``QueryTracker``      — in-memory (original, default)
+- ``RedisQueryTracker`` — metadata in Redis; ``db_conn`` stays process-local
+
+The module-level ``query_tracker`` is bound to the appropriate instance.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
 import logging
 from datetime import datetime, timezone
 from typing import Dict, Optional
 
+from app.core.config import settings
 from app.core.database import DatabaseConnection
 from app.core.errors import APIException, ErrorCode, ErrorCategory
 from fastapi import status
 
 logger = logging.getLogger(__name__)
 
+_background_tasks: set[asyncio.Task] = set()
+
+
+def _keep_task(task: asyncio.Task) -> None:
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+
 
 class QueryTracker:
-    """Tracks active queries for cancellation support."""
+    """In-memory query tracker (default when REDIS_ENABLED=false)."""
 
     def __init__(self):
-        # Store active queries: request_id -> query_info
         self._active_queries: Dict[str, Dict] = {}
 
     def register_query(
@@ -25,47 +43,26 @@ class QueryTracker:
         query_text: str,
         user_id: str,
     ) -> None:
-        """
-        Register an active query.
-
-        Args:
-            request_id: Unique request identifier
-            db_conn: Database connection
-            query_text: SQL query text
-            user_id: User ID executing the query
-        """
         self._active_queries[request_id] = {
             "db_conn": db_conn,
             "query_text": query_text,
             "user_id": user_id,
             "started_at": datetime.now(timezone.utc),
-            "backend_pid": None,  # Will be set when query starts
+            "backend_pid": None,
         }
         logger.debug(f"Registered query {request_id[:8]}...")
 
     async def set_backend_pid(self, request_id: str, pid: int) -> None:
-        """Set the backend PID for a query."""
         if request_id in self._active_queries:
             self._active_queries[request_id]["backend_pid"] = pid
             logger.debug(f"Set backend PID {pid} for query {request_id[:8]}...")
 
     async def cancel_query(self, request_id: str, user_id: str) -> bool:
-        """
-        Cancel a running query.
-
-        Args:
-            request_id: Request ID of query to cancel
-            user_id: User ID requesting cancellation (must match)
-
-        Returns:
-            True if cancellation was successful
-        """
         query_info = self._active_queries.get(request_id)
         if not query_info:
             logger.warning(f"Query {request_id[:8]}... not found for cancellation")
             return False
 
-        # Verify user owns the query
         if query_info["user_id"] != user_id:
             raise APIException(
                 code=ErrorCode.QUERY_CANCELLED,
@@ -78,7 +75,6 @@ class QueryTracker:
         backend_pid = query_info.get("backend_pid")
 
         if not backend_pid:
-            # Try to get PID from database
             backend_pid = await db_conn.get_backend_pid()
             if backend_pid:
                 query_info["backend_pid"] = backend_pid
@@ -87,7 +83,6 @@ class QueryTracker:
             logger.warning(f"Cannot cancel query {request_id[:8]}...: no backend PID available")
             return False
 
-        # Cancel the backend
         success = await db_conn.cancel_backend(backend_pid)
         if success:
             logger.info(f"Cancelled query {request_id[:8]}... (PID: {backend_pid})")
@@ -98,28 +93,191 @@ class QueryTracker:
         return success
 
     def unregister_query(self, request_id: str) -> None:
-        """Unregister a query (called when query completes or is cancelled)."""
         if request_id in self._active_queries:
             del self._active_queries[request_id]
             logger.debug(f"Unregistered query {request_id[:8]}...")
 
-    def get_query_info(self, request_id: str) -> Optional[Dict]:
-        """Get information about an active query."""
+    async def get_query_info(self, request_id: str) -> Optional[Dict]:
+        await asyncio.sleep(0)
         return self._active_queries.get(request_id)
 
     def cleanup_stale_queries(self, max_age_seconds: int = 3600) -> None:
-        """Remove queries older than max_age_seconds."""
         now = datetime.now(timezone.utc)
-        stale_requests = []
-        for request_id, info in self._active_queries.items():
-            age = (now - info["started_at"]).total_seconds()
-            if age > max_age_seconds:
-                stale_requests.append(request_id)
+        stale = [
+            rid
+            for rid, info in self._active_queries.items()
+            if (now - info["started_at"]).total_seconds() > max_age_seconds
+        ]
+        for rid in stale:
+            logger.warning(f"Removing stale query {rid[:8]}...")
+            self.unregister_query(rid)
 
-        for request_id in stale_requests:
-            logger.warning(f"Removing stale query {request_id[:8]}...")
+
+class RedisQueryTracker:
+    """Redis-backed query tracker for multi-instance deployments.
+
+    Serialisable metadata (user_id, query_text, backend_pid, started_at) is
+    stored in Redis with a 1-hour TTL.  The ``db_conn`` object stays in a
+    process-local dict because it is a live TCP pool and cannot be serialised.
+    """
+
+    def __init__(self, redis_url: str):
+        import redis.asyncio as aioredis
+
+        self._client = aioredis.from_url(redis_url, decode_responses=True)
+        self._prefix = "kotte:query:"
+        self._ttl = 3600
+        # Process-local store for db_conn references
+        self._db_conns: Dict[str, DatabaseConnection] = {}
+
+    def _key(self, request_id: str) -> str:
+        return f"{self._prefix}{request_id}"
+
+    def register_query(
+        self,
+        request_id: str,
+        db_conn: DatabaseConnection,
+        query_text: str,
+        user_id: str,
+    ) -> None:
+        self._db_conns[request_id] = db_conn
+        meta = {
+            "user_id": user_id,
+            "query_text": query_text,
+            "started_at": datetime.now(timezone.utc).isoformat(),
+            "backend_pid": None,
+        }
+        try:
+            loop = asyncio.get_event_loop()
+            _keep_task(
+                loop.create_task(
+                    self._client.set(self._key(request_id), json.dumps(meta), ex=self._ttl)  # type: ignore[arg-type]
+                )
+            )
+        except RuntimeError:
+            pass
+        logger.debug(f"Registered query {request_id[:8]}...")
+
+    async def set_backend_pid(self, request_id: str, pid: int) -> None:
+        try:
+            raw = await self._client.get(self._key(request_id))
+            if raw:
+                meta = json.loads(raw)
+                meta["backend_pid"] = pid
+                await self._client.set(self._key(request_id), json.dumps(meta), ex=self._ttl)
+            logger.debug(f"Set backend PID {pid} for query {request_id[:8]}...")
+        except Exception as exc:
+            logger.warning("RedisQueryTracker.set_backend_pid failed: %s", exc)
+
+    async def cancel_query(self, request_id: str, user_id: str) -> bool:
+        try:
+            raw = await self._client.get(self._key(request_id))
+        except Exception as exc:
+            logger.warning("RedisQueryTracker.cancel_query Redis error: %s", exc)
+            return False
+
+        if raw is None:
+            logger.warning(f"Query {request_id[:8]}... not found for cancellation")
+            return False
+
+        meta = json.loads(raw)
+        if meta["user_id"] != user_id:
+            # Item 25: log denied cancellation as a security event before raising.
+            logger.warning(
+                "SECURITY: query cancel denied — requesting user_id=%s, owner user_id=%s, request_id=%s",
+                user_id,
+                meta["user_id"],
+                request_id,
+            )
+            raise APIException(
+                code=ErrorCode.QUERY_CANCELLED,
+                message="Cannot cancel query owned by another user",
+                category=ErrorCategory.AUTHORIZATION,
+                status_code=status.HTTP_403_FORBIDDEN,
+            )
+
+        db_conn = self._db_conns.get(request_id)
+        if db_conn is None:
+            logger.warning(f"Cannot cancel query {request_id[:8]}...: db_conn not in local cache")
+            return False
+
+        backend_pid = meta.get("backend_pid")
+        if not backend_pid:
+            backend_pid = await db_conn.get_backend_pid()
+            if backend_pid:
+                await self.set_backend_pid(request_id, backend_pid)
+
+        if not backend_pid:
+            logger.warning(f"Cannot cancel query {request_id[:8]}...: no backend PID available")
+            return False
+
+        success = await db_conn.cancel_backend(backend_pid)
+        if success:
+            logger.info(f"Cancelled query {request_id[:8]}... (PID: {backend_pid})")
             self.unregister_query(request_id)
+        return success
+
+    def unregister_query(self, request_id: str) -> None:
+        self._db_conns.pop(request_id, None)
+        try:
+            loop = asyncio.get_event_loop()
+            _keep_task(loop.create_task(self._client.delete(self._key(request_id))))  # type: ignore[arg-type]
+        except RuntimeError:
+            pass
+        logger.debug(f"Unregistered query {request_id[:8]}...")
+
+    async def get_query_info(self, request_id: str) -> Optional[Dict]:
+        """Fetch full metadata from Redis merged with the local db_conn reference.
+
+        Item 21: made async so callers can await it and get both the db_conn and
+        all Redis-stored fields (user_id, query_text, backend_pid, started_at).
+        """
+        db_conn = self._db_conns.get(request_id)
+        if db_conn is None:
+            return None
+        try:
+            raw = await self._client.get(self._key(request_id))
+            if raw is None:
+                return {"db_conn": db_conn}
+            meta = json.loads(raw)
+            meta["db_conn"] = db_conn
+            return meta
+        except Exception as exc:
+            logger.warning("RedisQueryTracker.get_query_info failed: %s", exc)
+            return {"db_conn": db_conn}
+
+    async def get_query_info_full(self, request_id: str) -> Optional[Dict]:
+        """Alias kept for backward compatibility — delegates to get_query_info."""
+        return await self.get_query_info(request_id)
+
+    def cleanup_stale_queries(self) -> None:
+        # Purge local db_conn entries whose Redis key has already expired.
+        # We can only check this synchronously via a best-effort scan of local keys;
+        # actual TTL-based expiry is handled by Redis. Schedule async purge as a task.
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                _keep_task(loop.create_task(self._async_cleanup_stale()))
+        except RuntimeError:
+            pass
+
+    async def _async_cleanup_stale(self) -> None:
+        stale = []
+        for request_id in list(
+            self._db_conns
+        ):  # NOSONAR: snapshot required because await yields control
+            try:
+                exists = await self._client.exists(self._key(request_id))
+                if not exists:
+                    stale.append(request_id)
+            except Exception:
+                break
+        for request_id in stale:
+            logger.warning(f"Purging stale local db_conn for query {request_id[:8]}...")
+            self._db_conns.pop(request_id, None)
 
 
-# Global query tracker instance
-query_tracker = QueryTracker()
+if settings.redis_enabled:
+    query_tracker = RedisQueryTracker(settings.redis_url)
+else:
+    query_tracker = QueryTracker()  # type: ignore[assignment]

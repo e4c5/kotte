@@ -92,3 +92,48 @@ class TestSettings:
                     db_pool_min_size=10,
                     db_pool_max_size=5,
                 )
+
+    def test_cors_origins_json_array_form(self):
+        """JSON-array string (the form pydantic-settings requires) is parsed correctly."""
+        with patch.dict(
+            os.environ,
+            {
+                "SESSION_SECRET_KEY": _TEST_SESSION_SECRET,
+                "CORS_ORIGINS": '["https://example.com", "https://other.com"]',
+            },
+            clear=True,
+        ):
+            s = Settings()
+            assert s.cors_origins == ["https://example.com", "https://other.com"]
+
+    def test_cors_origins_comma_separated_form(self):
+        """Comma-separated string (documented in CONFIGURATION.md) is also accepted."""
+        with patch.dict(
+            os.environ,
+            {
+                "SESSION_SECRET_KEY": _TEST_SESSION_SECRET,
+                "CORS_ORIGINS": "https://example.com,https://other.com",
+            },
+            clear=True,
+        ):
+            s = Settings()
+            assert s.cors_origins == ["https://example.com", "https://other.com"]
+
+    def test_cors_origins_comma_separated_with_spaces(self):
+        """Whitespace around commas is stripped."""
+        with patch.dict(
+            os.environ,
+            {
+                "SESSION_SECRET_KEY": _TEST_SESSION_SECRET,
+                "CORS_ORIGINS": " https://a.com , https://b.com ",
+            },
+            clear=True,
+        ):
+            s = Settings()
+            assert s.cors_origins == ["https://a.com", "https://b.com"]
+
+    def test_cors_origins_list_passthrough(self):
+        """A Python list (from direct Settings(...) instantiation) is passed through unchanged."""
+        with patch.dict(os.environ, {"SESSION_SECRET_KEY": _TEST_SESSION_SECRET}, clear=True):
+            s = Settings(cors_origins=["https://direct.com"])
+            assert s.cors_origins == ["https://direct.com"]

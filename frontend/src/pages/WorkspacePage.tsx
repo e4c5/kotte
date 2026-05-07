@@ -51,6 +51,7 @@ export default function WorkspacePage() {
     pinTab,
     unpinTab,
     executeQuery,
+    streamQuery,
     cancelQuery,
     clearError,
     history,
@@ -67,6 +68,7 @@ export default function WorkspacePage() {
   const [showSettings, setShowSettings] = useState(false)
   const [expanding, setExpanding] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [mutationConfirmPending, setMutationConfirmPending] = useState(false)
   const {
     setSelectedNode,
     setSelectedEdge,
@@ -122,46 +124,58 @@ export default function WorkspacePage() {
     navigate('/login')
   }
 
-  const handleExecute = async () => {
-    if (!activeTabId || !currentGraph || !query.trim()) {
-      return
+  const MUTATION_RE = /\b(CREATE|DELETE|SET|REMOVE|MERGE|DETACH)\b/i
+
+  function applyGraphViewMode(tabId: string) {
+    const { tabs: latestTabs } = useQueryStore.getState()
+    const tab = latestTabs.find((t) => t.id === tabId)
+    if (!tab?.result) return
+    const { result } = tab
+    if (result.visualization_warning) {
+      updateTab(tabId, { viewMode: 'table' })
+    } else if (result.graph_elements) {
+      const hasElements =
+        (result.graph_elements.nodes?.length || 0) > 0 ||
+        (result.graph_elements.edges?.length || 0) > 0
+      updateTab(tabId, { viewMode: hasElements ? 'graph' : 'table' })
     }
+  }
 
+  const runQuery = async (mutationConfirmed = false) => {
+    if (!activeTabId || !currentGraph || !query.trim()) return
+    const parseResult = getQueryParams(params)
+    if (!parseResult.ok) return
+    const currentTab = tabs.find((t) => t.id === activeTabId)
+    const wantsGraph = currentTab?.viewMode === 'graph'
     try {
-      const parseResult = getQueryParams(params)
-      if (!parseResult.ok) {
-        // Defensive guard: QueryEditor already disables Execute and blocks
-        // Shift+Enter when params are unparseable (ROADMAP A10), so reaching
-        // here would mean a future caller bypassed the editor's checks.
-        // Fail closed rather than silently sending {} like the old code did.
-        return
-      }
-      const currentTab = tabs.find((t) => t.id === activeTabId)
-      await executeQuery(
-        activeTabId,
-        currentGraph,
-        query,
-        parseResult.value,
-        currentTab?.viewMode === 'graph'
-      )
-
-      const { tabs: latestTabs } = useQueryStore.getState()
-      const tab = latestTabs.find((t) => t.id === activeTabId)
-      if (tab?.result) {
-        const result = tab.result
-        if (result.graph_elements && !result.visualization_warning) {
-          const hasElements =
-            (result.graph_elements.nodes?.length || 0) > 0 ||
-            (result.graph_elements.edges?.length || 0) > 0
-          const newViewMode = hasElements ? 'graph' : 'table'
-          updateTab(activeTabId, { viewMode: newViewMode })
-        } else if (result.visualization_warning) {
-          updateTab(activeTabId, { viewMode: 'table' })
+      if (wantsGraph || mutationConfirmed) {
+        await executeQuery(activeTabId, currentGraph, query, parseResult.value, true, mutationConfirmed)
+        if (wantsGraph) {
+          applyGraphViewMode(activeTabId)
         }
+      } else {
+        await streamQuery(activeTabId, currentGraph, query, parseResult.value, mutationConfirmed)
       }
     } catch (err) {
-      // Error handled by store
+      // Primary error state is set by the store; log here for debuggability.
+      console.error('Query execution error:', err)
     }
+  }
+
+  const handleExecute = async () => {
+    if (!activeTabId || !currentGraph || !query.trim()) return
+    const parseResult = getQueryParams(params)
+    if (!parseResult.ok) return
+    if (MUTATION_RE.test(query)) {
+      setMutationConfirmPending(true)
+      return
+    }
+    await runQuery(false)
+  }
+
+  const handleMutationConfirm = async () => {
+    setMutationConfirmPending(false)
+    await runQuery(true)
   }
 
   const handleGraphSelect = (graphName: string) => {
@@ -171,8 +185,11 @@ export default function WorkspacePage() {
     }
   }
 
-  const handleQueryTemplate = (templateQuery: string) => {
+  const handleQueryTemplate = (templateQuery: string, templateParams?: string) => {
     setQuery(templateQuery)
+    if (templateParams !== undefined) {
+      setParams(templateParams)
+    }
   }
 
   const handleTabClick = (tabId: string) => {
@@ -200,15 +217,23 @@ export default function WorkspacePage() {
 
   const handleExpandNode = async (
     nodeId: string,
-  ): Promise<{ addedNodeIds: string[]; addedEdgeIds: string[] } | null> => {
+    options?: { depth?: number; limit?: number; edge_labels?: string[]; direction?: 'in' | 'out' | 'both' },
+  ): Promise<{ addedNodeIds: string[]; addedEdgeIds: string[]; truncated: boolean; total_neighbours: number } | null> => {
     if (!activeTabId || !currentGraph || expanding) return null
     setExpanding(true)
     try {
       const expandResult = await graphAPI.expandNode(currentGraph, nodeId, {
-        depth: 1,
-        limit: 100,
+        depth: options?.depth ?? 1,
+        limit: options?.limit ?? 100,
+        edge_labels: options?.edge_labels,
+        direction: options?.direction ?? 'both',
       })
-      return mergeGraphElements(activeTabId, expandResult.nodes, expandResult.edges)
+      const merged = mergeGraphElements(activeTabId, expandResult.nodes, expandResult.edges)
+      return {
+        ...merged,
+        truncated: expandResult.truncated,
+        total_neighbours: expandResult.total_neighbours,
+      }
     } catch (err) {
       console.error('Failed to expand node:', err)
       return null
@@ -425,8 +450,10 @@ export default function WorkspacePage() {
                 vizDisabledReason={vizDisabledReason}
                 onOpenSettings={() => setShowSettings(true)}
                 onViewModeChange={(mode) => handleTabViewModeChange(activeTab.id, mode)}
-                onNodeExpand={async (id) => {
-                  await handleExpandNode(id)
+                onNodeExpand={async (id, options) => {
+                  const result = await handleExpandNode(id, options)
+                  if (!result) return null
+                  return { truncated: result.truncated, total_neighbours: result.total_neighbours }
                 }}
                 onNodeDelete={handleDeleteNode}
                 onNodeSelect={(node) => setSelectedNode(node.id)}
@@ -444,6 +471,38 @@ export default function WorkspacePage() {
           </div>
         </div>
       </div>
+
+      {/* Mutation confirmation modal */}
+      {mutationConfirmPending && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+          <div className="w-full max-w-sm rounded-xl border border-zinc-700 bg-zinc-900 p-6 shadow-2xl">
+            <h2 className="mb-2 text-base font-semibold text-zinc-100">Confirm mutating query</h2>
+            <p className="mb-4 text-sm text-zinc-400">
+              This query contains write operations (<span className="font-mono text-amber-400">CREATE</span>,{' '}
+              <span className="font-mono text-amber-400">DELETE</span>,{' '}
+              <span className="font-mono text-amber-400">SET</span>,{' '}
+              <span className="font-mono text-amber-400">MERGE</span>, etc.) and will modify the
+              graph. Proceed?
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setMutationConfirmPending(false)}
+                className="px-4 py-2 rounded-lg border border-zinc-600 text-zinc-300 hover:bg-zinc-800 text-sm"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleMutationConfirm}
+                className="px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-sm font-medium"
+              >
+                Yes, proceed
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Error toast */}
       {error && (

@@ -8,6 +8,7 @@ import time
 import uuid
 from typing import Annotated
 
+import psycopg.errors
 from fastapi import APIRouter, Depends
 
 from app.core.auth import get_session
@@ -43,6 +44,12 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+# Item 19: Pattern to detect Cypher mutations so unconfirmed writes are rejected.
+_MUTATION_RE = re.compile(
+    r"\b(CREATE|MERGE|DELETE|DETACH\s+DELETE|SET|REMOVE|DROP)\b",
+    re.IGNORECASE,
+)
+
 
 @router.get("/templates")
 async def list_query_templates():
@@ -71,6 +78,23 @@ async def execute_query(
     # Validate query length
     validate_query_length(request.cypher)
     validate_variable_length_traversal(request.cypher, settings.query_max_variable_hops)
+
+    # Item 19: Reject mutating queries when mutation_confirmed is not set.
+    # Only enforced when safe_mode is off — in safe_mode the DB itself rejects mutations.
+    if (
+        not settings.query_safe_mode
+        and _MUTATION_RE.search(request.cypher)
+        and not request.mutation_confirmed
+    ):
+        raise APIException(
+            code=ErrorCode.QUERY_VALIDATION_ERROR,
+            message=(
+                "Query contains mutating operations (CREATE/MERGE/DELETE/SET/REMOVE/DROP). "
+                "Set mutation_confirmed=true to execute."
+            ),
+            category=ErrorCategory.VALIDATION,
+            status_code=400,
+        )
 
     # Apply result caps (visualization cap is stricter than generic query cap)
     if request.for_visualization:
@@ -117,19 +141,13 @@ async def execute_query(
             status_code=404,
         )
 
-    # Safe mode: reject mutating queries if enabled
-    if settings.query_safe_mode:
-        cypher_upper = request.cypher.upper()
-        mutating_pattern = re.compile(r"\b(CREATE|DELETE|SET|REMOVE|MERGE|DETACH)\b")
-        if mutating_pattern.search(cypher_upper):
-            raise APIException(
-                code=ErrorCode.QUERY_VALIDATION_ERROR,
-                message="Mutating queries are not allowed in safe mode",
-                category=ErrorCategory.VALIDATION,
-                status_code=422,
-            )
-
     # Log what the user submitted verbatim (for debugging query execution)
+    if request.mutation_confirmed:
+        logger.info(
+            "Query execute: mutation_confirmed=True for user %s (graph=%s)",
+            user_id,
+            validated_graph_name,
+        )
     logger.info(
         "Query execute: graph=%s, cypher_len=%s, params=%s",
         validated_graph_name,
@@ -143,6 +161,11 @@ async def execute_query(
     query_start_time = time.time()
     try:
         async with db_conn.connection() as exec_conn:
+            # Safe mode: enforce read-only at the DB level so PG rejects mutations
+            # regardless of what the Cypher text contains.
+            if settings.query_safe_mode:
+                await exec_conn.execute("SET TRANSACTION READ ONLY")
+
             try:
                 backend_pid = await db_conn.get_backend_pid(conn=exec_conn)
                 if backend_pid:
@@ -278,6 +301,14 @@ async def execute_query(
             visualization_warning=visualization_warning,
         )
 
+    except psycopg.errors.ReadOnlySqlTransaction:
+        query_tracker.unregister_query(request_id)
+        raise APIException(
+            code=ErrorCode.QUERY_VALIDATION_ERROR,
+            message="Mutating queries are not allowed in safe mode",
+            category=ErrorCategory.VALIDATION,
+            status_code=422,
+        )
     except asyncio.TimeoutError:
         # Query timeout
         query_tracker.unregister_query(request_id)
@@ -376,8 +407,8 @@ async def cancel_query(
     """
     user_id = session.get("user_id", "unknown")
 
-    # Check if query exists
-    query_info = query_tracker.get_query_info(request_id)
+    # Check if query exists (Item 21: get_query_info is now async)
+    query_info = await query_tracker.get_query_info(request_id)
     if not query_info:
         raise APIException(
             code=ErrorCode.QUERY_CANCELLED,

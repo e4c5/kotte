@@ -1,0 +1,885 @@
+/**
+ * Canvas 2D renderer for large graphs (C2.4).
+ * Activated by GraphView when node+edge count exceeds CANVAS_THRESHOLD_ENTER.
+ * Shares the same props, store subscriptions, and linkPath geometry as the SVG path.
+ */
+
+import { useEffect, useRef, useMemo, useState, useCallback } from 'react'
+import * as d3 from 'd3'
+import { useGraphStore } from '../stores/graphStore'
+import { initializeLayout } from '../utils/graphLayouts'
+import { getNodeStyle, getEdgeStyle, getNodeCaption, getEdgeCaption } from '../utils/graphStyles'
+import { linkPath, parallelEdgeMeta, type LinkPathResult } from '../utils/graphLinkPaths'
+import type { GraphNode, GraphEdge, PathHighlights } from './GraphView'
+import GraphMinimap from './GraphMinimap'
+import LassoActionBar from './LassoActionBar'
+
+// ── geometry helpers ──────────────────────────────────────────────────────────
+
+interface Tip {
+  x: number
+  y: number
+  angle: number
+}
+
+const TIP_Q_RE = /Q\s*([-\d.e]+)\s+([-\d.e]+)\s+([-\d.e]+)\s+([-\d.e]+)\s*$/
+const TIP_L_RE = /M\s*([-\d.e]+)\s+([-\d.e]+)\s+L\s*([-\d.e]+)\s+([-\d.e]+)\s*$/
+
+/**
+ * Extract arrowhead tip and tangent angle from a linkPath `d` string.
+ * All linkPath paths end with a quadratic bezier "Q cx cy x1 y1".
+ */
+function parseTip(d: string): Tip | null {
+  const q = TIP_Q_RE.exec(d)
+  if (q) {
+    const cx = +q[1], cy = +q[2], x1 = +q[3], y1 = +q[4]
+    return { x: x1, y: y1, angle: Math.atan2(y1 - cy, x1 - cx) }
+  }
+  // Degenerate near-zero line: "M x0 y0 L x1 y1"
+  const l = TIP_L_RE.exec(d)
+  if (l) {
+    const x0 = +l[1], y0 = +l[2], x1 = +l[3], y1 = +l[4]
+    return { x: x1, y: y1, angle: Math.atan2(y1 - y0, x1 - x0) }
+  }
+  return null
+}
+
+function drawArrow(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  angle: number,
+  size: number,
+) {
+  ctx.save()
+  ctx.translate(x, y)
+  ctx.rotate(angle)
+  ctx.beginPath()
+  ctx.moveTo(0, 0)
+  ctx.lineTo(-size, -size * 0.4)
+  ctx.lineTo(-size, size * 0.4)
+  ctx.closePath()
+  ctx.fill()
+  ctx.restore()
+}
+
+// ── types ──────────────────────────────────────────────────────────────────────
+
+interface Transform {
+  x: number
+  y: number
+  k: number
+}
+
+interface IdleState {
+  type: 'idle'
+}
+interface PanState {
+  type: 'pan'
+  startX: number
+  startY: number
+  startTx: number
+  startTy: number
+}
+interface DragState {
+  type: 'drag'
+  node: GraphNode
+  didMove: boolean
+}
+interface LassoState {
+  type: 'lasso'
+  x0: number
+  y0: number
+  x1: number
+  y1: number
+}
+type PointerState = IdleState | PanState | DragState | LassoState
+
+const ZOOM_MIN = 0.05
+const ZOOM_MAX = 20
+const ARROW_SIZE = 8
+
+async function downloadCanvasBlob(canvas: HTMLCanvasElement): Promise<void> {
+  return new Promise<void>((resolve) => {
+    canvas.toBlob((blob) => {
+      if (!blob) { resolve(); return }
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `graph-export-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.png`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      setTimeout(() => URL.revokeObjectURL(url), 100)
+      resolve()
+    }, 'image/png')
+  })
+}
+
+export interface GraphCanvasProps {
+  readonly nodes: GraphNode[]
+  readonly edges: GraphEdge[]
+  readonly width: number
+  readonly height: number
+  readonly pathHighlights?: PathHighlights
+  readonly onNodeClick?: (node: GraphNode) => void
+  readonly onNodeDoubleClick?: (node: GraphNode) => void
+  readonly onNodeRightClick?: (node: GraphNode, event: MouseEvent) => void
+  readonly onEdgeClick?: (edge: GraphEdge) => void
+  readonly onExportReady?: (exportFn: () => Promise<void>) => void
+}
+
+// ── component ─────────────────────────────────────────────────────────────────
+
+export default function GraphCanvas({
+  nodes,
+  edges,
+  width,
+  height,
+  pathHighlights,
+  onNodeClick,
+  onNodeDoubleClick,
+  onNodeRightClick,
+  onEdgeClick,
+  onExportReady,
+}: GraphCanvasProps) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const simRef = useRef<d3.Simulation<GraphNode, GraphEdge> | null>(null)
+  const transformRef = useRef<Transform>({ x: 0, y: 0, k: 1 })
+  const dirtyRef = useRef(true)
+  const pathByEdgeIdRef = useRef(new Map<string, LinkPathResult>())
+  // Refs for visual-only state so selection/path changes don't restart the simulation.
+  // Initialized with empty values; synced by the useEffects below before any draw call.
+  const selectedNodeRef = useRef<string | null | undefined>(undefined)
+  const pathNodeIdsRef = useRef(new Set<string>())
+  const pathEdgeIdsRef = useRef(new Set<string>())
+  // drawRef holds the latest draw closure; the RAF loop always calls the current version.
+  const drawRef = useRef<(() => void) | null>(null)
+  const [resolvedSize, setResolvedSize] = useState({ width, height })
+
+  // Stable callback refs so event handlers never go stale.
+  const onNodeClickRef = useRef(onNodeClick)
+  const onNodeDoubleClickRef = useRef(onNodeDoubleClick)
+  const onNodeRightClickRef = useRef(onNodeRightClick)
+  const onEdgeClickRef = useRef(onEdgeClick)
+  useEffect(() => {
+    onNodeClickRef.current = onNodeClick
+    onNodeDoubleClickRef.current = onNodeDoubleClick
+    onNodeRightClickRef.current = onNodeRightClick
+    onEdgeClickRef.current = onEdgeClick
+  }, [onNodeClick, onNodeDoubleClick, onNodeRightClick, onEdgeClick])
+
+  const {
+    layout,
+    nodeStyles,
+    edgeStyles,
+    edgeWidthMapping,
+    filters,
+    selectedNode,
+    pinnedNodes,
+    hiddenNodes,
+    lassoNodes,
+    cameraFocusAnchorIds,
+    clearCameraFocusAnchorIds,
+  } = useGraphStore()
+
+  // selectedNode is available here (from useGraphStore above); sync its ref now.
+  useEffect(() => { selectedNodeRef.current = selectedNode; dirtyRef.current = true }, [selectedNode])
+  useEffect(() => { dirtyRef.current = true }, [lassoNodes])
+
+  // Mirror the same filter logic from GraphView.
+  const filteredNodes = useMemo(() => {
+    let filtered = nodes.filter((n) => !hiddenNodes.has(n.id))
+    if (filters.nodeLabels.size > 0)
+      filtered = filtered.filter((n) => filters.nodeLabels.has(n.label))
+    if (filters.propertyFilters.length > 0) {
+      filtered = filtered.filter((node) =>
+        filters.propertyFilters.every((f) => {
+          if (f.label && f.label !== node.label) return true
+          const rawProp = node.properties[f.property]
+          const pv =
+            rawProp != null &&
+            (typeof rawProp === 'string' || typeof rawProp === 'number' || typeof rawProp === 'boolean')
+              ? String(rawProp)
+              : ''
+          const fv = f.value.toLowerCase()
+          switch (f.operator) {
+            case 'equals': return pv.toLowerCase() === fv
+            case 'contains': return pv.toLowerCase().includes(fv)
+            case 'startsWith': return pv.toLowerCase().startsWith(fv)
+            case 'endsWith': return pv.toLowerCase().endsWith(fv)
+            default: return true
+          }
+        }),
+      )
+    }
+    return filtered
+  }, [nodes, filters, hiddenNodes])
+
+  const filteredEdges = useMemo(() => {
+    let filtered = edges.filter((e) => {
+      const sid = typeof e.source === 'string' ? e.source : e.source.id
+      const tid = typeof e.target === 'string' ? e.target : e.target.id
+      return !hiddenNodes.has(sid) && !hiddenNodes.has(tid)
+    })
+    if (filters.edgeLabels.size > 0)
+      filtered = filtered.filter((e) => filters.edgeLabels.has(e.label))
+    const visIds = new Set(filteredNodes.map((n) => n.id))
+    return filtered.filter((e) => {
+      const sid = typeof e.source === 'string' ? e.source : e.source.id
+      const tid = typeof e.target === 'string' ? e.target : e.target.id
+      return visIds.has(sid) && visIds.has(tid)
+    })
+  }, [edges, filters, hiddenNodes, filteredNodes])
+
+  const pathNodeIds = useMemo(
+    () => new Set(pathHighlights?.nodeIds?.map(String) ?? []),
+    [pathHighlights?.nodeIds],
+  )
+  const pathEdgeIds = useMemo(
+    () => new Set(pathHighlights?.edgeIds?.map(String) ?? []),
+    [pathHighlights?.edgeIds],
+  )
+
+  // Sync path-highlight refs after the memo values are available.
+  useEffect(() => { pathNodeIdsRef.current = pathNodeIds; dirtyRef.current = true }, [pathNodeIds])
+  useEffect(() => { pathEdgeIdsRef.current = pathEdgeIds; dirtyRef.current = true }, [pathEdgeIds])
+
+  const edgeWidthScale = useMemo(() => {
+    if (!edgeWidthMapping.enabled || !edgeWidthMapping.property) return null
+    const vals = filteredEdges
+      .map((e) => {
+        const v = e.properties[edgeWidthMapping.property!]
+        if (v == null) return null
+        const n = typeof v === 'number' ? v : Number.parseFloat(String(v))
+        return Number.isNaN(n) ? null : n
+      })
+      .filter((v): v is number => v !== null)
+    if (!vals.length) return null
+    const mn = Math.min(...vals), mx = Math.max(...vals)
+    return edgeWidthMapping.scaleType === 'log' && mn > 0
+      ? d3.scaleLog().domain([mn, mx]).range([edgeWidthMapping.minWidth, edgeWidthMapping.maxWidth])
+      : d3
+          .scaleLinear()
+          .domain([mn, mx])
+          .range([edgeWidthMapping.minWidth, edgeWidthMapping.maxWidth])
+  }, [filteredEdges, edgeWidthMapping])
+
+  // ── RAF loop — runs once, always calls the latest drawRef ────────────────────
+  useEffect(() => {
+    let rafId: number
+    function loop() {
+      if (dirtyRef.current && drawRef.current) {
+        drawRef.current()
+        dirtyRef.current = false
+      }
+      rafId = requestAnimationFrame(loop)
+    }
+    rafId = requestAnimationFrame(loop)
+    return () => cancelAnimationFrame(rafId)
+  }, [])
+
+  // ── canvas export ────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!onExportReady) return
+    onExportReady(async () => {
+      const canvas = canvasRef.current
+      if (!canvas) return
+      await downloadCanvasBlob(canvas)
+    })
+  }, [onExportReady])
+
+  // ── main effect: simulation + draw closure + event handlers ──────────────────
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+
+    const containerRect = canvas.parentElement?.getBoundingClientRect()
+    const vw = Math.max(Math.floor(containerRect?.width ?? width), 1)
+    const vh = Math.max(Math.floor(containerRect?.height ?? height), 1)
+    setResolvedSize((prev) =>
+      prev.width === vw && prev.height === vh ? prev : { width: vw, height: vh },
+    )
+
+    // HiDPI: size the backing store at physical pixels.
+    const dpr = globalThis.devicePixelRatio || 1
+    canvas.width = vw * dpr
+    canvas.height = vh * dpr
+    canvas.style.width = `${vw}px`
+    canvas.style.height = `${vh}px`
+
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    const ctxNonNull: CanvasRenderingContext2D = ctx
+
+    // ── simulation setup ────────────────────────────────────────────────────────
+    // initializeLayout mutates nodes in-place; filteredNodes and the returned array
+    // are the same objects — d3-force's x/y updates are visible to draw().
+    initializeLayout(filteredNodes, layout, vw, vh)
+    const nodesArr = filteredNodes
+    if (!nodesArr.length) {
+      drawRef.current = null
+      const clearCanvas = canvasRef.current
+      if (clearCanvas) {
+        const clearCtx = clearCanvas.getContext('2d')
+        if (clearCtx) {
+          clearCtx.clearRect(0, 0, clearCanvas.width, clearCanvas.height)
+          clearCtx.fillStyle = '#18181b'
+          clearCtx.fillRect(0, 0, clearCanvas.width, clearCanvas.height)
+        }
+      }
+      return
+    }
+
+    const hasEdges = filteredEdges.length > 0
+    let sim: d3.Simulation<GraphNode, GraphEdge>
+    if (layout === 'force' && hasEdges) {
+      sim = d3
+        .forceSimulation<GraphNode>(nodesArr)
+        .alpha(1)
+        .alphaDecay(0.05)
+        .velocityDecay(0.45)
+        .force(
+          'link',
+          d3.forceLink<GraphNode, GraphEdge>(filteredEdges).id((d) => d.id).distance(90),
+        )
+        .force('charge', d3.forceManyBody().strength(-110))
+        .force('center', d3.forceCenter(vw / 2, vh / 2))
+        .force('x', d3.forceX(vw / 2).strength(0.04))
+        .force('y', d3.forceY(vh / 2).strength(0.04))
+        .force('collision', d3.forceCollide().radius(28))
+    } else {
+      sim = d3.forceSimulation<GraphNode>(nodesArr).alpha(0).stop()
+    }
+
+    nodesArr.forEach((n) => {
+      if (pinnedNodes.has(n.id)) {
+        n.fx = n.x ?? vw / 2
+        n.fy = n.y ?? vh / 2
+      }
+    })
+    simRef.current = sim
+
+    const nodeById = new Map(nodesArr.map((n) => [n.id, n]))
+    const getNode = (ep: string | GraphNode) => (typeof ep === 'string' ? nodeById.get(ep) : ep)
+    const getNodeR = (n: GraphNode) => getNodeStyle(n, nodeStyles).size
+    const parallelByEdgeId = parallelEdgeMeta(filteredEdges)
+
+    function rebuildPaths() {
+      pathByEdgeIdRef.current.clear()
+      for (const e of filteredEdges) {
+        pathByEdgeIdRef.current.set(
+          e.id,
+          linkPath(e, getNode, getNodeR, parallelByEdgeId.get(e.id)),
+        )
+      }
+    }
+
+    // ── fit-to-view ─────────────────────────────────────────────────────────────
+    function computeFitTransform(): Transform {
+      const cx = vw / 2, cy = vh / 2
+      const xs = nodesArr.map((n) => n.x ?? cx)
+      const ys = nodesArr.map((n) => n.y ?? cy)
+      const mnX = Math.min(...xs), mxX = Math.max(...xs)
+      const mnY = Math.min(...ys), mxY = Math.max(...ys)
+      const cw = mxX - mnX || 1, ch = mxY - mnY || 1
+      const margin = layout === 'force' ? 20 : 40
+      const k = Math.max(0.1, 0.92 * Math.min((vw - 2 * margin) / cw, (vh - 2 * margin) / ch))
+      return { k, x: cx - k * (mnX + cw / 2), y: cy - k * (mnY + ch / 2) }
+    }
+
+    transformRef.current = computeFitTransform()
+    rebuildPaths()
+    dirtyRef.current = true
+
+    const edgeColor = (e: GraphEdge) =>
+      pathEdgeIdsRef.current.has(String(e.id))
+        ? '#0066cc'
+        : getEdgeStyle(e, edgeStyles, edgeWidthScale, edgeWidthMapping.property).color
+
+    function drawEdges() {
+      for (const edge of filteredEdges) {
+        const result = pathByEdgeIdRef.current.get(edge.id)
+        if (!result) continue
+        const color = edgeColor(edge)
+        const style = getEdgeStyle(edge, edgeStyles, edgeWidthScale, edgeWidthMapping.property)
+        const highlighted = pathEdgeIdsRef.current.has(String(edge.id))
+        ctxNonNull.globalAlpha = highlighted ? 1 : 0.6
+        ctxNonNull.strokeStyle = color
+        ctxNonNull.lineWidth = highlighted ? Math.max(3, style.size) : style.size
+        ctxNonNull.stroke(new Path2D(result.d))
+        const tip = parseTip(result.d)
+        if (tip) {
+          ctxNonNull.fillStyle = color
+          drawArrow(ctxNonNull, tip.x, tip.y, tip.angle, ARROW_SIZE)
+        }
+        const caption = getEdgeCaption(edge, edgeStyles, edgeWidthScale, edgeWidthMapping.property)
+        if (caption) {
+          ctxNonNull.globalAlpha = 0.7
+          ctxNonNull.fillStyle = '#a1a1aa'
+          ctxNonNull.font = '10px sans-serif'
+          ctxNonNull.textAlign = 'center'
+          ctxNonNull.textBaseline = 'alphabetic'
+          ctxNonNull.fillText(caption, result.lx, result.ly - 4)
+        }
+      }
+      ctxNonNull.globalAlpha = 1
+    }
+
+    function drawNodes() {
+      for (const node of filteredNodes) {
+        const style = getNodeStyle(node, nodeStyles)
+        const nx = node.x ?? vw / 2
+        const ny = node.y ?? vh / 2
+        const fill = pathNodeIdsRef.current.has(node.id) ? '#0066cc' : style.color
+        let stroke = '#fff'
+        if (selectedNodeRef.current === node.id) stroke = '#ff0000'
+        else if (pathNodeIdsRef.current.has(node.id)) stroke = '#004499'
+        else if (pinnedNodes.has(node.id)) stroke = '#f59e0b'
+        const sw =
+          selectedNodeRef.current === node.id || pathNodeIdsRef.current.has(node.id) || pinnedNodes.has(node.id) ? 3 : 2
+        ctxNonNull.beginPath()
+        ctxNonNull.arc(nx, ny, style.size, 0, Math.PI * 2)
+        ctxNonNull.fillStyle = fill
+        ctxNonNull.fill()
+        ctxNonNull.strokeStyle = stroke
+        ctxNonNull.lineWidth = sw
+        ctxNonNull.stroke()
+        const caption = getNodeCaption(node, nodeStyles)
+        if (caption) {
+          ctxNonNull.fillStyle = '#e4e4e7'
+          ctxNonNull.font = '12px sans-serif'
+          ctxNonNull.textAlign = 'left'
+          ctxNonNull.textBaseline = 'middle'
+          ctxNonNull.fillText(caption, nx + style.size + 5, ny)
+        }
+      }
+    }
+
+    function drawLassoOverlay(pointerState: PointerState) {
+      // Dashed rings around each lasso-selected node (world space)
+      const lasso = useGraphStore.getState().lassoNodes
+      if (lasso.size > 0) {
+        ctxNonNull.setLineDash([4, 3])
+        ctxNonNull.lineWidth = 2
+        ctxNonNull.strokeStyle = '#60a5fa'
+        for (const node of filteredNodes) {
+          if (!lasso.has(node.id)) continue
+          const style = getNodeStyle(node, nodeStyles)
+          ctxNonNull.beginPath()
+          ctxNonNull.arc(node.x ?? vw / 2, node.y ?? vh / 2, style.size + 5, 0, Math.PI * 2)
+          ctxNonNull.stroke()
+        }
+        ctxNonNull.setLineDash([])
+      }
+      // Selection rect in screen space (reset transform first)
+      if (pointerState.type === 'lasso') {
+        const { x0, y0, x1, y1 } = pointerState
+        const rx = Math.min(x0, x1), ry = Math.min(y0, y1)
+        const rw = Math.abs(x1 - x0), rh = Math.abs(y1 - y0)
+        ctxNonNull.setTransform(dpr, 0, 0, dpr, 0, 0)
+        ctxNonNull.fillStyle = 'rgba(96,165,250,0.08)'
+        ctxNonNull.fillRect(rx, ry, rw, rh)
+        ctxNonNull.strokeStyle = '#60a5fa'
+        ctxNonNull.lineWidth = 1
+        ctxNonNull.setLineDash([4, 2])
+        ctxNonNull.strokeRect(rx, ry, rw, rh)
+        ctxNonNull.setLineDash([])
+      }
+    }
+
+    // ── draw closure ─────────────────────────────────────────────────────────────
+    function draw() {
+      const { x: tx, y: ty, k } = transformRef.current
+
+      ctxNonNull.setTransform(dpr, 0, 0, dpr, 0, 0)
+      ctxNonNull.clearRect(0, 0, vw, vh)
+      ctxNonNull.fillStyle = '#09090b'
+      ctxNonNull.fillRect(0, 0, vw, vh)
+
+      ctxNonNull.translate(tx, ty)
+      ctxNonNull.scale(k, k)
+
+      drawEdges()
+      ctxNonNull.globalAlpha = 1
+      drawNodes()
+      ctxNonNull.globalAlpha = 1
+      drawLassoOverlay(pointerState)
+    }
+
+    drawRef.current = draw
+
+    let autoStopped = false
+    sim.on('tick', () => {
+      if (!autoStopped && sim.alpha() < 0.035) {
+        autoStopped = true
+        sim.stop()
+      }
+      rebuildPaths()
+      dirtyRef.current = true
+    })
+
+    if (layout !== 'force' || !hasEdges) sim.tick()
+
+    // ── pointer / wheel event handling ──────────────────────────────────────────
+    function toWorld(sx: number, sy: number): [number, number] {
+      const { x: tx, y: ty, k } = transformRef.current
+      return [(sx - tx) / k, (sy - ty) / k]
+    }
+
+    function hitNode(wx: number, wy: number): GraphNode | null {
+      for (let i = nodesArr.length - 1; i >= 0; i--) {
+        const n = nodesArr[i]
+        const r = getNodeStyle(n, nodeStyles).size
+        if (Math.hypot((n.x ?? 0) - wx, (n.y ?? 0) - wy) <= r) return n
+      }
+      return null
+    }
+
+    function hitEdge(wx: number, wy: number): GraphEdge | null {
+      if (!onEdgeClickRef.current) return null
+      const { x: tx, y: ty, k } = transformRef.current
+      ctxNonNull.save()
+      ctxNonNull.setTransform(dpr * k, 0, 0, dpr * k, dpr * tx, dpr * ty)
+      ctxNonNull.lineWidth = 16 / k
+      let found: GraphEdge | null = null
+      for (let i = filteredEdges.length - 1; i >= 0; i--) {
+        const e = filteredEdges[i]
+        const pr = pathByEdgeIdRef.current.get(e.id)
+        if (!pr) continue
+        if (ctxNonNull.isPointInStroke(new Path2D(pr.d), wx, wy)) {
+          found = e
+          break
+        }
+      }
+      ctxNonNull.restore()
+      return found
+    }
+
+    // Event handlers close over `canvas` which is guaranteed non-null at registration time.
+    // TypeScript can't narrow const captures in closures; `!` is intentional here.
+    const el = canvas
+
+    let pointerState: PointerState = { type: 'idle' }
+    let lastClick: { id: string; time: number } | null = null
+
+    function onWheel(e: WheelEvent) {
+      e.preventDefault()
+      const { x: tx, y: ty, k } = transformRef.current
+      const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1
+      const nk = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, k * factor))
+      const mx = e.offsetX, my = e.offsetY
+      transformRef.current = { k: nk, x: mx - (mx - tx) * (nk / k), y: my - (my - ty) * (nk / k) }
+      dirtyRef.current = true
+    }
+
+    function onPointerDown(e: PointerEvent) {
+      if (e.button !== 0) return
+      el.setPointerCapture(e.pointerId)
+      const [wx, wy] = toWorld(e.offsetX, e.offsetY)
+      const hn = hitNode(wx, wy)
+      if (e.shiftKey && !hn) {
+        pointerState = { type: 'lasso', x0: e.offsetX, y0: e.offsetY, x1: e.offsetX, y1: e.offsetY }
+        el.style.cursor = 'crosshair'
+      } else if (hn) {
+        pointerState = { type: 'drag', node: hn, didMove: false }
+        el.style.cursor = 'grabbing'
+        if (layout === 'force') {
+          sim.alphaTarget(0.3).restart()
+          hn.fx = hn.x ?? 0
+          hn.fy = hn.y ?? 0
+        }
+      } else {
+        const { x: tx, y: ty } = transformRef.current
+        pointerState = { type: 'pan', startX: e.offsetX, startY: e.offsetY, startTx: tx, startTy: ty }
+        el.style.cursor = 'grabbing'
+      }
+    }
+
+    function onPointerMove(e: PointerEvent) {
+      if (pointerState.type === 'lasso') {
+        pointerState = { ...pointerState, x1: e.offsetX, y1: e.offsetY }
+        dirtyRef.current = true
+      } else if (pointerState.type === 'pan') {
+        const dx = e.offsetX - pointerState.startX
+        const dy = e.offsetY - pointerState.startY
+        transformRef.current = { ...transformRef.current, x: pointerState.startTx + dx, y: pointerState.startTy + dy }
+        dirtyRef.current = true
+      } else if (pointerState.type === 'drag') {
+        const [wx, wy] = toWorld(e.offsetX, e.offsetY)
+        pointerState = { ...pointerState, didMove: true }
+        if (layout === 'force') {
+          pointerState.node.fx = wx
+          pointerState.node.fy = wy
+        } else {
+          pointerState.node.x = wx
+          pointerState.node.y = wy
+          rebuildPaths()
+          dirtyRef.current = true
+        }
+      }
+    }
+
+    function releaseLasso(state: LassoState) {
+      const { x0, y0, x1, y1 } = state
+      const { x: tx, y: ty, k } = transformRef.current
+      const wx0 = (Math.min(x0, x1) - tx) / k, wy0 = (Math.min(y0, y1) - ty) / k
+      const wx1 = (Math.max(x0, x1) - tx) / k, wy1 = (Math.max(y0, y1) - ty) / k
+      const hitSet = new Set<string>()
+      for (const n of nodesArr) {
+        const nx = n.x ?? 0, ny = n.y ?? 0
+        if (nx >= wx0 && nx <= wx1 && ny >= wy0 && ny <= wy1) hitSet.add(n.id)
+      }
+      useGraphStore.getState().setLassoNodes(hitSet)
+      dirtyRef.current = true
+    }
+
+    function releaseDrag(state: DragState) {
+      const { node, didMove } = state
+      if (!didMove) {
+        const now = Date.now()
+        if (lastClick?.id === node.id && now - lastClick.time < 300) {
+          onNodeDoubleClickRef.current?.(node)
+          lastClick = null
+        } else {
+          onNodeClickRef.current?.(node)
+          lastClick = { id: node.id, time: now }
+        }
+      }
+      if (layout === 'force') {
+        if (!pinnedNodes.has(node.id)) {
+          node.fx = null
+          node.fy = null
+        }
+        sim.alphaTarget(0)
+      }
+    }
+
+    function releasePan(state: PanState, e: PointerEvent) {
+      const dx = e.offsetX - state.startX
+      const dy = e.offsetY - state.startY
+      if (Math.hypot(dx, dy) < 5) {
+        const [wx, wy] = toWorld(e.offsetX, e.offsetY)
+        const he = hitEdge(wx, wy)
+        if (he) onEdgeClickRef.current?.(he)
+        else useGraphStore.getState().clearLassoNodes()
+      }
+    }
+
+    function onPointerUp(e: PointerEvent) {
+      if (e.button !== 0) return
+      el.style.cursor = 'grab'
+      if (pointerState.type === 'lasso') releaseLasso(pointerState)
+      else if (pointerState.type === 'drag') releaseDrag(pointerState)
+      else if (pointerState.type === 'pan') releasePan(pointerState, e)
+      pointerState = { type: 'idle' }
+    }
+
+    function onPointerCancel(e: PointerEvent) {
+      // Release any active interaction (drag, pan, lasso) without triggering
+      // click/release side-effects — e.g. when a touch is stolen by the OS.
+      if (el.hasPointerCapture(e.pointerId)) {
+        el.releasePointerCapture(e.pointerId)
+      }
+      if (pointerState.type === 'drag' && layout === 'force') {
+        // Stop dragging the node — restore simulation behaviour.
+        const { node } = pointerState
+        if (!pinnedNodes.has(node.id)) {
+          node.fx = null
+          node.fy = null
+        }
+        sim.alphaTarget(0)
+      }
+      el.style.cursor = 'grab'
+      pointerState = { type: 'idle' }
+      dirtyRef.current = true
+    }
+
+    function onContextMenu(e: MouseEvent) {
+      e.preventDefault()
+      const [wx, wy] = toWorld(e.offsetX, e.offsetY)
+      const hn = hitNode(wx, wy)
+      if (hn) onNodeRightClickRef.current?.(hn, e)
+    }
+
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') useGraphStore.getState().clearLassoNodes()
+    }
+
+    el.addEventListener('wheel', onWheel, { passive: false })
+    el.addEventListener('pointerdown', onPointerDown)
+    el.addEventListener('pointermove', onPointerMove)
+    el.addEventListener('pointerup', onPointerUp)
+    el.addEventListener('pointercancel', onPointerCancel)
+    el.addEventListener('contextmenu', onContextMenu)
+    globalThis.addEventListener('keydown', onKeyDown)
+
+    return () => {
+      sim.stop()
+      sim.nodes([])
+      if (hasEdges) {
+        const lf = sim.force('link')
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        if (lf && 'links' in lf) (lf as any).links([])
+      }
+      el.removeEventListener('wheel', onWheel)
+      el.removeEventListener('pointerdown', onPointerDown)
+      el.removeEventListener('pointermove', onPointerMove)
+      el.removeEventListener('pointerup', onPointerUp)
+      el.removeEventListener('pointercancel', onPointerCancel)
+      el.removeEventListener('contextmenu', onContextMenu)
+      globalThis.removeEventListener('keydown', onKeyDown)
+      drawRef.current = null
+    }
+  }, [
+    filteredNodes,
+    filteredEdges,
+    width,
+    height,
+    layout,
+    nodeStyles,
+    edgeStyles,
+    pinnedNodes,
+    edgeWidthScale,
+    edgeWidthMapping.property,
+  ])
+
+  // ── camera focus (mirrors GraphView's cameraFocusAnchorIds logic) ─────────────
+  useEffect(() => {
+    if (!cameraFocusAnchorIds.length) return
+    const sim = simRef.current
+    if (!sim) return
+
+    // `cancelled` is checked at the top of every RAF callback so that cleanup
+    // reliably stops the animation — storing only the first frame ID would
+    // leave subsequent frames running after the effect re-fires.
+    let cancelled = false
+
+    const anchorSet = new Set(cameraFocusAnchorIds)
+    requestAnimationFrame(() => {
+      if (cancelled) return
+      const anchors = sim.nodes().filter((n) => anchorSet.has(n.id))
+      if (!anchors.length) {
+        clearCameraFocusAnchorIds()
+        return
+      }
+      const xs = anchors.map((n) => n.x ?? 0)
+      const ys = anchors.map((n) => n.y ?? 0)
+      const mnX = Math.min(...xs), mxX = Math.max(...xs)
+      const mnY = Math.min(...ys), mxY = Math.max(...ys)
+      const cw = Math.max(mxX - mnX, 200), ch = Math.max(mxY - mnY, 200)
+      const margin = 60
+      const fitK = 0.92 * Math.min(
+        (resolvedSize.width - 2 * margin) / cw,
+        (resolvedSize.height - 2 * margin) / ch,
+      )
+      const k = Math.max(0.3, Math.min(2, fitK))
+      const cx = (mnX + mxX) / 2, cy = (mnY + mxY) / 2
+      const target: Transform = {
+        k,
+        x: resolvedSize.width / 2 - k * cx,
+        y: resolvedSize.height / 2 - k * cy,
+      }
+      const start = { ...transformRef.current }
+      const t0 = performance.now()
+      const duration = 400
+
+      function step() {
+        if (cancelled) return
+        const t = Math.min((performance.now() - t0) / duration, 1)
+        const ease = t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t
+        transformRef.current = {
+          k: start.k + (target.k - start.k) * ease,
+          x: start.x + (target.x - start.x) * ease,
+          y: start.y + (target.y - start.y) * ease,
+        }
+        dirtyRef.current = true
+        if (t < 1) requestAnimationFrame(step)
+        else clearCameraFocusAnchorIds()
+      }
+      requestAnimationFrame(step)
+    })
+
+    return () => { cancelled = true }
+  }, [cameraFocusAnchorIds, filteredNodes, resolvedSize.width, resolvedSize.height, clearCameraFocusAnchorIds])
+
+  // ── minimap callbacks ─────────────────────────────────────────────────────────
+  const getTransform = useCallback(() => transformRef.current, [])
+  const setTransform = useCallback((t: { x: number; y: number; k: number }) => {
+    transformRef.current = t
+    dirtyRef.current = true
+  }, [])
+
+  // ── zoom controls ─────────────────────────────────────────────────────────────
+  const zoomBy = useCallback(
+    (factor: number) => {
+      const { x: tx, y: ty, k } = transformRef.current
+      const nk = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, k * factor))
+      const cx = resolvedSize.width / 2, cy = resolvedSize.height / 2
+      transformRef.current = { k: nk, x: cx - (cx - tx) * (nk / k), y: cy - (cy - ty) * (nk / k) }
+      dirtyRef.current = true
+    },
+    [resolvedSize.width, resolvedSize.height],
+  )
+
+  const resetZoom = useCallback(() => {
+    const sim = simRef.current
+    if (!sim?.nodes().length) return
+    const ns = sim.nodes()
+    const xs = ns.map((n) => n.x ?? 0), ys = ns.map((n) => n.y ?? 0)
+    const mnX = Math.min(...xs), mxX = Math.max(...xs)
+    const mnY = Math.min(...ys), mxY = Math.max(...ys)
+    const cw = mxX - mnX || 1, ch = mxY - mnY || 1
+    const margin = 40
+    const k = Math.max(0.1, 0.92 * Math.min((resolvedSize.width - 2 * margin) / cw, (resolvedSize.height - 2 * margin) / ch))
+    transformRef.current = {
+      k,
+      x: resolvedSize.width / 2 - k * (mnX + cw / 2),
+      y: resolvedSize.height / 2 - k * (mnY + ch / 2),
+    }
+    dirtyRef.current = true
+  }, [resolvedSize.width, resolvedSize.height])
+
+  return (
+    <div className="w-full h-full bg-zinc-950 relative">
+      <canvas ref={canvasRef} className="block" style={{ cursor: 'grab' }} />
+      <LassoActionBar filteredNodes={filteredNodes} onNodeDoubleClick={onNodeDoubleClick} />
+      <GraphMinimap
+        nodes={filteredNodes}
+        viewportWidth={resolvedSize.width}
+        viewportHeight={resolvedSize.height}
+        getTransform={getTransform}
+        setTransform={setTransform}
+      />
+      <div className="absolute right-3 bottom-3 z-20 flex items-center gap-1 rounded border border-zinc-700 bg-zinc-900/85 p-1">
+        <button
+          type="button"
+          onClick={() => zoomBy(1.2)}
+          className="h-8 w-8 rounded bg-zinc-800 text-zinc-200 hover:bg-zinc-700"
+          aria-label="Zoom in"
+          title="Zoom in"
+        >
+          +
+        </button>
+        <button
+          type="button"
+          onClick={() => zoomBy(0.8)}
+          className="h-8 w-8 rounded bg-zinc-800 text-zinc-200 hover:bg-zinc-700"
+          aria-label="Zoom out"
+          title="Zoom out"
+        >
+          -
+        </button>
+        <button
+          type="button"
+          onClick={resetZoom}
+          className="h-8 rounded bg-zinc-800 px-2 text-xs font-medium text-zinc-200 hover:bg-zinc-700"
+          aria-label="Reset zoom"
+          title="Reset zoom"
+        >
+          Reset
+        </button>
+      </div>
+    </div>
+  )
+}
